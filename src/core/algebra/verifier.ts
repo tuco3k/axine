@@ -173,4 +173,66 @@ export class AlgebraicVerifier {
 
     return derivation;
   }
+
+  /**
+   * Verify a simplification derivation by checking that the original and
+   * simplified expressions agree at 20 sampled points, skipping any
+   * points excluded by side conditions.
+   */
+  public static verifySimplification(
+    derivation: DerivationValue,
+    originalAST: ASTNode,
+    simplifiedAST: ASTNode,
+    varName: string,
+    env: Environment
+  ): DerivationValue | { type: 'unknown'; reason: any; detail: string } {
+    const sampleVals = [
+      -100, -42.5, -23.1, -12, -7.3, -4, -2.5, -1.2, -0.5, 0.1,
+      0.8, 1.5, 2.7, 4.3, 6.9, 11.2, 18.5, 33.7, 55, 100
+    ];
+
+    // Extract excluded points from side conditions
+    const excludedPoints = new Set<number>();
+    for (const step of derivation.steps) {
+      if (step.sideCondition) {
+        const match = step.sideCondition.match(/[-+]?[0-9]*\.?[0-9]+/g);
+        if (match) {
+          match.forEach(m => excludedPoints.add(parseFloat(m)));
+        }
+      }
+    }
+
+    let testedCount = 0;
+    for (const x of sampleVals) {
+      if (excludedPoints.has(x)) continue;
+      const testEnv = { ...env, [varName]: { type: 'float', value: x } as Value };
+      try {
+        const origVal = valueToNumber(new Evaluator(testEnv).evaluate(originalAST));
+        const simpVal = valueToNumber(new Evaluator(testEnv).evaluate(simplifiedAST));
+
+        if (!isFinite(origVal) || !isFinite(simpVal)) continue;
+
+        if (Math.abs(origVal - simpVal) > 1e-12) {
+          return {
+            type: 'unknown',
+            reason: 'no-convergence',
+            detail: `derivation failed self-verification: original evaluates to ${origVal} but simplified evaluates to ${simpVal} at ${varName}=${x}`,
+          };
+        }
+        testedCount++;
+      } catch {
+        // Skip points where evaluation fails (e.g. division by zero)
+      }
+    }
+
+    if (testedCount < 3) {
+      return {
+        type: 'unknown',
+        reason: 'no-convergence',
+        detail: `derivation failed self-verification: could only evaluate at ${testedCount} sample points (need at least 3)`,
+      };
+    }
+
+    return { ...derivation, verified: true };
+  }
 }

@@ -451,7 +451,7 @@ export interface DerivationValue {
   targetVar?: string;
   originalEquation: string;
   steps: DerivationStep[];
-  result: Value | Value[];
+  result?: Value | Value[];
   roots: Value[];
   specialCase?: 'no-solution' | 'all-real' | 'none';
   verified: boolean;

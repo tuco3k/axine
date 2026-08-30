@@ -684,6 +684,8 @@ export class DocumentEditor {
         return `[Function ${val.name}(${val.params.join(', ')})]`;
       case 'lambda':
         return `[Lambda (${val.params.join(', ')})]`;
+      case 'expression':
+        return val.text;
       default:
         return String((val as any).value ?? val.type);
     }

@@ -1,7 +1,8 @@
-import { ASTNode, DerivationStep, DerivationValue, Environment } from '../types';
+import { ASTNode, DerivationStep, DerivationValue, ExpressionValue, Environment } from '../types';
 import { BigFraction } from '../numeric/rational';
 import { formatAST } from '../formatter';
 import { AlgebraicClassifier } from './classifier';
+import { AlgebraicVerifier } from './verifier';
 import { Evaluator } from '../evaluator';
 
 export class AlgebraicSimplifier {
@@ -42,7 +43,7 @@ export class AlgebraicSimplifier {
               // Numerator has factor (x - denRoot). Other root is: sum of roots = -b/a => r2 = -b/a - denRoot
               const otherRoot = b.neg().div(a).sub(denRoot);
 
-              // Factored numerator: a * (x - denRoot) * (x - otherRoot)
+              // Build ASTs for factored form
               const factor1Str = denRoot.n >= 0n ? `(${varName} - ${denRoot.toString()})` : `(${varName} + ${denRoot.neg().toString()})`;
               const factor2Str = otherRoot.n >= 0n ? `(${varName} - ${otherRoot.toString()})` : `(${varName} + ${otherRoot.neg().toString()})`;
               const denStr = formatAST(denNode);
@@ -56,14 +57,17 @@ export class AlgebraicSimplifier {
                 equation: factoredForm,
               });
 
-              // Cancel common factor (x - denRoot)
+              // Build the quotient polynomial: quotientCoeff1 * x + quotientCoeff0
               const quotientCoeff1 = a.div(d1);
               const quotientCoeff0 = otherRoot.neg().mul(quotientCoeff1);
-              const afterCancel = quotientCoeff0.n === 0n
-                ? `${quotientCoeff1.toString()}${varName}`
-                : (quotientCoeff0.n > 0n
-                    ? `${quotientCoeff1.equals(BigFraction.fromInt(1)) ? varName : quotientCoeff1.toString() + varName} + ${quotientCoeff0.toString()}`
-                    : `${quotientCoeff1.equals(BigFraction.fromInt(1)) ? varName : quotientCoeff1.toString() + varName} - ${quotientCoeff0.neg().toString()}`);
+
+              // Build quotient AST
+              const quotientPoly = {
+                coeffs: [quotientCoeff0, quotientCoeff1],
+                degree: 1,
+              };
+              const simplifiedAST = this.polyToAST(quotientPoly, varName);
+              const afterCancel = formatAST(simplifiedAST);
 
               const excludedVal = denRoot.toString();
               steps.push({
@@ -76,16 +80,26 @@ export class AlgebraicSimplifier {
                 equation: afterCancel,
               });
 
-              return {
+              const resultExpr: ExpressionValue = {
+                type: 'expression',
+                ast: simplifiedAST,
+                text: afterCancel,
+              };
+
+              const unverified: DerivationValue = {
                 type: 'derivation',
                 targetVar: varName,
                 originalEquation: beforeStr,
                 steps,
-                result: [{ type: 'rational', n: quotientCoeff1.n, d: quotientCoeff1.d }],
+                result: resultExpr,
                 roots: [],
-                verified: true,
+                verified: false,
                 excludedRoots: [{ type: 'rational', n: denRoot.n, d: denRoot.d }],
               };
+
+              return AlgebraicVerifier.verifySimplification(
+                unverified, exprNode, simplifiedAST, varName, env
+              );
             }
           }
         } catch {
@@ -98,7 +112,8 @@ export class AlgebraicSimplifier {
     if (varName) {
       try {
         const poly = AlgebraicClassifier.toPolynomial(exprNode, varName, env);
-        const collectedStr = this.formatPoly(poly, varName);
+        const simplifiedAST = this.polyToAST(poly, varName);
+        const collectedStr = formatAST(simplifiedAST);
 
         if (collectedStr !== beforeStr) {
           steps.push({
@@ -111,8 +126,13 @@ export class AlgebraicSimplifier {
           });
         }
 
-        const constCoeff = poly.coeffs[0] ?? BigFraction.fromInt(0);
-        return {
+        const resultExpr: ExpressionValue = {
+          type: 'expression',
+          ast: simplifiedAST,
+          text: collectedStr,
+        };
+
+        const unverified: DerivationValue = {
           type: 'derivation',
           targetVar: varName,
           originalEquation: beforeStr,
@@ -123,19 +143,24 @@ export class AlgebraicSimplifier {
             justification: 'Expression is already simplified',
             equation: beforeStr,
           }],
-          result: [{ type: 'rational', n: constCoeff.n, d: constCoeff.d }],
+          result: resultExpr,
           roots: [],
-          verified: true,
+          verified: false,
         };
+
+        return AlgebraicVerifier.verifySimplification(
+          unverified, exprNode, simplifiedAST, varName, env
+        );
       } catch {
         // Non-polynomial expression
       }
     }
 
-    // Case 3: Constant evaluation
+    // Case 3: Constant evaluation (no variable — result is truly a number)
     try {
       const evalRes = new Evaluator(env).evaluate(exprNode);
       const afterStr = formatAST(exprNode);
+      // For constants, verified: true is correct — no variable to sample
       return {
         type: 'derivation',
         originalEquation: beforeStr,
@@ -176,6 +201,83 @@ export class AlgebraicSimplifier {
     };
     walk(node);
     return foundVar;
+  }
+
+  /**
+   * Convert a normalized polynomial back into an AST node.
+   * E.g. coeffs=[BigFraction(-4), BigFraction(5)], degree=1, var='x'
+   * produces the AST for `5 * x + (-4)` which formats as `5x - 4`.
+   */
+  public static polyToAST(poly: { coeffs: BigFraction[]; degree: number }, varName: string): ASTNode {
+    const span = { start: 0, end: 0, line: 0, col: 0 };
+    const terms: ASTNode[] = [];
+
+    for (let deg = poly.coeffs.length - 1; deg >= 0; deg--) {
+      const c = poly.coeffs[deg];
+      if (!c || c.n === 0n) continue;
+
+      let termNode: ASTNode;
+      if (deg === 0) {
+        // Constant term
+        if (c.d === 1n) {
+          if (c.n < 0n) {
+            termNode = { type: 'UnaryOp', op: '-', operand: { type: 'NumberLiteral', raw: (-c.n).toString(), span }, span };
+          } else {
+            termNode = { type: 'NumberLiteral', raw: c.n.toString(), span };
+          }
+        } else {
+          const numNode: ASTNode = c.n < 0n
+            ? { type: 'UnaryOp', op: '-', operand: { type: 'NumberLiteral', raw: (-c.n).toString(), span }, span }
+            : { type: 'NumberLiteral', raw: c.n.toString(), span };
+          termNode = { type: 'BinaryOp', op: '/', left: numNode, right: { type: 'NumberLiteral', raw: c.d.toString(), span }, span };
+        }
+      } else {
+        // Variable term: c * x^deg
+        const varNode: ASTNode = { type: 'Identifier', name: varName, span };
+        let powerNode: ASTNode = deg === 1
+          ? varNode
+          : { type: 'BinaryOp', op: '^', left: varNode, right: { type: 'NumberLiteral', raw: deg.toString(), span }, span };
+
+        if (c.equals(BigFraction.fromInt(1))) {
+          termNode = powerNode;
+        } else if (c.equals(BigFraction.fromInt(-1))) {
+          termNode = { type: 'UnaryOp', op: '-', operand: powerNode, span };
+        } else {
+          let coeffNode: ASTNode;
+          if (c.d === 1n) {
+            if (c.n < 0n) {
+              coeffNode = { type: 'UnaryOp', op: '-', operand: { type: 'NumberLiteral', raw: (-c.n).toString(), span }, span };
+            } else {
+              coeffNode = { type: 'NumberLiteral', raw: c.n.toString(), span };
+            }
+          } else {
+            const absN = c.n < 0n ? -c.n : c.n;
+            const fracNode: ASTNode = { type: 'BinaryOp', op: '/', left: { type: 'NumberLiteral', raw: absN.toString(), span }, right: { type: 'NumberLiteral', raw: c.d.toString(), span }, span };
+            coeffNode = c.n < 0n ? { type: 'UnaryOp', op: '-', operand: fracNode, span } : fracNode;
+          }
+          termNode = { type: 'BinaryOp', op: '*', left: coeffNode, right: powerNode, span };
+        }
+      }
+      terms.push(termNode);
+    }
+
+    if (terms.length === 0) {
+      return { type: 'NumberLiteral', raw: '0', span };
+    }
+
+    // Build the addition chain from left to right
+    let result = terms[0];
+    for (let i = 1; i < terms.length; i++) {
+      const term = terms[i];
+      // If the term is a unary negation, use subtraction instead
+      if (term.type === 'UnaryOp' && term.op === '-') {
+        result = { type: 'BinaryOp', op: '-', left: result, right: term.operand, span };
+      } else {
+        result = { type: 'BinaryOp', op: '+', left: result, right: term, span };
+      }
+    }
+
+    return result;
   }
 
   private static formatPoly(poly: { coeffs: BigFraction[]; degree: number }, varName: string): string {
