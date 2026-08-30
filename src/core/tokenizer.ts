@@ -298,6 +298,10 @@ export class Tokenizer {
           this.advance();
           tokens.push(this.makeToken('COMMA', ',', startPos, startLine, startCol, leadingWhitespace));
           break;
+        case '.':
+          this.advance();
+          tokens.push(this.makeToken('DOT', '.', startPos, startLine, startCol, leadingWhitespace));
+          break;
         default:
           if (this.isIdentStart(char)) {
             const token = this.readIdentifier(startPos, startLine, startCol, leadingWhitespace);

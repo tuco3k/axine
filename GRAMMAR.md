@@ -112,3 +112,16 @@ claim_field    = "statement" , ":" , string
 
 - Every claim contains a mathematical proposition, citation, classification kind, finite shadow expression, and expected value.
 - Kind H claims strictly evaluate to `unknown(not-finitely-checkable)` and cite their human proof.
+
+---
+
+## 7. Graphing & Multi-Surface 3D Composition
+
+```ebnf
+graph_call   = "graph" , "(" , expr_list , [ "," , domain_spec ] , ")" ;
+domain_spec  = identifier , "in" , range , [ "," , identifier , "in" , range ] ;
+```
+
+- When multiple expressions with two shared free variables are provided (e.g. `graph(f(x, y), g(x, y), x in a..b, y in c..d)`), the plotter composes all surfaces into a **single 3D coordinate frame**.
+- The surfaces are depth-sorted together polygon-by-polygon using quad subdivision and Painter's algorithm, yielding accurate mutual occlusion and intersection seams.
+

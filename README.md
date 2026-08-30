@@ -117,7 +117,10 @@ The scope analyzer counts free variables (excluding bound parameters and assigne
 5. **2 Free Variables** $\rightarrow$ **2D Heatmap & 3D Surface** (`graph(sin x cos y)`):
    - 2D Heatmap with Viridis color gradient and colorbar scale.
    - Interactive 3D Surface view with Orbit (drag), Pan (shift+drag), Zoom (scroll), and Reset (double-click).
-6. **0 Free Variables** $\rightarrow$ Descriptive error: `"graph() requires at least one free variable to plot against, found 0."`
+6. **Multiple Surfaces on Shared 3D Axes** (`graph(sin(x) * cos(y), 0.5 * (x - y), x in -3..3, y in -3..3)`):
+   - Composes multiple surfaces into a single unified 3D scene.
+   - Polygon quads are depth-sorted together via Painter's algorithm, producing depth-interleaved intersection seams.
+7. **0 Free Variables** $\rightarrow$ Descriptive error: `"graph() requires at least one free variable to plot against, found 0."`
 
 ---
 

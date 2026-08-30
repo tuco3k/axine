@@ -28,6 +28,7 @@ export type TokenType =
   | 'BANG'
   | 'ASSIGN' // :=
   | 'GLOBAL_ASSIGN' // :≡ or :==
+  | 'DOT' // .
   | 'DOTDOT' // ..
   | 'EQ'     // = or ==
   | 'NEQ'    // != or ≠
@@ -81,7 +82,15 @@ export type ASTNode =
   | DiffNode
   | BigOpNode
   | ClaimNode
-  | IndexNode;
+  | IndexNode
+  | MemberAccessNode;
+
+export interface MemberAccessNode {
+  type: 'MemberAccess';
+  target: ASTNode;
+  property: string;
+  span: Span;
+}
 
 export interface IndexNode {
   type: 'Index';
@@ -411,25 +420,41 @@ export type StepRule =
   | 'multiply-both-sides'
   | 'divide-both-sides'
   | 'cross-multiply'
+  | 'take-root'
+  | 'raise-power'
   | 'factor'
   | 'complete-square'
   | 'quadratic-formula'
-  | 'take-root';
+  | 'cancel-common-factor'
+  | 'evaluate-constant';
+
+export interface DerivationBranch {
+  condition?: string;
+  steps: DerivationStep[];
+  result: Value;
+}
 
 export interface DerivationStep {
-  equation: string;
+  before: string;
+  after: string;
   rule: StepRule;
+  operand?: string;
+  target?: 'both-sides' | 'left' | 'right' | string;
   justification: string;
   sideCondition?: string;
+  branches?: DerivationBranch[];
+  equation?: string;
 }
 
 export interface DerivationValue {
   type: 'derivation';
-  targetVar: string;
+  targetVar?: string;
   originalEquation: string;
   steps: DerivationStep[];
+  result: Value | Value[];
   roots: Value[];
   specialCase?: 'no-solution' | 'all-real' | 'none';
+  verified: boolean;
   excludedRoots?: Value[];
   extraneousRoots?: Value[];
 }
@@ -453,6 +478,24 @@ export interface SolveTraceValue {
   iterations: SolveTraceIteration[];
 }
 
+export interface StepValue {
+  type: 'step';
+  before: string;
+  after: string;
+  rule: StepRule;
+  operand?: string;
+  target?: 'both-sides' | 'left' | 'right' | string;
+  justification: string;
+  sideCondition?: string;
+  branches?: DerivationBranch[];
+}
+
+export interface ExpressionValue {
+  type: 'expression';
+  ast: ASTNode;
+  text: string;
+}
+
 export type Value =
   | RationalValue
   | FloatValue
@@ -470,6 +513,8 @@ export type Value =
   | BuiltinValue
   | GraphValue
   | DerivationValue
+  | StepValue
+  | ExpressionValue
   | SolveTraceValue;
 
 export type Environment = Record<string, Value>;

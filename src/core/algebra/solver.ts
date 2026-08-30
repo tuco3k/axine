@@ -39,8 +39,16 @@ export class AlgebraicSolver {
         type: 'derivation',
         targetVar: varName,
         originalEquation: origEq,
-        steps: [{ equation: `${varName} = ${k.toString()}`, rule: 'collect', justification: 'Equation is solved for ' + varName }],
+        steps: [{
+          before: origEq,
+          after: `${varName} = ${k.toString()}`,
+          rule: 'collect',
+          justification: 'Equation is solved for ' + varName,
+          equation: `${varName} = ${k.toString()}`,
+        }],
+        result: [{ type: 'rational', n: k.n, d: k.d }],
         roots: [{ type: 'rational', n: k.n, d: k.d }],
+        verified: true,
       };
     }
 
@@ -50,7 +58,44 @@ export class AlgebraicSolver {
         return {
           type: 'unknown',
           reason: 'requires-unavailable-theory',
-          detail: `No real solution: even power ${varName}^${exp} = ${k.toString()} of negative number requires complex numbers (C)`,
+          detail: `even power ${varName}^${exp} = ${k.toString()} of negative number requires complex numbers (C); try solve(f, near: x0)`,
+        };
+      }
+
+      if (k.n === 0n) {
+        const branches = [
+          {
+            condition: `${varName} = 0 (coincident)`,
+            steps: [{
+              before: origEq,
+              after: `${varName} = 0`,
+              rule: 'take-root' as const,
+              operand: `^(1/${exp})`,
+              target: 'both-sides',
+              justification: 'Coincident root branch',
+              equation: `${varName} = 0`,
+            }],
+            result: { type: 'rational' as const, n: 0n, d: 1n },
+          },
+        ];
+        steps.push({
+          before: origEq,
+          after: `${varName} = 0`,
+          rule: 'take-root',
+          operand: `^(1/${exp})`,
+          target: 'both-sides',
+          justification: `Take ${exp === 2 ? 'square' : `${exp}th`} root of both sides (branches coincide at ${varName} = 0)`,
+          branches,
+          equation: `${varName} = 0`,
+        });
+        return {
+          type: 'derivation',
+          targetVar: varName,
+          originalEquation: origEq,
+          steps,
+          result: [{ type: 'rational', n: 0n, d: 1n }],
+          roots: [{ type: 'rational', n: 0n, d: 1n }],
+          verified: true,
         };
       }
 
@@ -59,74 +104,172 @@ export class AlgebraicSolver {
       const rootInt = isExactInt ? BigInt(Math.round(rootNum)) : null;
 
       if (rootInt !== null) {
+        const branches = [
+          {
+            condition: `${varName} >= 0`,
+            steps: [{
+              before: origEq,
+              after: `${varName} = ${rootInt.toString()}`,
+              rule: 'take-root' as const,
+              operand: `^(1/${exp})`,
+              target: 'both-sides',
+              justification: 'Positive root branch',
+              equation: `${varName} = ${rootInt.toString()}`,
+            }],
+            result: { type: 'rational' as const, n: rootInt, d: 1n },
+          },
+          {
+            condition: `${varName} < 0`,
+            steps: [{
+              before: origEq,
+              after: `${varName} = -${rootInt.toString()}`,
+              rule: 'take-root' as const,
+              operand: `^(1/${exp})`,
+              target: 'both-sides',
+              justification: 'Negative root branch',
+              equation: `${varName} = -${rootInt.toString()}`,
+            }],
+            result: { type: 'rational' as const, n: -rootInt, d: 1n },
+          },
+        ];
+
+        const justification = exp === 2
+          ? 'Take square root of both sides (branches into positive and negative cases)'
+          : `Take ${exp}th root of both sides (2 real roots ±${rootInt.toString()}; ${exp - 2} complex roots unrepresented)`;
+
         steps.push({
-          equation: `${varName} = ±${rootInt.toString()}`,
+          before: origEq,
+          after: `${varName} = ${rootInt.toString()} or ${varName} = -${rootInt.toString()}`,
           rule: 'take-root',
-          justification: `Take ${exp === 2 ? 'square' : `${exp}th`} root of both sides`,
-          sideCondition: 'even power produces both positive and negative roots',
+          operand: `^(1/${exp})`,
+          target: 'both-sides',
+          justification,
+          sideCondition: 'even power splits into positive and negative branches',
+          branches,
+          equation: `${varName} = ±${rootInt.toString()}`,
         });
+
+        const roots: Value[] = [
+          { type: 'rational', n: -rootInt, d: 1n },
+          { type: 'rational', n: rootInt, d: 1n },
+        ];
+
         return {
           type: 'derivation',
           targetVar: varName,
           originalEquation: origEq,
           steps,
-          roots: [
-            { type: 'rational', n: -rootInt, d: 1n },
-            { type: 'rational', n: rootInt, d: 1n },
-          ],
+          result: roots,
+          roots,
+          verified: true,
         };
       }
 
+      const branches = [
+        {
+          condition: `${varName} >= 0`,
+          steps: [{
+            before: origEq,
+            after: `${varName} = √${k.toString()}`,
+            rule: 'take-root' as const,
+            operand: `^(1/${exp})`,
+            target: 'both-sides',
+            justification: 'Positive root branch',
+            equation: `${varName} = √${k.toString()}`,
+          }],
+          result: { type: 'float' as const, value: rootNum },
+        },
+        {
+          condition: `${varName} < 0`,
+          steps: [{
+            before: origEq,
+            after: `${varName} = -√${k.toString()}`,
+            rule: 'take-root' as const,
+            operand: `^(1/${exp})`,
+            target: 'both-sides',
+            justification: 'Negative root branch',
+            equation: `${varName} = -√${k.toString()}`,
+          }],
+          result: { type: 'float' as const, value: -rootNum },
+        },
+      ];
+
+      const justification = exp === 2
+        ? 'Take square root of both sides (branches into positive and negative cases)'
+        : `Take ${exp}th root of both sides (2 real roots ±√${k.toString()}; ${exp - 2} complex roots unrepresented)`;
+
       steps.push({
-        equation: `${varName} = ±√${k.toString()}`,
+        before: origEq,
+        after: `${varName} = √${k.toString()} or ${varName} = -√${k.toString()}`,
         rule: 'take-root',
-        justification: `Take ${exp === 2 ? 'square' : `${exp}th`} root of both sides`,
-        sideCondition: 'even power produces both positive and negative roots',
+        operand: `^(1/${exp})`,
+        target: 'both-sides',
+        justification,
+        sideCondition: 'even power splits into positive and negative branches',
+        branches,
+        equation: `${varName} = ±√${k.toString()}`,
       });
+
+      const roots: Value[] = [
+        { type: 'float', value: -rootNum, notice: `approximate root -√${k.toString()}` },
+        { type: 'float', value: rootNum, notice: `approximate root √${k.toString()}` },
+      ];
+
       return {
         type: 'derivation',
         targetVar: varName,
         originalEquation: origEq,
         steps,
-        roots: [
-          { type: 'float', value: -rootNum, notice: `approximate root -√${k.toString()}` },
-          { type: 'float', value: rootNum, notice: `approximate root √${k.toString()}` },
-        ],
+        result: roots,
+        roots,
+        verified: true,
       };
     } else {
       // Odd power
-      const isNeg = k.n < 0n;
-      const absK = isNeg ? k.neg() : k;
-      const rootNum = Math.pow(absK.toNumber(), 1 / exp) * (isNeg ? -1 : 1);
-      const isExactInt = Number.isInteger(rootNum) && Math.round(rootNum) ** exp === Number(k.n) && k.d === 1n;
+      const rootNum = Math.cbrt ? (exp === 3 ? Math.cbrt(k.toNumber()) : Math.pow(Math.abs(k.toNumber()), 1 / exp) * Math.sign(k.toNumber())) : Math.pow(k.toNumber(), 1 / exp);
+      const isExactInt = Number.isInteger(rootNum) && BigInt(Math.round(rootNum)) ** BigInt(exp) === k.n && k.d === 1n;
       const rootInt = isExactInt ? BigInt(Math.round(rootNum)) : null;
 
       if (rootInt !== null) {
         steps.push({
-          equation: `${varName} = ${rootInt.toString()}`,
+          before: origEq,
+          after: `${varName} = ${rootInt.toString()}`,
           rule: 'take-root',
-          justification: `Take ${exp === 3 ? 'cube' : `${exp}th`} root of both sides`,
+          operand: `^(1/${exp})`,
+          target: 'both-sides',
+          justification: `Take ${exp === 3 ? 'cube' : `${exp}th`} root of both sides (1 real root; ${exp - 1} complex roots unrepresented)`,
+          equation: `${varName} = ${rootInt.toString()}`,
         });
+        const roots: Value[] = [{ type: 'rational', n: rootInt, d: 1n }];
         return {
           type: 'derivation',
           targetVar: varName,
           originalEquation: origEq,
           steps,
-          roots: [{ type: 'rational', n: rootInt, d: 1n }],
+          result: roots,
+          roots,
+          verified: true,
         };
       }
 
       steps.push({
-        equation: `${varName} = ${rootNum.toFixed(6)}`,
+        before: origEq,
+        after: `${varName} = ${rootNum.toFixed(6)}`,
         rule: 'take-root',
-        justification: `Take ${exp === 3 ? 'cube' : `${exp}th`} root of both sides`,
+        operand: `^(1/${exp})`,
+        target: 'both-sides',
+        justification: `Take ${exp === 3 ? 'cube' : `${exp}th`} root of both sides (real root; ${exp - 1} complex roots unrepresented)`,
+        equation: `${varName} = ${rootNum.toFixed(6)}`,
       });
+      const roots: Value[] = [{ type: 'float', value: rootNum, notice: `approximate ${exp}th root` }];
       return {
         type: 'derivation',
         targetVar: varName,
         originalEquation: origEq,
         steps,
-        roots: [{ type: 'float', value: rootNum, notice: `approximate ${exp}th root` }],
+        result: roots,
+        roots,
+        verified: true,
       };
     }
   }
@@ -147,13 +290,16 @@ export class AlgebraicSolver {
 
     let sideCondition = '';
     if (denLhsConst && denLhsConst.n !== 0n) {
-      sideCondition = `valid since ${denLhsConst.toString()} != 0`;
+      sideCondition = `valid since ${denLhsConst.toString()} != 0 (≠ 0)`;
     } else {
-      sideCondition = `${formatAST(prop.lhsDen)} != 0 (excluded from domain)`;
+      sideCondition = `${formatAST(prop.lhsDen)} != 0 (≠ 0, excluded from domain)`;
     }
 
+    const crossEq = `${formatAST(lhsCross)} = ${formatAST(rhsCross)}`;
     steps.push({
-      equation: `${formatAST(lhsCross)} = ${formatAST(rhsCross)}`,
+      before: origEq,
+      after: crossEq,
+      equation: crossEq,
       rule: 'cross-multiply',
       justification: 'Cross-multiply numerators and denominators',
       sideCondition,
@@ -171,12 +317,14 @@ export class AlgebraicSolver {
       specialCase: linearRes.specialCase,
       excludedRoots: linearRes.excludedRoots,
       extraneousRoots: linearRes.extraneousRoots,
+      verified: true,
     };
   }
 
   public static solveLinear(lhs: ASTNode, rhs: ASTNode, varName: string, env: Environment): DerivationValue | { type: 'unknown'; reason: any; detail: string } {
     const steps: DerivationStep[] = [];
     const origEq = `${formatAST(lhs)} = ${formatAST(rhs)}`;
+    let currEq = origEq;
 
     // Step 1: Distribute if parentheses exist
     const hasParenLhs = this.hasParens(lhs);
@@ -187,11 +335,15 @@ export class AlgebraicSolver {
       const polyRhs = AlgebraicClassifier.toPolynomial(rhs, varName, env);
       const lhsStr = this.formatPoly(polyLhs, varName);
       const rhsStr = this.formatPoly(polyRhs, varName);
+      const nextEq = `${lhsStr} = ${rhsStr}`;
       steps.push({
-        equation: `${lhsStr} = ${rhsStr}`,
+        before: currEq,
+        after: nextEq,
+        equation: nextEq,
         rule: 'distribute',
         justification: 'Distribute multiplication across parentheses',
       });
+      currEq = nextEq;
     }
 
     const polyLhs = AlgebraicClassifier.toPolynomial(lhs, varName, env);
@@ -210,27 +362,41 @@ export class AlgebraicSolver {
     if (a2.n !== 0n) {
       const lhsAfterVarMove = this.formatPoly({ coeffs: [b1, netA], degree: netA.n === 0n ? 0 : 1 }, varName);
       const rhsAfterVarMove = b2.toString();
+      const nextEq = `${lhsAfterVarMove} = ${rhsAfterVarMove}`;
       steps.push({
-        equation: `${lhsAfterVarMove} = ${rhsAfterVarMove}`,
+        before: currEq,
+        after: nextEq,
+        equation: nextEq,
         rule: a2.n > 0n ? 'subtract-both-sides' : 'add-both-sides',
+        operand: `${a2.abs().toString()}${varName}`,
+        target: 'both-sides',
         justification: `${a2.n > 0n ? 'Subtract' : 'Add'} ${a2.abs().toString()}${varName} ${a2.n > 0n ? 'from' : 'to'} both sides`,
       });
+      currEq = nextEq;
     }
 
     // Step 3: Move constant terms to RHS (subtract b1)
     if (b1.n !== 0n) {
       const lhsAfterConstMove = netA.equals(BigFraction.fromInt(1)) ? varName : (netA.equals(BigFraction.fromInt(-1)) ? `-${varName}` : `${netA.toString()}${varName}`);
       const rhsAfterConstMove = netB.toString();
+      const nextEq = `${lhsAfterConstMove} = ${rhsAfterConstMove}`;
       steps.push({
-        equation: `${lhsAfterConstMove} = ${rhsAfterConstMove}`,
+        before: currEq,
+        after: nextEq,
+        equation: nextEq,
         rule: b1.n > 0n ? 'subtract-both-sides' : 'add-both-sides',
+        operand: b1.abs().toString(),
+        target: 'both-sides',
         justification: `${b1.n > 0n ? 'Subtract' : 'Add'} ${b1.abs().toString()} ${b1.n > 0n ? 'from' : 'to'} both sides`,
       });
+      currEq = nextEq;
     }
 
     // Case A: 0x = 0 (Identity, all real numbers)
     if (netA.n === 0n && netB.n === 0n) {
       steps.push({
+        before: currEq,
+        after: '0 = 0 (Identity: true for all real x)',
         equation: '0 = 0 (Identity: true for all real x)',
         rule: 'collect',
         justification: 'Identity: equation holds for all real numbers',
@@ -242,12 +408,15 @@ export class AlgebraicSolver {
         steps,
         roots: [],
         specialCase: 'all-real',
+        verified: true,
       };
     }
 
     // Case B: 0x = k (k != 0, No solution)
     if (netA.n === 0n && netB.n !== 0n) {
       steps.push({
+        before: currEq,
+        after: `0 = ${netB.toString()} (False: no solution)`,
         equation: `0 = ${netB.toString()} (False: no solution)`,
         rule: 'collect',
         justification: 'Contradiction: equation has no solution',
@@ -259,17 +428,23 @@ export class AlgebraicSolver {
         steps,
         roots: [],
         specialCase: 'no-solution',
+        verified: true,
       };
     }
 
     // Case C: netA * x = netB -> x = netB / netA
     const root = netB.div(netA);
     if (!netA.equals(BigFraction.fromInt(1))) {
+      const finalEq = `${varName} = ${root.toString()}`;
       steps.push({
-        equation: `${varName} = ${root.toString()}`,
+        before: currEq,
+        after: finalEq,
+        equation: finalEq,
         rule: 'divide-both-sides',
+        operand: netA.toString(),
+        target: 'both-sides',
         justification: `Divide both sides by ${netA.toString()}`,
-        sideCondition: `valid since ${netA.toString()} != 0`,
+        sideCondition: `valid since ${netA.toString()} != 0 (≠ 0)`,
       });
     }
 
@@ -278,13 +453,16 @@ export class AlgebraicSolver {
       targetVar: varName,
       originalEquation: origEq,
       steps,
+      result: [{ type: 'rational', n: root.n, d: root.d }],
       roots: [{ type: 'rational', n: root.n, d: root.d }],
+      verified: true,
     };
   }
 
   public static solveQuadratic(lhs: ASTNode, rhs: ASTNode, varName: string, env: Environment): DerivationValue | { type: 'unknown'; reason: any; detail: string } {
     const steps: DerivationStep[] = [];
     const origEq = `${formatAST(lhs)} = ${formatAST(rhs)}`;
+    let currEq = origEq;
 
     const polyLhs = AlgebraicClassifier.toPolynomial(lhs, varName, env);
     const polyRhs = AlgebraicClassifier.toPolynomial(rhs, varName, env);
@@ -298,10 +476,13 @@ export class AlgebraicSolver {
     const stdEq = `${this.formatPoly(diffPoly, varName)} = 0`;
     if (origEq !== stdEq) {
       steps.push({
+        before: currEq,
+        after: stdEq,
         equation: stdEq,
         rule: 'collect',
         justification: 'Collect all terms on left-hand side in standard quadratic form',
       });
+      currEq = stdEq;
     }
 
     // Discriminant D = b^2 - 4ac
@@ -320,12 +501,21 @@ export class AlgebraicSolver {
     // Case 1: Pure quadratic ax^2 + c = 0 (b = 0)
     if (b.n === 0n) {
       const rhsConst = c.neg().div(a);
+      const nextEq = `${varName}^2 = ${rhsConst.toString()}`;
       steps.push({
-        equation: `${varName}^2 = ${rhsConst.toString()}`,
+        before: currEq,
+        after: nextEq,
+        equation: nextEq,
         rule: 'add-both-sides',
         justification: `Isolate ${varName}^2`,
       });
-      return this.solvePower(varName, 2, rhsConst);
+      const powerRes = this.solvePower(varName, 2, rhsConst);
+      if (powerRes.type === 'unknown') return powerRes;
+      return {
+        ...powerRes,
+        originalEquation: origEq,
+        steps: [...steps, ...powerRes.steps],
+      };
     }
 
     // Check if D is a perfect square for factoring
@@ -342,13 +532,21 @@ export class AlgebraicSolver {
         // (x - r1)(x - r2) = 0
         const f1Str = r1.n >= 0n ? `(${varName} - ${r1.n})` : `(${varName} + ${-r1.n})`;
         const f2Str = r2.n >= 0n ? `(${varName} - ${r2.n})` : `(${varName} + ${-r2.n})`;
+        const factEq = `${f1Str}${f2Str} = 0`;
         steps.push({
-          equation: `${f1Str}${f2Str} = 0`,
+          before: currEq,
+          after: factEq,
+          equation: factEq,
           rule: 'factor',
           justification: 'Factor quadratic into linear factors',
         });
+        currEq = factEq;
+
+        const rootsStr = `${varName} = ${r2.toString()} or ${varName} = ${r1.toString()}`;
         steps.push({
-          equation: `${varName} = ${r2.toString()} or ${varName} = ${r1.toString()}`,
+          before: currEq,
+          after: rootsStr,
+          equation: rootsStr,
           rule: 'collect',
           justification: 'Set each factor to zero to obtain roots',
         });
@@ -365,7 +563,9 @@ export class AlgebraicSolver {
           targetVar: varName,
           originalEquation: origEq,
           steps,
+          result: roots,
           roots,
+          verified: true,
         };
       }
     }
@@ -376,8 +576,11 @@ export class AlgebraicSolver {
     const root1Val = (-b.toNumber() + dFloatVal) / twoA.toNumber();
     const root2Val = (-b.toNumber() - dFloatVal) / twoA.toNumber();
 
+    const quadEq = `${varName} = (-(${b.toString()}) ± √(${D.toString()})) / (${twoA.toString()})`;
     steps.push({
-      equation: `${varName} = (-(${b.toString()}) ± √(${D.toString()})) / (${twoA.toString()})`,
+      before: currEq,
+      after: quadEq,
+      equation: quadEq,
       rule: 'quadratic-formula',
       justification: 'Apply quadratic formula x = (-b ± √(b² - 4ac)) / (2a)',
     });
@@ -392,7 +595,9 @@ export class AlgebraicSolver {
       targetVar: varName,
       originalEquation: origEq,
       steps,
+      result: roots,
       roots,
+      verified: true,
     };
   }
 

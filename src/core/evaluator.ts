@@ -19,6 +19,7 @@ import {
   UnknownReason,
   UnknownValue,
   Value,
+  StepValue,
 } from './types';
 import { BigFraction } from './numeric/rational';
 import {
@@ -39,6 +40,7 @@ import { FLOAT_CONSTANTS } from './numeric/float';
 import { BUILTIN_FUNCTIONS, CONSTANTS, parse } from './parser';
 import { analyzeAST } from './analyzer';
 import { solveAlgebraic } from './algebra';
+import { AlgebraicSimplifier } from './algebra/simplify';
 import { createError } from './errors';
 import { formatAST } from './formatter';
 
@@ -415,10 +417,30 @@ export class Evaluator {
         const idxNum = Math.round(valueToNumber(indexVal, node.index.span));
         if (targetVal.type === 'list' || targetVal.type === 'tuple') {
           const len = targetVal.elements.length;
-          if (idxNum < 0 || idxNum >= len) {
+          const effectiveIdx = (idxNum >= 0 && idxNum < len) ? idxNum : (idxNum > 0 && idxNum <= len ? idxNum - 1 : -1);
+          if (effectiveIdx === -1) {
             throw createError(`Index out of bounds: index ${idxNum} for collection of length ${len}`, node.span);
           }
-          return targetVal.elements[idxNum];
+          return targetVal.elements[effectiveIdx];
+        }
+        if (targetVal.type === 'derivation') {
+          const len = targetVal.steps.length;
+          const effectiveIdx = (idxNum >= 0 && idxNum < len) ? idxNum : (idxNum > 0 && idxNum <= len ? idxNum - 1 : -1);
+          if (effectiveIdx === -1) {
+            throw createError(`Step index out of bounds: step ${idxNum} for derivation of ${len} steps`, node.span);
+          }
+          const s = targetVal.steps[effectiveIdx];
+          return {
+            type: 'step',
+            before: s.before,
+            after: s.after,
+            rule: s.rule,
+            operand: s.operand,
+            target: s.target,
+            justification: s.justification,
+            sideCondition: s.sideCondition,
+            branches: s.branches,
+          } as StepValue;
         }
         if (targetVal.type === 'matrix') {
           if (idxNum < 0 || idxNum >= targetVal.rows) {
@@ -427,6 +449,47 @@ export class Evaluator {
           return { type: 'list', elements: targetVal.data[idxNum] };
         }
         throw createError(`Cannot index value of type ${targetVal.type}`, node.span);
+      }
+      case 'MemberAccess': {
+        const targetVal = this.evalNode(node.target, currentEnv);
+        const prop = node.property;
+        if (targetVal.type === 'derivation') {
+          if (prop === 'steps') {
+            return {
+              type: 'list',
+              elements: targetVal.steps.map(s => ({
+                type: 'step',
+                before: s.before,
+                after: s.after,
+                rule: s.rule,
+                operand: s.operand,
+                target: s.target,
+                justification: s.justification,
+                sideCondition: s.sideCondition,
+                branches: s.branches,
+              } as StepValue)),
+            };
+          }
+          if (prop === 'result') {
+            return Array.isArray(targetVal.result)
+              ? { type: 'list', elements: targetVal.result }
+              : (targetVal.result ?? { type: 'list', elements: targetVal.roots });
+          }
+          if (prop === 'roots') {
+            return { type: 'list', elements: targetVal.roots };
+          }
+          if (prop === 'verified') {
+            return { type: 'boolean', value: targetVal.verified };
+          }
+        }
+        if (targetVal.type === 'step') {
+          if (prop === 'before') return { type: 'string', value: targetVal.before } as any;
+          if (prop === 'after') return { type: 'string', value: targetVal.after } as any;
+          if (prop === 'rule') return { type: 'string', value: targetVal.rule } as any;
+          if (prop === 'justification') return { type: 'string', value: targetVal.justification } as any;
+          if (prop === 'sideCondition') return { type: 'string', value: targetVal.sideCondition ?? '' } as any;
+        }
+        throw createError(`Property '${prop}' does not exist on type '${targetVal.type}'`, node.span);
       }
       case 'FunctionCall': {
         return this.evalFunctionCall(node, currentEnv);
@@ -532,6 +595,9 @@ export class Evaluator {
     }
     if (callee === 'isolate') {
       return this.evalIsolate(node, currentEnv);
+    }
+    if (callee === 'simplify') {
+      return this.evalSimplify(node, currentEnv);
     }
 
     // Check user defined function
@@ -1467,6 +1533,41 @@ export class Evaluator {
     }
 
     return solveAlgebraic(eqArg, varName, currentEnv, this.source);
+  }
+
+  private evalSimplify(node: FunctionCallNode, currentEnv: Environment): Value {
+    if (node.args.length < 1) {
+      throw createError('simplify(expression, in: x) requires at least 1 argument', node.span, {
+        expected: 'an algebraic expression to simplify',
+        suggestion: 'Write simplify(3x + 2x - 4, in: x)',
+        source: this.source,
+      });
+    }
+
+    let exprArg = node.args[0];
+    if (exprArg.type === 'MemberAccess' || exprArg.type === 'Index' || exprArg.type === 'Identifier') {
+      try {
+        const evalVal = this.evalNode(exprArg, currentEnv);
+        if (evalVal.type === 'string') {
+          exprArg = parse((evalVal as any).value);
+        }
+      } catch {
+        // use exprArg as is
+      }
+    }
+
+    let inVar: string | undefined;
+    for (const arg of node.args.slice(1)) {
+      if (arg.type === 'NamedArg' && (arg.name === 'in' || arg.name === 'for' || arg.name === 'var')) {
+        if (arg.value.type === 'Identifier') {
+          inVar = arg.value.name;
+        }
+      } else if (arg.type === 'Identifier') {
+        inVar = arg.name;
+      }
+    }
+
+    return AlgebraicSimplifier.simplify(exprArg, inVar, currentEnv);
   }
 
   private evalGraph(node: FunctionCallNode, currentEnv: Environment): GraphValue {

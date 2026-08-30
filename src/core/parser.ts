@@ -74,6 +74,8 @@ export const BUILTIN_FUNCTIONS = new Set([
   'any',
   'solve',
   'isolate',
+  'simplify',
+  'filter3d',
   'limit',
   'diff',
   'subsets',
@@ -310,6 +312,32 @@ export class Parser {
           op: 'superscript',
           operand: left,
           exponent: BigInt(superToken.value),
+          span,
+        };
+        continue;
+      }
+
+      // Check for member access: left.property
+      if (this.peek().type === 'DOT' && precedence < PREC_POSTFIX) {
+        this.advance(); // consume .
+        const propToken = this.advance();
+        if (propToken.type !== 'IDENTIFIER') {
+          throw createError(`Expected property identifier after '.'`, propToken.span, {
+            expected: 'a valid property name (e.g. steps, result, after, before)',
+            suggestion: 'Check member access syntax',
+            source: this.source,
+          });
+        }
+        const span: Span = {
+          start: left.span.start,
+          end: propToken.span.end,
+          line: left.span.line,
+          col: left.span.col,
+        };
+        left = {
+          type: 'MemberAccess',
+          target: left,
+          property: propToken.value,
           span,
         };
         continue;
@@ -822,7 +850,7 @@ export class Parser {
     if (this.peek().type !== 'RPAREN') {
       while (true) {
         // Check for named argument: name: value
-        if (this.peek().type === 'IDENTIFIER' && this.peek(1).type === 'COLON') {
+        if ((this.peek().type === 'IDENTIFIER' || this.peek().type === 'IN' || this.peek().type === 'STEP' || this.peek().type === 'NOT') && this.peek(1).type === 'COLON') {
           const nameTok = this.advance();
           this.advance(); // consume :
           const val = this.parseExpression(PREC_NONE);

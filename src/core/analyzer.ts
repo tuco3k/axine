@@ -124,10 +124,10 @@ export function analyzeAST(
             freeVars.add(n.callee);
           }
         }
-        if (n.callee === 'isolate') {
+        if (n.callee === 'isolate' || n.callee === 'simplify') {
           let targetVar = 'x';
           for (const arg of n.args) {
-            if (arg.type === 'NamedArg' && (arg.name === 'for' || arg.name === 'var') && arg.value.type === 'Identifier') {
+            if (arg.type === 'NamedArg' && (arg.name === 'for' || arg.name === 'in' || arg.name === 'var') && arg.value.type === 'Identifier') {
               targetVar = arg.value.name;
             } else if (arg.type === 'Identifier') {
               targetVar = arg.name;

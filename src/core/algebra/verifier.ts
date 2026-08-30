@@ -12,15 +12,16 @@ export class AlgebraicVerifier {
     env: Environment
   ): DerivationValue | { type: 'unknown'; reason: any; detail: string } {
     // 1. Verify claimed roots by substituting back into original equation
-    if (!derivation.specialCase && derivation.roots.length > 0) {
-      for (const root of derivation.roots) {
+    const rootsToVerify = derivation.roots.length > 0 ? derivation.roots : (Array.isArray(derivation.result) ? derivation.result : [derivation.result]).filter(v => v && (v.type === 'rational' || v.type === 'float'));
+    if (!derivation.specialCase && rootsToVerify.length > 0) {
+      for (const root of rootsToVerify) {
         try {
           const testEnv = { ...env, [varName]: root };
           const lhsVal = new Evaluator(testEnv).evaluate(origLhs);
           const rhsVal = new Evaluator(testEnv).evaluate(origRhs);
 
           if (lhsVal.type === 'rational' && rhsVal.type === 'rational') {
-            if (lhsVal.n !== rhsVal.n || lhsVal.d !== rhsVal.d) {
+            if (lhsVal.n * rhsVal.d !== rhsVal.n * lhsVal.d) {
               return {
                 type: 'unknown',
                 reason: 'no-convergence',
@@ -30,11 +31,11 @@ export class AlgebraicVerifier {
           } else {
             const lhsNum = valueToNumber(lhsVal);
             const rhsNum = valueToNumber(rhsVal);
-            if (Math.abs(lhsNum - rhsNum) > 1e-9) {
+            if (Math.abs(lhsNum - rhsNum) > 1e-12) {
               return {
                 type: 'unknown',
                 reason: 'no-convergence',
-                detail: `derivation failed self-verification: root substitution error |${lhsNum} - ${rhsNum}| > 1e-9`,
+                detail: `derivation failed self-verification: root substitution error |${lhsNum} - ${rhsNum}| > 1e-12`,
               };
             }
           }

@@ -12,12 +12,15 @@ export class DocumentEditor {
   private gutterEl!: HTMLElement;
   private statusBadge!: HTMLElement;
   private statsBadge!: HTMLElement;
-  private modalEl!: HTMLElement;
   private scopePanelEl!: HTMLElement;
   private framesPanelEl!: HTMLElement;
-  private activeTab: 'results' | 'scope' | 'trace' | 'frames' = 'results';
+  private activeTab: 'results' | 'visual' | 'scope' | 'trace' | 'frames' = 'results';
   private activePlotter: Canvas2DPlotter | Surface3DPlotter | null = null;
-  private frames: Array<{ id: number; line: number; type: string; summary: string; timestamp: Date; result: Value }> = [];
+  private frames: Array<{ id: number; line: number; type: string; summary: string; timestamp: number; value: Value }> = [];
+  private nextFrameId: number = 1;
+  private isPinned: boolean = false;
+  private pinnedLine: number | null = null;
+  private activeVisualLine: number | null = null;
 
   constructor(container: HTMLElement, initialText?: string) {
     this.container = container;
@@ -78,9 +81,12 @@ export class DocumentEditor {
             >${this.state.getText()}</textarea>
           </div>
 
+          <div id="doc-splitter" class="doc-splitter" title="Drag to resize panel"></div>
+
           <div class="doc-pane-right">
             <div class="doc-work-panel-tabs">
               <button class="doc-tab-btn active" data-tab="results">Results</button>
+              <button class="doc-tab-btn" data-tab="visual">Visual</button>
               <button class="doc-tab-btn" data-tab="scope">Scope</button>
               <button class="doc-tab-btn" data-tab="trace">Trace & Fuel</button>
               <button class="doc-tab-btn" data-tab="frames">Frames (<span id="frame-count">0</span>)</button>
@@ -88,6 +94,25 @@ export class DocumentEditor {
 
             <div id="tab-results-panel" class="doc-tab-content active">
               <div id="doc-gutter" class="doc-gutter"></div>
+            </div>
+
+            <div id="tab-visual-panel" class="doc-tab-content">
+              <div class="doc-visual-header">
+                <div class="doc-visual-title-row">
+                  <span id="visual-title" class="doc-panel-section-title">Visual Output</span>
+                  <button id="visual-pin-btn" class="doc-pin-btn" title="Pin visual to current line">📌 Pin</button>
+                </div>
+                <div id="visual-meta" class="doc-visual-meta">Line 1: No visual content</div>
+              </div>
+              <div id="visual-body" class="doc-visual-body">
+                <div id="visual-empty-state" class="doc-visual-empty">Select or type a plot or derivation to visualize</div>
+                <div id="visual-canvas-wrapper" class="doc-visual-canvas-wrapper hidden">
+                  <canvas id="visual-canvas"></canvas>
+                </div>
+                <div id="visual-derivation-wrapper" class="doc-visual-derivation-wrapper hidden">
+                  <div id="visual-derivation-content"></div>
+                </div>
+              </div>
             </div>
 
             <div id="tab-scope-panel" class="doc-tab-content">
@@ -123,18 +148,6 @@ export class DocumentEditor {
             </div>
           </div>
         </main>
-
-        <div id="doc-plot-modal" class="doc-plot-modal hidden">
-          <div class="doc-modal-content">
-            <div class="doc-modal-header">
-              <span id="doc-modal-title">Interactive Plot</span>
-              <button id="doc-modal-close" class="doc-modal-close-btn">&times;</button>
-            </div>
-            <div class="doc-modal-body">
-              <canvas id="doc-modal-canvas"></canvas>
-            </div>
-          </div>
-        </div>
       </div>
     `;
 
@@ -143,9 +156,15 @@ export class DocumentEditor {
     this.gutterEl = this.container.querySelector('#doc-gutter') as HTMLElement;
     this.statusBadge = this.container.querySelector('#doc-status-badge') as HTMLElement;
     this.statsBadge = this.container.querySelector('#doc-stats-badge') as HTMLElement;
-    this.modalEl = this.container.querySelector('#doc-plot-modal') as HTMLElement;
     this.scopePanelEl = this.container.querySelector('#doc-scope-list') as HTMLElement;
     this.framesPanelEl = this.container.querySelector('#doc-frames-list') as HTMLElement;
+
+    // Apply persisted right pane width
+    const savedWidth = localStorage.getItem('doc_panel_width');
+    if (savedWidth) {
+      const rightPane = this.container.querySelector('.doc-pane-right') as HTMLElement;
+      if (rightPane) rightPane.style.width = savedWidth;
+    }
   }
 
   private bindEvents() {
@@ -225,12 +244,70 @@ export class DocumentEditor {
       this.state.setText('');
     });
 
-    // Modal close
-    const closeBtn = this.container.querySelector('#doc-modal-close') as HTMLButtonElement;
-    closeBtn.addEventListener('click', () => this.closePlotModal());
-    this.modalEl.addEventListener('click', (e) => {
-      if (e.target === this.modalEl) this.closePlotModal();
+    // Draggable Splitter
+    const splitter = this.container.querySelector('#doc-splitter') as HTMLElement;
+    const rightPane = this.container.querySelector('.doc-pane-right') as HTMLElement;
+    let isDragging = false;
+
+    splitter.addEventListener('mousedown', () => {
+      isDragging = true;
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
     });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const containerRect = this.container.getBoundingClientRect();
+      const newWidth = Math.max(300, Math.min(containerRect.width - 200, containerRect.right - e.clientX));
+      rightPane.style.width = `${newWidth}px`;
+      localStorage.setItem('doc_panel_width', `${newWidth}px`);
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        if (this.activePlotter) this.activePlotter.render();
+      }
+    });
+
+    // Pin Control
+    const pinBtn = this.container.querySelector('#visual-pin-btn') as HTMLButtonElement;
+    pinBtn.addEventListener('click', () => {
+      this.isPinned = !this.isPinned;
+      pinBtn.textContent = this.isPinned ? '📌 Pinned' : '📌 Pin';
+      pinBtn.classList.toggle('pinned', this.isPinned);
+      if (this.isPinned) {
+        this.pinnedLine = this.activeVisualLine;
+      } else {
+        this.pinnedLine = null;
+        this.syncVisualToCursor();
+      }
+    });
+
+    // Cursor synchronization
+    const syncToCursor = () => {
+      if (this.isPinned) return;
+      const lineIdx = this.getCursorLineIndex();
+      this.displayVisualForLine(lineIdx, false);
+    };
+    this.textarea.addEventListener('keyup', syncToCursor);
+    this.textarea.addEventListener('click', syncToCursor);
+  }
+
+  private getCursorLineIndex(): number {
+    const textBefore = this.textarea.value.substring(0, this.textarea.selectionStart);
+    return textBefore.split('\n').length - 1;
+  }
+
+  private syncVisualToCursor() {
+    if (this.isPinned && this.pinnedLine !== null) {
+      this.displayVisualForLine(this.pinnedLine, false);
+      return;
+    }
+    const lineIdx = this.getCursorLineIndex();
+    this.displayVisualForLine(lineIdx, false);
   }
 
   private renderWorkPanel(records: DocumentLineRecord[], isEvaluating: boolean) {
@@ -282,17 +359,26 @@ export class DocumentEditor {
     }
     this.gutterEl.innerHTML = gutterHtml;
 
-    // Attach plot click handlers
+    // Attach plot click handlers to focus Visual tab
     const plotButtons = this.gutterEl.querySelectorAll('.doc-plot-btn');
     plotButtons.forEach(btn => {
       btn.addEventListener('click', () => {
         const lineIdx = parseInt((btn as HTMLElement).getAttribute('data-line') ?? '0', 10);
-        const record = records[lineIdx];
-        if (record && record.result && record.result.type === 'graph') {
-          this.openPlotModal(record.result);
-        }
+        this.displayVisualForLine(lineIdx, true);
       });
     });
+
+    // Row clicks also focus visual panel
+    const rows = this.gutterEl.querySelectorAll('.doc-gutter-row');
+    rows.forEach(row => {
+      row.addEventListener('click', () => {
+        const lineIdx = parseInt((row as HTMLElement).getAttribute('data-line') ?? '0', 10);
+        this.displayVisualForLine(lineIdx, true);
+      });
+    });
+
+    // Update active visual if unpinned or if currently in Visual tab
+    this.syncVisualToCursor();
 
     // 3. Scope Tab
     let scopeHtml = '';
@@ -325,35 +411,169 @@ export class DocumentEditor {
     this.renderFrames();
   }
 
+  public displayVisualForLine(lineIdx: number, switchTab: boolean = true) {
+    this.activeVisualLine = lineIdx;
+    const records = this.state.getRecords();
+    let record = records[lineIdx];
+
+    // If current line has no visual, find the nearest preceding visual or derivation
+    if (!record || !record.result || (record.result.type !== 'graph' && record.result.type !== 'derivation')) {
+      for (let k = lineIdx - 1; k >= 0; k--) {
+        if (records[k]?.result?.type === 'graph' || records[k]?.result?.type === 'derivation') {
+          record = records[k];
+          break;
+        }
+      }
+    }
+
+    if (switchTab) {
+      this.activeTab = 'visual';
+      const tabButtons = this.container.querySelectorAll('.doc-tab-btn');
+      tabButtons.forEach(b => {
+        b.classList.toggle('active', (b as HTMLElement).getAttribute('data-tab') === 'visual');
+      });
+      this.container.querySelectorAll('.doc-tab-content').forEach(p => p.classList.remove('active'));
+      const panel = this.container.querySelector('#tab-visual-panel');
+      if (panel) panel.classList.add('active');
+    }
+
+    const titleEl = this.container.querySelector('#visual-title') as HTMLElement;
+    const metaEl = this.container.querySelector('#visual-meta') as HTMLElement;
+    const emptyStateEl = this.container.querySelector('#visual-empty-state') as HTMLElement;
+    const canvasWrapper = this.container.querySelector('#visual-canvas-wrapper') as HTMLElement;
+    const derivWrapper = this.container.querySelector('#visual-derivation-wrapper') as HTMLElement;
+    const derivContent = this.container.querySelector('#visual-derivation-content') as HTMLElement;
+    const canvas = this.container.querySelector('#visual-canvas') as HTMLCanvasElement;
+
+    if (!record || !record.result || (record.result.type !== 'graph' && record.result.type !== 'derivation')) {
+      if (titleEl) titleEl.textContent = 'Visual Output';
+      if (metaEl) metaEl.textContent = `Line ${lineIdx + 1}: No visual content`;
+      if (emptyStateEl) emptyStateEl.classList.remove('hidden');
+      if (canvasWrapper) canvasWrapper.classList.add('hidden');
+      if (derivWrapper) derivWrapper.classList.add('hidden');
+      if (this.activePlotter) {
+        this.activePlotter.dispose();
+        this.activePlotter = null;
+      }
+      return;
+    }
+
+    if (emptyStateEl) emptyStateEl.classList.add('hidden');
+
+    if (record.result.type === 'graph') {
+      const graphVal = record.result as GraphValue;
+      if (titleEl) titleEl.textContent = `Plot: ${graphVal.spec.kind}`;
+      if (metaEl) metaEl.textContent = `Line ${lineIdx + 1}: ${graphVal.spec.dimensionality}D visualization`;
+
+      if (derivWrapper) derivWrapper.classList.add('hidden');
+      if (canvasWrapper) canvasWrapper.classList.remove('hidden');
+
+      if (this.activePlotter) {
+        this.activePlotter.dispose();
+        this.activePlotter = null;
+      }
+
+      const spec = graphVal.spec;
+      if (spec.dimensionality === 2 && (spec.surface || spec.parametric?.zExpr || spec.kind === 'surface' || spec.kind === 'pointcloud')) {
+        this.activePlotter = new Surface3DPlotter(canvas, spec, {});
+      } else {
+        this.activePlotter = new Canvas2DPlotter(canvas, spec, {});
+      }
+      this.activePlotter.render();
+    } else if (record.result.type === 'derivation') {
+      const derivVal = record.result as DerivationValue;
+      if (titleEl) titleEl.textContent = `Derivation: ${derivVal.targetVar ?? 'Expression'}`;
+      if (metaEl) metaEl.textContent = `Line ${lineIdx + 1}: ${derivVal.steps.length} steps (${derivVal.verified ? 'Verified' : 'Unverified'})`;
+
+      if (canvasWrapper) canvasWrapper.classList.add('hidden');
+      if (derivWrapper) derivWrapper.classList.remove('hidden');
+      if (this.activePlotter) {
+        this.activePlotter.dispose();
+        this.activePlotter = null;
+      }
+
+      if (derivContent) {
+        derivContent.innerHTML = this.renderDerivationFull(derivVal);
+      }
+    }
+  }
+
+  private renderDerivationFull(deriv: DerivationValue): string {
+    let html = `<div class="visual-derivation-tree">`;
+    html += `<div class="derivation-orig-eq">${escapeHtml(deriv.originalEquation)}</div>`;
+
+    for (let i = 0; i < deriv.steps.length; i++) {
+      const step = deriv.steps[i];
+      html += `
+        <div class="derivation-step-card">
+          <div class="step-card-header">
+            <span class="step-num">Step ${i + 1}</span>
+            <span class="step-rule-badge">${escapeHtml(step.rule)}</span>
+          </div>
+          <div class="step-card-eq">${escapeHtml(step.after || step.equation || '')}</div>
+          <div class="step-card-just">${escapeHtml(step.justification)}</div>
+          ${step.sideCondition ? `<div class="step-card-cond">${escapeHtml(step.sideCondition)}</div>` : ''}
+        </div>
+      `;
+
+      if (step.branches && step.branches.length > 0) {
+        html += `<div class="derivation-fork-container">`;
+        for (const branch of step.branches) {
+          html += `
+            <div class="derivation-branch-column">
+              <div class="branch-condition-header">${escapeHtml(branch.condition ?? 'Branch')}</div>
+              ${branch.steps.map(bs => `
+                <div class="branch-step-card">
+                  <div class="branch-step-eq">${escapeHtml(bs.after || bs.equation || '')}</div>
+                  <div class="branch-step-just">${escapeHtml(bs.justification)}</div>
+                </div>
+              `).join('')}
+              <div class="branch-result">Root: ${this.formatValue(branch.result)}</div>
+            </div>
+          `;
+        }
+        html += `</div>`;
+      }
+    }
+
+    if (deriv.roots && deriv.roots.length > 0) {
+      html += `<div class="derivation-final-roots">Roots: ${deriv.roots.map(r => this.formatValue(r)).join(', ')}</div>`;
+    }
+    html += `</div>`;
+    return html;
+  }
+
   private addFrame(line: number, result: Value) {
     if (this.frames.some(f => f.line === line && f.type === result.type)) return;
     const summary = result.type === 'claim' ? (result as any).statement : this.formatValue(result);
-    this.frames.unshift({
-      id: Date.now() + Math.random(),
+    this.frames.push({
+      id: this.nextFrameId++,
       line,
       type: result.type,
       summary,
-      timestamp: new Date(),
-      result,
+      timestamp: Date.now(),
+      value: result,
     });
-    if (this.frames.length > 20) this.frames.pop();
-    const frameCountEl = this.container.querySelector('#frame-count');
-    if (frameCountEl) frameCountEl.textContent = `${this.frames.length}`;
+    if (this.frames.length > 20) this.frames.shift();
   }
 
   private renderFrames() {
+    const countEl = this.container.querySelector('#frame-count');
+    if (countEl) countEl.textContent = `${this.frames.length}`;
+
     if (this.frames.length === 0) {
-      this.framesPanelEl.innerHTML = `<div class="doc-scope-empty">No visualization frames recorded</div>`;
+      this.framesPanelEl.innerHTML = `<div class="doc-frames-empty">No visual frames recorded</div>`;
       return;
     }
+
     let framesHtml = '';
-    for (const frame of this.frames) {
+    for (const frame of [...this.frames].reverse()) {
       framesHtml += `
-        <div class="doc-frame-card">
-          <div class="frame-header">
-            <span class="frame-badge">${frame.type.toUpperCase()}</span>
+        <div class="doc-frame-card" data-frame-id="${frame.id}">
+          <div class="frame-card-header">
+            <span class="frame-type">${frame.type}</span>
             <span class="frame-line">Line ${frame.line}</span>
-            <span class="frame-time">${frame.timestamp.toLocaleTimeString()}</span>
+            <span class="frame-time">${new Date(frame.timestamp).toLocaleTimeString()}</span>
           </div>
           <div class="frame-summary">${escapeHtml(frame.summary)}</div>
         </div>
@@ -363,140 +583,67 @@ export class DocumentEditor {
   }
 
   private formatGutterRow(rec: DocumentLineRecord): string {
-    if (rec.classification.state === 'PROSE') {
-      return `<span class="doc-gutter-prose"></span>`;
-    }
-
-    if (rec.classification.state === 'INCOMPLETE') {
-      return `<span class="doc-gutter-incomplete">...</span>`;
-    }
-
-    if (rec.classification.state === 'ERROR') {
-      const msg = rec.error?.message ?? 'Syntax error';
-      return `
-        <div class="doc-gutter-error" title="${escapeHtml(msg)}">
-          <span class="doc-error-tag">Error</span>
-          <span class="doc-error-msg">${escapeHtml(msg)}</span>
-        </div>
-      `;
+    if (rec.type === 'PROSE') return '';
+    if (rec.type === 'INCOMPLETE') return '<span class="doc-gutter-incomplete">⋯</span>';
+    if (rec.type === 'ERROR') {
+      return `<span class="doc-gutter-error" title="${escapeHtml(rec.error?.message ?? '')}">⚠ ${escapeHtml(rec.error?.message ?? 'Error')}</span>`;
     }
 
     if (rec.result) {
-      let noticeHtml = '';
-      if ('notice' in rec.result && rec.result.notice) {
-        noticeHtml = `<span class="doc-notice-badge" title="${escapeHtml(rec.result.notice)}">notice: float approx</span>`;
-      }
-
-      let shadowedHtml = '';
-      if (rec.isShadowed) {
-        shadowedHtml = `<span class="doc-shadowed-badge" title="Variable was re-defined and shadowed">(shadowed)</span>`;
-      }
-
       if (rec.result.type === 'graph') {
-        return `
-          <div class="doc-gutter-result graph">
-            <button class="doc-plot-btn" data-line="${rec.lineIndex}">📈 View Plot (${rec.result.spec.kind})</button>
-          </div>
-        `;
+        return `<button class="doc-plot-btn" data-line="${rec.line - 1}">📈 View Plot (${rec.result.spec.kind})</button>`;
       }
-
-      if (rec.result.type === 'claim') {
-        const claim = rec.result as any;
-        const statusClass = claim.verified ? 'verified' : (claim.shadowVal?.type === 'unknown' ? 'unknown' : 'falsified');
-        const statusIcon = claim.verified ? '✓ Verified' : (claim.shadowVal?.type === 'unknown' ? `? Unknown (${claim.shadowVal.reason})` : '✗ Falsified');
-        return `
-          <div class="doc-gutter-claim ${statusClass}">
-            <span class="claim-badge">${statusIcon}</span>
-            <span class="claim-title">${escapeHtml(claim.name)}</span>
-          </div>
-        `;
-      }
-
-      if (rec.result.type === 'unknown') {
-        const unk = rec.result as any;
-        return `
-          <div class="doc-gutter-unknown" title="${escapeHtml(unk.detail ?? unk.reason)}">
-            <span class="unknown-badge">? unknown(${unk.reason})</span>
-          </div>
-        `;
-      }
-
-      if (rec.result.type === 'matrix') {
-        return `
-          <div class="doc-gutter-result matrix">
-            <span class="matrix-badge">Matrix [${rec.result.rows}x${rec.result.cols}]</span>
-            <span class="doc-result-value">${escapeHtml(this.formatValue(rec.result))}</span>
-          </div>
-        `;
-      }
-
       if (rec.result.type === 'derivation') {
-        const deriv = rec.result;
-        return `
-          <div class="doc-gutter-result derivation">
-            <div class="derivation-steps">
-              ${deriv.steps.map(step => `
-                <div class="derivation-step">
-                  <div class="step-main">
-                    <span class="step-eq">${escapeHtml(step.equation)}</span>
-                    <span class="step-rule" title="${escapeHtml(step.justification)}">${escapeHtml(step.rule)}</span>
-                  </div>
-                  ${step.sideCondition ? `<div class="step-condition">${escapeHtml(step.sideCondition)}</div>` : ''}
-                </div>
-              `).join('')}
-            </div>
-          </div>
-        `;
+        const deriv = rec.result as DerivationValue;
+        return this.formatDerivationGutter(deriv);
       }
-
       if (rec.result.type === 'solve_trace') {
-        const traceVal = rec.result;
-        return `
-          <div class="doc-gutter-result solve-trace">
-            <div class="trace-header">
-              <span class="matrix-badge">${traceVal.method === 'newton' ? 'Newton' : 'Bisection'} (${traceVal.iterations.length} iters)</span>
-              <span class="doc-result-value">x ≈ ${escapeHtml(this.formatValue(traceVal.root))}</span>
-            </div>
-            <div class="trace-table-wrapper">
-              <table class="trace-table">
-                <thead>
-                  <tr>
-                    <th>Iter</th>
-                    <th>x</th>
-                    <th>f(x)</th>
-                    <th>Error</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${traceVal.iterations.slice(0, 10).map(it => `
-                    <tr>
-                      <td>${it.n}</td>
-                      <td>${it.x.toFixed(6)}</td>
-                      <td>${it.fx.toExponential(2)}</td>
-                      <td>${it.error.toExponential(2)}</td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        `;
+        const traceVal = rec.result as SolveTraceValue;
+        return this.formatSolveTraceGutter(traceVal);
       }
-
-      const formattedVal = this.formatValue(rec.result);
-      return `
-        <div class="doc-gutter-result">
-          ${shadowedHtml}
-          ${noticeHtml}
-          <span class="doc-result-value">${escapeHtml(formattedVal)}</span>
-        </div>
-      `;
+      if (rec.result.type === 'claim') {
+        const verified = (rec.result as any).verified;
+        const kind = (rec.result as any).kind;
+        return `<span class="doc-claim-badge ${verified ? 'verified' : 'unverified'}">[Claim ${kind}: ${verified ? 'Verified' : 'Unverified'}]</span>`;
+      }
+      return `<div class="doc-gutter-result"><span class="doc-result-value">${escapeHtml(this.formatValue(rec.result))}</span></div>`;
     }
 
     return '';
   }
 
-  private formatValue(val: Value): string {
+  private formatDerivationGutter(deriv: DerivationValue): string {
+    let html = `<div class="derivation">`;
+    for (const step of deriv.steps) {
+      html += `
+        <div class="derivation-step">
+          <div class="step-main">
+            <span class="step-eq">${escapeHtml(step.after || step.equation || '')}</span>
+            <span class="step-rule">${escapeHtml(step.rule)}</span>
+          </div>
+          ${step.sideCondition ? `<div class="step-condition">${escapeHtml(step.sideCondition)}</div>` : ''}
+        </div>
+      `;
+    }
+    html += `</div>`;
+    return html;
+  }
+
+  private formatSolveTraceGutter(trace: SolveTraceValue): string {
+    let html = `<div class="solve-trace">`;
+    html += `<div class="trace-header">${trace.method === 'newton' ? 'Newton' : 'Bisection'} (${trace.iterations.length} iters) x ≈ ${escapeHtml(this.formatValue(trace.root))}</div>`;
+    html += `<table class="trace-table"><thead><tr><th>Iter</th><th>x</th><th>f(x)</th><th>Error</th></tr></thead><tbody>`;
+    for (const it of trace.iterations) {
+      const xStr = it.x.toFixed(6);
+      const fxStr = it.fx.toExponential(2);
+      const errStr = it.error.toExponential(2);
+      html += `<tr><td>${it.n}</td><td>${xStr}</td><td>${fxStr}</td><td>${errStr}</td></tr>`;
+    }
+    html += `</tbody></table></div>`;
+    return html;
+  }
+
+  public formatValue(val: Value): string {
     switch (val.type) {
       case 'rational':
         if (val.d === 1n) return val.n.toString();
@@ -542,36 +689,11 @@ export class DocumentEditor {
     }
   }
 
-  private openPlotModal(graphVal: any) {
-    if (this.activePlotter) {
-      this.activePlotter.dispose();
-      this.activePlotter = null;
-    }
-
-    this.modalEl.classList.remove('hidden');
-    const canvas = this.modalEl.querySelector('#doc-modal-canvas') as HTMLCanvasElement;
-    const titleEl = this.modalEl.querySelector('#doc-modal-title') as HTMLElement;
-    titleEl.textContent = `Interactive Plot: ${graphVal.spec.kind}`;
-
-    const spec = graphVal.spec;
-    if (spec.dimensionality === 2 && (spec.surface || spec.parametric?.zExpr || spec.kind === 'surface' || spec.kind === 'pointcloud')) {
-      this.activePlotter = new Surface3DPlotter(canvas, spec, {});
-    } else {
-      this.activePlotter = new Canvas2DPlotter(canvas, spec, {});
-    }
-    this.activePlotter.render();
-  }
-
-  private closePlotModal() {
-    if (this.activePlotter) {
-      this.activePlotter.dispose();
-      this.activePlotter = null;
-    }
-    this.modalEl.classList.add('hidden');
-  }
-
   public dispose() {
-    this.closePlotModal();
+    if (this.activePlotter) {
+      this.activePlotter.dispose();
+      this.activePlotter = null;
+    }
     this.state.dispose();
   }
 }
