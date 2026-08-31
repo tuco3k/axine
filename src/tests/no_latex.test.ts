@@ -51,4 +51,27 @@ describe('Part 9.3: Zero LaTeX Command In String Literals Enforcement', () => {
 
     expect(violations.length).toBe(0);
   });
+
+  it('asserts zero unrendered bare _ or ^ in rendered explainer outputs', async () => {
+    const { explainSymbol } = await import('../core/explainer');
+    const contexts = [
+      explainSymbol('dx', { parentType: 'integral', integrand: 'x^2', variableName: 'x' }),
+      explainSymbol('dx', { parentType: 'derivative', variableName: 'x' }),
+      explainSymbol('\u2202', { parentType: 'derivative', variableName: 'x' }),
+      explainSymbol('\u222b', { parentType: 'integral' }),
+      explainSymbol('\u03a3', { parentType: 'summation' }),
+      explainSymbol('lim', { parentType: 'limit' }),
+    ];
+
+    for (const exp of contexts) {
+      for (const key of ['whatItIs', 'whyItIsHere', 'showMe', 'goDeeper', 'role'] as const) {
+        const html = exp[key];
+        // Strip out HTML tags to examine remaining text content
+        const text = html.replace(/<[^>]+>/g, '');
+        // Assert no bare _ or ^ in text
+        expect(text).not.toContain('_');
+        expect(text).not.toContain('^');
+      }
+    }
+  });
 });

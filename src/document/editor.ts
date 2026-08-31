@@ -360,10 +360,23 @@ export class DocumentEditor {
       const integrand = target.getAttribute('data-integrand') || '';
       const boundsLower = target.getAttribute('data-bounds-lower') || '';
       const boundsUpper = target.getAttribute('data-bounds-upper') || '';
+      const varName = target.getAttribute('data-var') || 'x';
+
+      // Find current line text from document
+      const lineEl = target.closest('.doc-typeset-line');
+      let lineText = '';
+      if (lineEl) {
+        const lineIdx = Array.from(this.overlayEl.querySelectorAll('.doc-typeset-line')).indexOf(lineEl);
+        if (lineIdx !== -1) {
+          lineText = this.textarea.value.split('\n')[lineIdx]?.trim() || '';
+        }
+      }
 
       const explanation = explainSymbol(symbol, {
         parentType,
         integrand,
+        exprString: lineText,
+        variableName: varName,
         bounds: { lower: boundsLower, upper: boundsUpper },
       });
 

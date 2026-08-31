@@ -1291,7 +1291,7 @@ html, body {
 
 .tm-int-limits {
   display: inline-flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   justify-content: space-between;
   height: 2.1em;
   margin-left: -0.05em;
@@ -1505,12 +1505,28 @@ html, body {
   color: var(--color-text-primary);
 }
 
+.doc-math-popover {
+  position: fixed;
+  z-index: 10000;
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  background-color: var(--color-bg-surface-elevated);
+  border: var(--border-width-default) solid var(--color-border-default);
+  border-radius: var(--border-radius-md);
+  box-shadow: var(--shadow-floating);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: var(--font-family-ui);
+  animation: popoverFadeIn var(--duration-fast) ease-out;
+}
+
 .popover-body {
   padding: var(--space-sm);
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
-  max-height: 380px;
+  max-height: 520px;
   overflow-y: auto;
 }
 
@@ -1542,6 +1558,145 @@ html, body {
   padding: var(--space-xs);
   color: var(--color-text-primary);
   font-size: var(--font-size-xs);
+}
+
+/* =========================================================================
+   Interactive Explainer Visualizer (Phase 9 — Gate F3)
+   ========================================================================= */
+.popover-visualizer-container {
+  margin-top: var(--space-xs);
+  background-color: #060913;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--border-radius-sm);
+  padding: var(--space-xs);
+  overflow: hidden;
+}
+
+.vis-widget-root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.vis-canvas-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #080d1a;
+  border-radius: var(--border-radius-xs);
+  overflow: hidden;
+}
+
+.vis-canvas {
+  display: block;
+  width: 340px;
+  height: 160px;
+}
+
+.vis-controls-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: 2px 4px;
+}
+
+.vis-control-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vis-label {
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.vis-badge {
+  font-family: var(--font-family-code);
+  font-size: 10px;
+  background-color: var(--color-accent-subtle);
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent-border);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.vis-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-bg-surface-hover);
+  outline: none;
+}
+
+.vis-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  cursor: pointer;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+  transition: transform var(--duration-fast);
+}
+
+.vis-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.vis-readouts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px 8px;
+  padding: 6px 8px;
+  background-color: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.vis-stat-item {
+  font-size: 11px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.vis-stat-full {
+  grid-column: span 2;
+}
+
+.vis-stat-name {
+  color: var(--color-text-tertiary);
+  font-weight: var(--font-weight-normal);
+}
+
+.vis-stat-val {
+  font-family: var(--font-family-code);
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.vis-status-pill {
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+}
+
+.vis-status-pill.valid {
+  background-color: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}
+
+.vis-status-pill.invalid {
+  background-color: rgba(244, 63, 94, 0.2);
+  color: #fb7185;
 }
 
 .popover-details {

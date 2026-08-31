@@ -2,11 +2,12 @@
  * Explainable Math Popover Component
  * 
  * Displays anchored popovers for mathematical constructs and symbols with
- * the 4 required sections: WHAT IT IS, WHY IT IS HERE, SHOW ME, and GO DEEPER.
+ * the 4 required sections: WHAT IT IS, WHY IT IS HERE, SHOW ME (with live visualizer), and GO DEEPER.
  */
 
 import { NodeExplanation } from '../core/explainer';
 import { typesetMath } from '../core/math_typeset';
+import { ExplainerVisualizer } from '../plot/explainer_visualizer';
 
 export class MathPopover {
   private el: HTMLElement;
@@ -14,6 +15,7 @@ export class MathPopover {
   private currentAnchor: HTMLElement | null = null;
   private keyListener?: (e: KeyboardEvent) => void;
   private clickOutsideListener?: (e: MouseEvent) => void;
+  private activeVisualizer?: ExplainerVisualizer;
 
   constructor() {
     this.el = document.createElement('div');
@@ -73,6 +75,7 @@ export class MathPopover {
           <div class="popover-section-label">3. SHOW ME</div>
           <div class="popover-section-content">
             <div class="popover-showme-preview">${explanation.showMe}</div>
+            ${explanation.visualization ? `<div class="popover-visualizer-container" id="popover-vis-container"></div>` : ''}
           </div>
         </div>
 
@@ -86,6 +89,14 @@ export class MathPopover {
       </div>
     `;
 
+    // Instantiate interactive visualizer if config exists
+    if (explanation.visualization) {
+      const visContainer = this.el.querySelector('#popover-vis-container') as HTMLElement;
+      if (visContainer) {
+        this.activeVisualizer = new ExplainerVisualizer(visContainer, explanation.visualization);
+      }
+    }
+
     const closeBtn = this.el.querySelector('.popover-close-btn');
     closeBtn?.addEventListener('click', () => this.hide());
 
@@ -95,8 +106,8 @@ export class MathPopover {
 
   private positionAnchor(anchorEl: HTMLElement) {
     const anchorRect = anchorEl.getBoundingClientRect();
-    const popoverWidth = 380;
-    const popoverHeight = 320;
+    const popoverWidth = 400;
+    const popoverHeight = 520;
 
     // Anchor to the right of the clicked glyph with a 12px offset
     let left = anchorRect.right + 12;

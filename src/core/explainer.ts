@@ -10,6 +10,15 @@
 import { ASTNode } from './types';
 import { typesetMath } from './math_typeset';
 
+export interface VisualizationConfig {
+  type: 'riemann_sum' | 'derivative_tangent' | 'epsilon_delta';
+  expression: string;
+  variable: string;
+  bounds?: { lower: number; upper: number };
+  point?: number;
+  targetLimit?: number;
+}
+
 export interface ExplanationContext {
   parentType?: string;
   parentNode?: ASTNode | null;
@@ -26,6 +35,7 @@ export interface NodeExplanation {
   whyItIsHere: string;
   showMe: string;
   goDeeper: string;
+  visualization?: VisualizationConfig;
 }
 
 /**
@@ -43,18 +53,28 @@ export function explainSymbol(symbol: string, context: ExplanationContext): Node
     // Context A: Under Integral (e.g. \u222b x^2 dx)
     if (parent === 'integral' || expr.includes('\u222b') || expr.includes('integral')) {
       const integrand = context.integrand || `${varName}^2`;
+      const lower = context.bounds?.lower ? parseFloat(context.bounds.lower) : 0;
+      const upper = context.bounds?.upper ? parseFloat(context.bounds.upper) : 2;
+
       return {
         symbol: sym,
         role: `Variable of Integration for ${typesetMath('\u222b', { displayMode: false })} (${typesetMath(varName, { displayMode: false })})`,
         whatItIs: `The infinitesimal displacement ${typesetMath('d' + varName, { displayMode: false })} and accumulation variable in this integral.`,
         whyItIsHere: `It identifies ${typesetMath(varName, { displayMode: false })} as the integration variable. Integrating ${typesetMath(integrand, { displayMode: false })} with respect to ${typesetMath('d' + varName, { displayMode: false })} accumulates slices along the ${typesetMath(varName, { displayMode: false })}-axis (yielding ${typesetMath('1//3', { displayMode: false })}${typesetMath(varName + '^3', { displayMode: false })} for ${typesetMath(varName + '^2', { displayMode: false })}). If this were ${typesetMath('dy', { displayMode: false })}, ${typesetMath(varName, { displayMode: false })} would be treated as a constant factor, yielding ${typesetMath(varName + '^2 y', { displayMode: false })} instead.`,
-        showMe: `Riemann sum convergence: partitioning the domain into ${typesetMath('n', { displayMode: false })} strips of width ${typesetMath('Delta_' + varName, { displayMode: false })} whose sum ${typesetMath('\u03a3', { displayMode: false })} ${typesetMath('f(' + varName + '_i) * Delta_' + varName, { displayMode: false })} converges to the exact integral as ${typesetMath('n -> \u221e', { displayMode: false })}.`,
+        showMe: `Riemann sum convergence: partitioning the domain into ${typesetMath('n', { displayMode: false })} strips of width ${typesetMath('Delta_' + varName, { displayMode: false })} whose sum ${typesetMath('\u03a3', { displayMode: false })} ${typesetMath('f(x_i) * Delta_' + varName, { displayMode: false })} converges to the exact integral as ${typesetMath('n -> \u221e', { displayMode: false })}.`,
         goDeeper: `Fundamental Theorem of Calculus: ${typesetMath('\u222b_a^b f(' + varName + ') d' + varName + ' = F(b) - F(a)', { displayMode: false })} where ${typesetMath("F'(" + varName + ") = f(" + varName + ")", { displayMode: false })}.`,
+        visualization: {
+          type: 'riemann_sum',
+          expression: integrand,
+          variable: varName,
+          bounds: { lower: isNaN(lower) ? 0 : lower, upper: isNaN(upper) ? 2 : upper },
+        },
       };
     }
 
     // Context B: Under Derivative / Differential Quotient (e.g. dy/dx or d/dx f(x))
     if (parent === 'derivative' || expr.includes('//') || expr.includes('d//') || expr.includes('/') || expr.includes('diff')) {
+      const funcExpr = context.exprString || `${varName}^2`;
       return {
         symbol: sym,
         role: `Differential in Denominator of Derivative (${typesetMath('d' + varName, { displayMode: false })})`,
@@ -62,6 +82,12 @@ export function explainSymbol(symbol: string, context: ExplanationContext): Node
         whyItIsHere: `It defines the variable with respect to which rate-of-change is measured in <span class="tm-fn">lim</span><sub class="tm-sub">&Delta;${varName} &rarr; 0</sub> ${typesetMath('Delta_y // Delta_' + varName, { displayMode: false })}. Changing this to ${typesetMath('dt', { displayMode: false })} would measure the time derivative ${typesetMath('dy // dt', { displayMode: false })} rather than spatial rate of change.`,
         showMe: `Secant line slope ${typesetMath('(f(' + varName + ' + Delta_' + varName + ') - f(' + varName + ')) // Delta_' + varName, { displayMode: false })} converging to the tangent line slope as ${typesetMath('Delta_' + varName + ' -> 0', { displayMode: false })}.`,
         goDeeper: `Leibniz notation and Chain Rule: ${typesetMath('dz // d' + varName + ' = (dz // du) * (du // d' + varName + ')', { displayMode: false })}.`,
+        visualization: {
+          type: 'derivative_tangent',
+          expression: funcExpr,
+          variable: varName,
+          point: 1.0,
+        },
       };
     }
 
@@ -73,12 +99,23 @@ export function explainSymbol(symbol: string, context: ExplanationContext): Node
       whyItIsHere: `Represents the first-order differential variation ${typesetMath('d' + varName, { displayMode: false })}.`,
       showMe: `Linear differential approximation ${typesetMath("df = f'(" + varName + ') * d' + varName, { displayMode: false })}.`,
       goDeeper: `Differential 1-forms in exterior calculus.`,
+      visualization: {
+        type: 'derivative_tangent',
+        expression: `${varName}^2`,
+        variable: varName,
+        point: 1.0,
+      },
     };
   }
 
   // Case 2: Integral Operator
   if (sym === '\u222b' || sym === 'integral') {
     const hasBounds = context.bounds && (context.bounds.lower || context.bounds.upper);
+    const lower = context.bounds?.lower ? parseFloat(context.bounds.lower) : 0;
+    const upper = context.bounds?.upper ? parseFloat(context.bounds.upper) : 2;
+    const integrand = context.integrand || 'x^2';
+    const varName = context.variableName || 'x';
+
     return {
       symbol: '\u222b',
       role: hasBounds ? 'Definite Integration Operator' : 'Indefinite Antiderivative Operator',
@@ -88,11 +125,18 @@ export function explainSymbol(symbol: string, context: ExplanationContext): Node
         : `Calculates the general antiderivative family ${typesetMath('F(x) + C', { displayMode: false })} whose derivative recovers the integrand.`,
       showMe: `Continuous area accumulation partitioned into Riemann rectangles.`,
       goDeeper: `Riemann-Darboux integral formulation and Lebesgue measure generalization.`,
+      visualization: {
+        type: 'riemann_sum',
+        expression: integrand,
+        variable: varName,
+        bounds: { lower: isNaN(lower) ? 0 : lower, upper: isNaN(upper) ? 2 : upper },
+      },
     };
   }
 
   // Case 3: Partial Differential Operator
   if (sym === '\u2202') {
+    const varName = context.variableName || 'x';
     return {
       symbol: '\u2202',
       role: `Partial Derivative Operator (${typesetMath('\u2202', { displayMode: false })})`,
@@ -100,11 +144,18 @@ export function explainSymbol(symbol: string, context: ExplanationContext): Node
       whyItIsHere: `Instructs the engine to vary only the specified coordinate while treating all other independent variables as constant parameters. Replacing this with total derivative ${typesetMath('d', { displayMode: false })} would require tracing implicit inter-variable dependencies.`,
       showMe: `3D surface cross-section tangent line along a single coordinate axis plane.`,
       goDeeper: `Clairaut's theorem on the equality of mixed partial derivatives.`,
+      visualization: {
+        type: 'derivative_tangent',
+        expression: context.exprString || `${varName}^2`,
+        variable: varName,
+        point: 1.0,
+      },
     };
   }
 
   // Case 4: Differential Operator 'd' (stand-alone)
   if (sym === 'd') {
+    const varName = context.variableName || 'x';
     return {
       symbol: 'd',
       role: `Differential Operator (${typesetMath('d', { displayMode: false })})`,
@@ -112,6 +163,12 @@ export function explainSymbol(symbol: string, context: ExplanationContext): Node
       whyItIsHere: `Forms differentials and derivative ratios (e.g. ${typesetMath('d//dx', { displayMode: false })}). Removing it reduces differential quotients to ordinary algebraic division.`,
       showMe: `First-order linear differential approximation ${typesetMath("df = f'(x) * dx", { displayMode: false })}.`,
       goDeeper: `Differential forms and Stokes' generalized theorem.`,
+      visualization: {
+        type: 'derivative_tangent',
+        expression: context.exprString || `${varName}^2`,
+        variable: varName,
+        point: 1.0,
+      },
     };
   }
 
@@ -129,6 +186,7 @@ export function explainSymbol(symbol: string, context: ExplanationContext): Node
 
   // Case 6: Limit Operator 'lim'
   if (sym === 'lim') {
+    const exprStr = context.exprString || '2*x + 1';
     return {
       symbol: 'lim',
       role: 'Asymptotic Limit Operator',
@@ -136,6 +194,13 @@ export function explainSymbol(symbol: string, context: ExplanationContext): Node
       whyItIsHere: `Resolves indeterminate algebraic forms (such as ${typesetMath('0//0', { displayMode: false })} or ${typesetMath('inf // inf', { displayMode: false })}) and defines continuity and differentiability at singular points.`,
       showMe: `Epsilon-delta neighborhood bands contracting around the target point.`,
       goDeeper: `Weierstrass formal limit definition and L'Hopital's rule.`,
+      visualization: {
+        type: 'epsilon_delta',
+        expression: exprStr,
+        variable: 'x',
+        point: 2.0,
+        targetLimit: 5.0,
+      },
     };
   }
 

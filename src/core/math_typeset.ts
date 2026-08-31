@@ -345,8 +345,8 @@ export function typesetStringExpression(expr: string, options: TypesetOptions = 
           <span class="tm-int-symbol tm-clickable" data-symbol="\u222b" data-parent-type="integral"${hasLimits ? ` data-bounds-lower="${escapeHtml(lower || '')}" data-bounds-upper="${escapeHtml(upper || '')}"` : ''}>&int;</span>
           ${hasLimits ? `
             <span class="tm-int-limits">
-              <span class="tm-int-upper">${upperHtml}</span>
               <span class="tm-int-lower">${lowerHtml}</span>
+              <span class="tm-int-upper">${upperHtml}</span>
             </span>
           ` : ''}
         </span>
@@ -507,11 +507,14 @@ function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
     } else if (identTok) {
       if (identTok === 'sum' || identTok === '\u03a3') {
         out += `<span class="tm-bigop-symbol tm-clickable" data-symbol="\u03a3" data-parent-type="summation">&sum;</span>`;
-      } else if (identTok.startsWith('d') && identTok.length > 1) {
+      } else if (identTok.startsWith('d') && identTok.length > 1 && !identTok.includes('_')) {
         out += `<span class="tm-diff tm-clickable" data-symbol="${escapeHtml(identTok)}" data-parent-type="differential">${escapeHtml(identTok)}</span>`;
       } else if (identTok.startsWith('Delta_') || identTok.startsWith('Delta')) {
         const sub = identTok.replace(/^Delta_?/, '');
         out += `<span class="tm-var">&Delta;${escapeHtml(sub)}</span>`;
+      } else if (identTok.includes('_')) {
+        const [base, sub] = identTok.split('_');
+        out += `<span class="tm-var">${escapeHtml(base)}</span><sub class="tm-sub">${typesetStringExpression(sub, options)}</sub>`;
       } else {
         out += `<span class="tm-var">${escapeHtml(identTok)}</span>`;
       }
