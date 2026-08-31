@@ -26,6 +26,8 @@ export interface ExplanationContext {
   variableName?: string;
   integrand?: string;
   bounds?: { lower?: string; upper?: string };
+  point?: number;
+  targetLimit?: number;
 }
 
 export interface NodeExplanation {
@@ -86,7 +88,7 @@ export function explainSymbol(symbol: string, context: ExplanationContext): Node
           type: 'derivative_tangent',
           expression: funcExpr,
           variable: varName,
-          point: 1.0,
+          point: context.point ?? 1.5,
         },
       };
     }
@@ -197,9 +199,9 @@ export function explainSymbol(symbol: string, context: ExplanationContext): Node
       visualization: {
         type: 'epsilon_delta',
         expression: exprStr,
-        variable: 'x',
-        point: 2.0,
-        targetLimit: 5.0,
+        variable: context.variableName || 'x',
+        point: context.point ?? 3.0,
+        targetLimit: context.targetLimit ?? 10.0,
       },
     };
   }

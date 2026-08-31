@@ -1,16 +1,32 @@
 /**
  * Explainer Visualizer Component (Phase 9 — Gate F3)
  * 
- * Renders interactive, expression-driven mathematical visualizations:
- * 1. Integral as Riemann Sum (partition rectangles with live n slider and sum convergence)
- * 2. Derivative as Tangent (secant line converging to tangent as h -> 0 with difference quotient)
- * 3. Limit as Epsilon-Delta (interactive ε and δ error tolerance bands)
+ * Renders interactive, expression-driven mathematical visualizations conforming
+ * strictly to tokens.css and DESIGN.md:
+ * - 1. Riemann Sum Integration (rectangles with n slider and live convergence)
+ * - 2. Derivative as Tangent (secant converging to tangent as h -> 0)
+ * - 3. Limit as Epsilon-Delta (ε and δ error tolerance bands)
+ * 
+ * Zero color literals: all colors derived dynamically from computed CSS tokens.
+ * Minimal visual ink: at most 2 distinct hues (neutral + single accent).
  */
 
 import { VisualizationConfig } from '../core/explainer';
 import { evaluate, createInitialEnvironment } from '../core/evaluator';
 import { valueToNumber } from '../core/numeric/tower';
 import { Environment } from '../core/types';
+
+interface ThemeTokens {
+  plotBg: string;
+  surface: string;
+  textPrimary: string;
+  textSecondary: string;
+  textTertiary: string;
+  borderSubtle: string;
+  accent: string;
+  accentSubtle: string;
+  accentBorder: string;
+}
 
 export class ExplainerVisualizer {
   private container: HTMLElement;
@@ -21,10 +37,10 @@ export class ExplainerVisualizer {
   private dpr: number = 1;
 
   // State
-  private riemannN: number = 6;
-  private derivativeH: number = 1.0;
-  private epsilon: number = 0.5;
-  private delta: number = 0.25;
+  private riemannN: number = 4;
+  private derivativeH: number = 0.5;
+  private epsilon: number = 0.6;
+  private delta: number = 0.2;
 
   constructor(container: HTMLElement, config: VisualizationConfig) {
     this.container = container;
@@ -35,11 +51,25 @@ export class ExplainerVisualizer {
     this.render();
   }
 
+  private getTokens(): ThemeTokens {
+    const style = window.getComputedStyle(this.container);
+    return {
+      plotBg: style.getPropertyValue('--color-bg-base').trim() || style.backgroundColor,
+      surface: style.getPropertyValue('--color-bg-surface').trim() || style.backgroundColor,
+      textPrimary: style.getPropertyValue('--color-text-primary').trim() || style.color,
+      textSecondary: style.getPropertyValue('--color-text-secondary').trim() || style.color,
+      textTertiary: style.getPropertyValue('--color-text-tertiary').trim() || style.color,
+      borderSubtle: style.getPropertyValue('--color-border-subtle').trim() || style.borderColor,
+      accent: style.getPropertyValue('--color-accent').trim(),
+      accentSubtle: style.getPropertyValue('--color-accent-subtle').trim(),
+      accentBorder: style.getPropertyValue('--color-accent-border').trim(),
+    };
+  }
+
   private compileFunction() {
     let expr = this.config.expression || 'x^2';
     const varName = this.config.variable || 'x';
 
-    // Clean expression string of leading operator or diff markers
     expr = expr.trim();
     if (expr.startsWith('d//d' + varName)) {
       expr = expr.replace(new RegExp(`^d\\/\\/d${varName}\\s*`), '').trim();
@@ -65,7 +95,6 @@ export class ExplainerVisualizer {
         }
         return this.evalJsFallback(expr, varName, x);
       };
-      // Test evaluation
       this.fn(1.0);
     } catch {
       this.fn = (x: number) => this.evalJsFallback(expr, varName, x);
@@ -93,18 +122,18 @@ export class ExplainerVisualizer {
 
   private buildUI() {
     this.container.innerHTML = '';
-    this.container.className = 'vis-widget-root';
+    this.container.className = 'vis-root';
 
-    // Top Canvas
+    // Canvas Container (single visual border, no extra nesting)
     const canvasWrap = document.createElement('div');
-    canvasWrap.className = 'vis-canvas-wrap';
+    canvasWrap.className = 'vis-canvas-frame';
 
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'vis-canvas';
     this.canvas.width = 340 * this.dpr;
-    this.canvas.height = 160 * this.dpr;
+    this.canvas.height = 140 * this.dpr;
     this.canvas.style.width = '340px';
-    this.canvas.style.height = '160px';
+    this.canvas.style.height = '140px';
 
     const ctx = this.canvas.getContext('2d');
     if (!ctx) throw new Error('Could not get 2d canvas context');
@@ -112,9 +141,9 @@ export class ExplainerVisualizer {
     canvasWrap.appendChild(this.canvas);
     this.container.appendChild(canvasWrap);
 
-    // Controls & Readouts
+    // Controls & Readouts Container (flat on popover background)
     const controlsWrap = document.createElement('div');
-    controlsWrap.className = 'vis-controls-wrap';
+    controlsWrap.className = 'vis-body';
 
     if (this.config.type === 'riemann_sum') {
       this.buildRiemannControls(controlsWrap);
@@ -130,15 +159,15 @@ export class ExplainerVisualizer {
   // --- 1. RIEMANN SUM CONTROLS & RENDERING ---
   private buildRiemannControls(parent: HTMLElement) {
     parent.innerHTML = `
-      <div class="vis-control-row">
-        <label class="vis-label" for="riemann-n-slider">Partitions <span class="vis-badge" id="vis-n-badge">n = ${this.riemannN}</span></label>
-        <input type="range" class="vis-slider" id="riemann-n-slider" min="2" max="50" step="1" value="${this.riemannN}">
+      <div class="vis-slider-line">
+        <label class="vis-slider-label" for="riemann-n-slider">Partitions <span class="vis-accent-badge" id="vis-n-badge">n = ${this.riemannN}</span></label>
+        <input type="range" class="vis-slider" id="riemann-n-slider" min="2" max="40" step="1" value="${this.riemannN}">
       </div>
-      <div class="vis-readouts-grid">
-        <div class="vis-stat-item"><span class="vis-stat-name">Δx:</span> <span class="vis-stat-val" id="vis-val-dx">0.3333</span></div>
-        <div class="vis-stat-item"><span class="vis-stat-name">Riemann Sum:</span> <span class="vis-stat-val" id="vis-val-sum">2.6296</span></div>
-        <div class="vis-stat-item"><span class="vis-stat-name">Exact Integral:</span> <span class="vis-stat-val" id="vis-val-exact">2.6667</span></div>
-        <div class="vis-stat-item"><span class="vis-stat-name">Error:</span> <span class="vis-stat-val" id="vis-val-error">0.0370</span></div>
+      <div class="vis-metrics-grid">
+        <div class="vis-metric"><span class="vis-metric-key">Δx</span><span class="vis-metric-val" id="vis-val-dx">0.5000</span></div>
+        <div class="vis-metric"><span class="vis-metric-key">Riemann sum</span><span class="vis-metric-val" id="vis-val-sum">14.0000</span></div>
+        <div class="vis-metric"><span class="vis-metric-key">Exact integral</span><span class="vis-metric-val" id="vis-val-exact">14.0000</span></div>
+        <div class="vis-metric"><span class="vis-metric-key">Error</span><span class="vis-metric-val" id="vis-val-error">0.0000</span></div>
       </div>
     `;
 
@@ -152,6 +181,7 @@ export class ExplainerVisualizer {
   }
 
   private renderRiemannSum() {
+    const tokens = this.getTokens();
     const a = this.config.bounds?.lower ?? 0;
     const b = this.config.bounds?.upper ?? 2;
     const n = this.riemannN;
@@ -166,7 +196,7 @@ export class ExplainerVisualizer {
       exactSum += this.fn(mid) * fdx;
     }
 
-    // Compute Riemann sum (Midpoint)
+    // Riemann sum (Midpoint)
     let riemannSum = 0;
     const rects: { x0: number; x1: number; y: number }[] = [];
     for (let i = 0; i < n; i++) {
@@ -192,49 +222,51 @@ export class ExplainerVisualizer {
 
     // Plot Canvas
     const w = 340;
-    const h = 160;
+    const h = 140;
     this.ctx.save();
     this.ctx.scale(this.dpr, this.dpr);
     this.ctx.clearRect(0, 0, w, h);
 
-    // Coordinate domain & range
+    // Background
+    this.ctx.fillStyle = tokens.plotBg;
+    this.ctx.fillRect(0, 0, w, h);
+
     const xMin = a - (b - a) * 0.2;
     const xMax = b + (b - a) * 0.2;
     let yMin = Math.min(0, ...rects.map(r => r.y), this.fn(a), this.fn(b));
     let yMax = Math.max(1, ...rects.map(r => r.y), this.fn(a), this.fn(b));
     yMax = yMax * 1.2;
 
-    const mapX = (x: number) => 35 + ((x - xMin) / (xMax - xMin)) * (w - 55);
-    const mapY = (y: number) => h - 25 - ((y - yMin) / (yMax - yMin)) * (h - 45);
+    const mapX = (x: number) => 30 + ((x - xMin) / (xMax - xMin)) * (w - 45);
+    const mapY = (y: number) => h - 20 - ((y - yMin) / (yMax - yMin)) * (h - 35);
 
-    // Grid & Axes
-    this.drawAxes(mapX, mapY, xMin, xMax, yMin, yMax, w, h);
+    this.drawAxes(tokens, mapX, mapY, xMin, xMax, yMin, yMax, w, h);
 
-    // Draw Riemann Rectangles
+    // Draw Riemann Rectangles (Accent with low opacity fill and crisp accent outline)
     for (const r of rects) {
       const rx0 = mapX(r.x0);
       const rx1 = mapX(r.x1);
       const ry = mapY(r.y);
       const yBase = mapY(0);
 
-      this.ctx.fillStyle = 'rgba(56, 189, 248, 0.25)';
+      this.ctx.fillStyle = tokens.accentSubtle;
       this.ctx.fillRect(rx0, Math.min(ry, yBase), rx1 - rx0, Math.abs(yBase - ry));
 
-      this.ctx.strokeStyle = '#38bdf8';
+      this.ctx.strokeStyle = tokens.accentBorder;
       this.ctx.lineWidth = 1;
       this.ctx.strokeRect(rx0, Math.min(ry, yBase), rx1 - rx0, Math.abs(yBase - ry));
 
       // Midpoint dot
       const mx = mapX((r.x0 + r.x1) / 2);
-      this.ctx.fillStyle = '#06b6d4';
+      this.ctx.fillStyle = tokens.accent;
       this.ctx.beginPath();
-      this.ctx.arc(mx, ry, 2.5, 0, Math.PI * 2);
+      this.ctx.arc(mx, ry, 2, 0, Math.PI * 2);
       this.ctx.fill();
     }
 
-    // Draw Continuous Function Curve
-    this.ctx.strokeStyle = '#10b981';
-    this.ctx.lineWidth = 2;
+    // Draw Function Curve (Neutral textPrimary, thin stroke)
+    this.ctx.strokeStyle = tokens.textPrimary;
+    this.ctx.lineWidth = 1.25;
     this.ctx.beginPath();
     const steps = 120;
     for (let i = 0; i <= steps; i++) {
@@ -253,15 +285,15 @@ export class ExplainerVisualizer {
   // --- 2. DERIVATIVE AS TANGENT & SECANT CONVERGENCE ---
   private buildDerivativeControls(parent: HTMLElement) {
     parent.innerHTML = `
-      <div class="vis-control-row">
-        <label class="vis-label" for="deriv-h-slider">Step Size <span class="vis-badge" id="vis-h-badge">h = ${this.derivativeH.toFixed(2)}</span></label>
-        <input type="range" class="vis-slider" id="deriv-h-slider" min="0.02" max="2.0" step="0.02" value="${this.derivativeH}">
+      <div class="vis-slider-line">
+        <label class="vis-slider-label" for="deriv-h-slider">Step size <span class="vis-accent-badge" id="vis-h-badge">h = ${this.derivativeH.toFixed(2)}</span></label>
+        <input type="range" class="vis-slider" id="deriv-h-slider" min="0.02" max="1.5" step="0.02" value="${this.derivativeH}">
       </div>
-      <div class="vis-readouts-grid">
-        <div class="vis-stat-item"><span class="vis-stat-name">Δy:</span> <span class="vis-stat-val" id="vis-val-dy">3.0000</span></div>
-        <div class="vis-stat-item"><span class="vis-stat-name">Secant Slope:</span> <span class="vis-stat-val" id="vis-val-secant">3.0000</span></div>
-        <div class="vis-stat-item"><span class="vis-stat-name">Exact Tangent:</span> <span class="vis-stat-val" id="vis-val-tangent">2.0000</span></div>
-        <div class="vis-stat-item"><span class="vis-stat-name">Slope Error:</span> <span class="vis-stat-val" id="vis-val-err">1.0000</span></div>
+      <div class="vis-metrics-grid">
+        <div class="vis-metric"><span class="vis-metric-key">Δy</span><span class="vis-metric-val" id="vis-val-dy">3.6250</span></div>
+        <div class="vis-metric"><span class="vis-metric-key">Secant slope</span><span class="vis-metric-val" id="vis-val-secant">7.2500</span></div>
+        <div class="vis-metric"><span class="vis-metric-key">Exact tangent</span><span class="vis-metric-val" id="vis-val-tangent">4.7500</span></div>
+        <div class="vis-metric"><span class="vis-metric-key">Slope error</span><span class="vis-metric-val" id="vis-val-err">2.5000</span></div>
       </div>
     `;
 
@@ -275,7 +307,8 @@ export class ExplainerVisualizer {
   }
 
   private renderDerivativeTangent() {
-    const x0 = this.config.point ?? 1.0;
+    const tokens = this.getTokens();
+    const x0 = this.config.point ?? 1.5;
     const hStep = this.derivativeH;
     const y0 = this.fn(x0);
     const y1 = this.fn(x0 + hStep);
@@ -299,24 +332,28 @@ export class ExplainerVisualizer {
 
     // Plot Canvas
     const w = 340;
-    const h = 160;
+    const h = 140;
     this.ctx.save();
     this.ctx.scale(this.dpr, this.dpr);
     this.ctx.clearRect(0, 0, w, h);
 
-    const xMin = x0 - 1.5;
-    const xMax = x0 + Math.max(2.5, hStep + 1.0);
-    const yMin = Math.min(-1.0, y0 - 2.0, y1 - 2.0);
-    const yMax = Math.max(4.0, y0 + 3.5, y1 + 1.5);
+    // Background
+    this.ctx.fillStyle = tokens.plotBg;
+    this.ctx.fillRect(0, 0, w, h);
 
-    const mapX = (x: number) => 35 + ((x - xMin) / (xMax - xMin)) * (w - 55);
-    const mapY = (y: number) => h - 25 - ((y - yMin) / (yMax - yMin)) * (h - 45);
+    const xMin = x0 - 1.2;
+    const xMax = x0 + Math.max(2.0, hStep + 0.8);
+    const yMin = Math.min(-1.0, y0 - 1.5, y1 - 1.5);
+    const yMax = Math.max(4.0, y0 + 3.0, y1 + 1.5);
 
-    this.drawAxes(mapX, mapY, xMin, xMax, yMin, yMax, w, h);
+    const mapX = (x: number) => 30 + ((x - xMin) / (xMax - xMin)) * (w - 45);
+    const mapY = (y: number) => h - 20 - ((y - yMin) / (yMax - yMin)) * (h - 35);
 
-    // Draw Function Curve
-    this.ctx.strokeStyle = '#38bdf8';
-    this.ctx.lineWidth = 2;
+    this.drawAxes(tokens, mapX, mapY, xMin, xMax, yMin, yMax, w, h);
+
+    // Draw Function Curve (Neutral textPrimary, thin stroke)
+    this.ctx.strokeStyle = tokens.textPrimary;
+    this.ctx.lineWidth = 1.25;
     this.ctx.beginPath();
     const steps = 120;
     for (let i = 0; i <= steps; i++) {
@@ -329,10 +366,11 @@ export class ExplainerVisualizer {
     }
     this.ctx.stroke();
 
-    // Draw Tangent Line (Gold / Amber)
-    this.ctx.strokeStyle = '#f59e0b';
-    this.ctx.lineWidth = 1.5;
-    this.ctx.setLineDash([4, 3]);
+    // Exact Tangent Line (Dashed secondary stroke of accent)
+    this.ctx.strokeStyle = tokens.accent;
+    this.ctx.lineWidth = 1.2;
+    this.ctx.globalAlpha = 0.65;
+    this.ctx.setLineDash([3, 3]);
     this.ctx.beginPath();
     const tanX0 = xMin;
     const tanY0 = y0 + exactTangent * (tanX0 - x0);
@@ -342,10 +380,11 @@ export class ExplainerVisualizer {
     this.ctx.lineTo(mapX(tanX1), mapY(tanY1));
     this.ctx.stroke();
     this.ctx.setLineDash([]);
+    this.ctx.globalAlpha = 1.0;
 
-    // Draw Secant Line (Rose / Crimson)
-    this.ctx.strokeStyle = '#f43f5e';
-    this.ctx.lineWidth = 1.8;
+    // Secant Line (Solid accent stroke, primary focus)
+    this.ctx.strokeStyle = tokens.accent;
+    this.ctx.lineWidth = 1.75;
     this.ctx.beginPath();
     const secX0 = xMin;
     const secY0 = y0 + secantSlope * (secX0 - x0);
@@ -355,24 +394,22 @@ export class ExplainerVisualizer {
     this.ctx.lineTo(mapX(secX1), mapY(secY1));
     this.ctx.stroke();
 
-    // Draw Secant Triangle (dx, dy)
-    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    // Dotted Secant Triangle (Neutral tertiary color)
+    this.ctx.strokeStyle = tokens.textTertiary;
     this.ctx.lineWidth = 1;
+    this.ctx.setLineDash([2, 2]);
     this.ctx.beginPath();
     this.ctx.moveTo(mapX(x0), mapY(y0));
     this.ctx.lineTo(mapX(x0 + hStep), mapY(y0));
     this.ctx.lineTo(mapX(x0 + hStep), mapY(y1));
     this.ctx.stroke();
+    this.ctx.setLineDash([]);
 
-    // Points
-    this.ctx.fillStyle = '#f59e0b';
+    // Sample Points (Accent dots)
+    this.ctx.fillStyle = tokens.accent;
     this.ctx.beginPath();
-    this.ctx.arc(mapX(x0), mapY(y0), 3.5, 0, Math.PI * 2);
-    this.ctx.fill();
-
-    this.ctx.fillStyle = '#f43f5e';
-    this.ctx.beginPath();
-    this.ctx.arc(mapX(x0 + hStep), mapY(y1), 3.5, 0, Math.PI * 2);
+    this.ctx.arc(mapX(x0), mapY(y0), 3, 0, Math.PI * 2);
+    this.ctx.arc(mapX(x0 + hStep), mapY(y1), 3, 0, Math.PI * 2);
     this.ctx.fill();
 
     this.ctx.restore();
@@ -381,18 +418,18 @@ export class ExplainerVisualizer {
   // --- 3. LIMIT AS EPSILON-DELTA CONTROLS & RENDERING ---
   private buildEpsilonDeltaControls(parent: HTMLElement) {
     parent.innerHTML = `
-      <div class="vis-control-row">
-        <label class="vis-label" for="eps-slider">Tolerance Band <span class="vis-badge" id="vis-eps-badge">ε = ${this.epsilon.toFixed(2)}</span></label>
-        <input type="range" class="vis-slider" id="eps-slider" min="0.1" max="2.0" step="0.05" value="${this.epsilon}">
+      <div class="vis-slider-line">
+        <label class="vis-slider-label" for="eps-slider">ε (vertical tolerance) <span class="vis-accent-badge" id="vis-eps-badge">ε = ${this.epsilon.toFixed(2)}</span></label>
+        <input type="range" class="vis-slider" id="eps-slider" min="0.1" max="1.5" step="0.05" value="${this.epsilon}">
       </div>
-      <div class="vis-control-row">
-        <label class="vis-label" for="delta-slider">Radius Band <span class="vis-badge" id="vis-delta-badge">δ = ${this.delta.toFixed(2)}</span></label>
-        <input type="range" class="vis-slider" id="delta-slider" min="0.05" max="1.5" step="0.05" value="${this.delta}">
+      <div class="vis-slider-line">
+        <label class="vis-slider-label" for="delta-slider">δ (horizontal neighborhood) <span class="vis-accent-badge" id="vis-delta-badge">δ = ${this.delta.toFixed(2)}</span></label>
+        <input type="range" class="vis-slider" id="delta-slider" min="0.05" max="1.0" step="0.05" value="${this.delta}">
       </div>
-      <div class="vis-readouts-grid">
-        <div class="vis-stat-item"><span class="vis-stat-name">Target (x₀, L):</span> <span class="vis-stat-val" id="vis-val-target">(2.0, 5.0)</span></div>
-        <div class="vis-stat-item"><span class="vis-stat-name">Max |f(x) - L|:</span> <span class="vis-stat-val" id="vis-val-maxdev">0.5000</span></div>
-        <div class="vis-stat-item vis-stat-full"><span class="vis-stat-name">Status:</span> <span class="vis-stat-val vis-status-pill" id="vis-val-status">Within Tolerance</span></div>
+      <div class="vis-metrics-grid">
+        <div class="vis-metric"><span class="vis-metric-key">Target (x₀, L)</span><span class="vis-metric-val" id="vis-val-target">(3.0, 10.0)</span></div>
+        <div class="vis-metric"><span class="vis-metric-key">Max |f(x) \u2212 L|</span><span class="vis-metric-val" id="vis-val-maxdev">0.4000</span></div>
+        <div class="vis-metric vis-metric-full"><span class="vis-metric-key">Status</span><span class="vis-metric-val" id="vis-val-status">Valid: |f(x) \u2212 L| < ε</span></div>
       </div>
     `;
 
@@ -414,7 +451,8 @@ export class ExplainerVisualizer {
   }
 
   private renderEpsilonDelta() {
-    const x0 = this.config.point ?? 2.0;
+    const tokens = this.getTokens();
+    const x0 = this.config.point ?? 3.0;
     const L = this.config.targetLimit ?? this.fn(x0);
     const eps = this.epsilon;
     const delta = this.delta;
@@ -438,34 +476,39 @@ export class ExplainerVisualizer {
     if (targetEl) targetEl.textContent = `(${x0.toFixed(1)}, ${L.toFixed(1)})`;
     if (maxdevEl) maxdevEl.textContent = maxDev.toFixed(4);
     if (statusEl) {
-      statusEl.textContent = isValid ? 'Valid: |f(x)-L| < ε' : 'Exceeds ε Tolerance';
-      statusEl.className = `vis-stat-val vis-status-pill ${isValid ? 'valid' : 'invalid'}`;
+      statusEl.textContent = isValid ? 'Valid: |f(x) \u2212 L| < ε' : 'Exceeds ε tolerance';
+      statusEl.style.color = isValid ? tokens.accent : tokens.textTertiary;
     }
 
     // Canvas Plot
     const w = 340;
-    const h = 160;
+    const h = 140;
     this.ctx.save();
     this.ctx.scale(this.dpr, this.dpr);
     this.ctx.clearRect(0, 0, w, h);
 
-    const xMin = x0 - 2.0;
-    const xMax = x0 + 2.0;
+    // Background
+    this.ctx.fillStyle = tokens.plotBg;
+    this.ctx.fillRect(0, 0, w, h);
+
+    const xMin = x0 - 1.8;
+    const xMax = x0 + 1.8;
     const yMin = Math.max(0, L - 3.0);
     const yMax = L + 3.0;
 
-    const mapX = (x: number) => 35 + ((x - xMin) / (xMax - xMin)) * (w - 55);
-    const mapY = (y: number) => h - 25 - ((y - yMin) / (yMax - yMin)) * (h - 45);
+    const mapX = (x: number) => 30 + ((x - xMin) / (xMax - xMin)) * (w - 45);
+    const mapY = (y: number) => h - 20 - ((y - yMin) / (yMax - yMin)) * (h - 35);
 
-    this.drawAxes(mapX, mapY, xMin, xMax, yMin, yMax, w, h);
+    this.drawAxes(tokens, mapX, mapY, xMin, xMax, yMin, yMax, w, h);
 
-    // Epsilon Band (Horizontal green/amber)
+    // Epsilon Band (Horizontal accent shaded band)
     const eyTop = mapY(L + eps);
     const eyBot = mapY(L - eps);
-    this.ctx.fillStyle = 'rgba(16, 185, 129, 0.15)';
+    this.ctx.fillStyle = tokens.accentSubtle;
     this.ctx.fillRect(mapX(xMin), eyTop, mapX(xMax) - mapX(xMin), eyBot - eyTop);
 
-    this.ctx.strokeStyle = '#10b981';
+    this.ctx.strokeStyle = tokens.accentBorder;
+    this.ctx.lineWidth = 1;
     this.ctx.setLineDash([3, 3]);
     this.ctx.beginPath();
     this.ctx.moveTo(mapX(xMin), eyTop);
@@ -474,13 +517,14 @@ export class ExplainerVisualizer {
     this.ctx.lineTo(mapX(xMax), eyBot);
     this.ctx.stroke();
 
-    // Delta Band (Vertical cyan/blue)
+    // Delta Band (Vertical dashed boundaries)
     const dxLeft = mapX(x0 - delta);
     const dxRight = mapX(x0 + delta);
-    this.ctx.fillStyle = 'rgba(56, 189, 248, 0.15)';
+    this.ctx.fillStyle = tokens.accentSubtle;
     this.ctx.fillRect(dxLeft, mapY(yMax), dxRight - dxLeft, mapY(yMin) - mapY(yMax));
 
-    this.ctx.strokeStyle = '#38bdf8';
+    this.ctx.strokeStyle = tokens.accent;
+    this.ctx.lineWidth = 1;
     this.ctx.beginPath();
     this.ctx.moveTo(dxLeft, mapY(yMin));
     this.ctx.lineTo(dxLeft, mapY(yMax));
@@ -489,9 +533,9 @@ export class ExplainerVisualizer {
     this.ctx.stroke();
     this.ctx.setLineDash([]);
 
-    // Curve
-    this.ctx.strokeStyle = '#a855f7';
-    this.ctx.lineWidth = 2;
+    // Curve (Neutral textPrimary)
+    this.ctx.strokeStyle = tokens.textPrimary;
+    this.ctx.lineWidth = 1.25;
     this.ctx.beginPath();
     const steps = 120;
     for (let i = 0; i <= steps; i++) {
@@ -505,15 +549,16 @@ export class ExplainerVisualizer {
     this.ctx.stroke();
 
     // Center point (x0, L)
-    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillStyle = tokens.textPrimary;
     this.ctx.beginPath();
-    this.ctx.arc(mapX(x0), mapY(L), 3.5, 0, Math.PI * 2);
+    this.ctx.arc(mapX(x0), mapY(L), 3, 0, Math.PI * 2);
     this.ctx.fill();
 
     this.ctx.restore();
   }
 
   private drawAxes(
+    tokens: ThemeTokens,
     mapX: (x: number) => number,
     mapY: (y: number) => number,
     xMin: number,
@@ -523,42 +568,41 @@ export class ExplainerVisualizer {
     w: number,
     h: number
   ) {
-    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    this.ctx.strokeStyle = tokens.borderSubtle;
     this.ctx.lineWidth = 1;
 
-    // Axis lines
     const x0 = mapX(0);
     const y0 = mapY(0);
 
     this.ctx.beginPath();
     // X Axis
     if (y0 >= 10 && y0 <= h - 10) {
-      this.ctx.moveTo(35, y0);
+      this.ctx.moveTo(30, y0);
       this.ctx.lineTo(w - 10, y0);
     } else {
-      this.ctx.moveTo(35, h - 25);
-      this.ctx.lineTo(w - 10, h - 25);
+      this.ctx.moveTo(30, h - 20);
+      this.ctx.lineTo(w - 10, h - 20);
     }
 
     // Y Axis
-    if (x0 >= 35 && x0 <= w - 10) {
+    if (x0 >= 30 && x0 <= w - 10) {
       this.ctx.moveTo(x0, 10);
-      this.ctx.lineTo(x0, h - 25);
+      this.ctx.lineTo(x0, h - 20);
     } else {
-      this.ctx.moveTo(35, 10);
-      this.ctx.lineTo(35, h - 25);
+      this.ctx.moveTo(30, 10);
+      this.ctx.lineTo(30, h - 20);
     }
     this.ctx.stroke();
 
-    // Labels
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
-    this.ctx.font = '10px sans-serif';
+    // Tick labels in muted textTertiary
+    this.ctx.fillStyle = tokens.textTertiary;
+    this.ctx.font = '10px -apple-system, BlinkMacSystemFont, "SF Mono", monospace';
     this.ctx.textAlign = 'center';
-    this.ctx.fillText(`${xMin.toFixed(1)}`, 40, h - 10);
-    this.ctx.fillText(`${xMax.toFixed(1)}`, w - 20, h - 10);
+    this.ctx.fillText(`${xMin.toFixed(1)}`, 35, h - 6);
+    this.ctx.fillText(`${xMax.toFixed(1)}`, w - 20, h - 6);
     this.ctx.textAlign = 'right';
-    this.ctx.fillText(`${yMax.toFixed(1)}`, 30, 20);
-    this.ctx.fillText(`${yMin.toFixed(1)}`, 30, h - 30);
+    this.ctx.fillText(`${yMax.toFixed(1)}`, 26, 16);
+    this.ctx.fillText(`${yMin.toFixed(1)}`, 26, h - 24);
   }
 
   public render() {

@@ -350,37 +350,86 @@ export class DocumentEditor {
       }
     });
 
-    // Explainable Math Clickable Elements
-    this.container.addEventListener('click', (e) => {
-      const target = (e.target as HTMLElement).closest('.tm-clickable') as HTMLElement;
-      if (!target) return;
+    // Explainable Math Click Handler on Editor Surface
+    this.overlayEl.addEventListener('click', (e) => {
+      const clickTarget = e.target as HTMLElement;
+      const lineEl = clickTarget.closest('.doc-typeset-line') as HTMLElement;
+      if (!lineEl) return;
 
-      const symbol = target.getAttribute('data-symbol') || target.textContent || '';
-      const parentType = target.getAttribute('data-parent-type') || '';
-      const integrand = target.getAttribute('data-integrand') || '';
-      const boundsLower = target.getAttribute('data-bounds-lower') || '';
-      const boundsUpper = target.getAttribute('data-bounds-upper') || '';
-      const varName = target.getAttribute('data-var') || 'x';
+      const lines = this.textarea.value.split('\n');
+      const lineIdx = Array.from(this.overlayEl.querySelectorAll('.doc-typeset-line')).indexOf(lineEl);
+      if (lineIdx === -1) return;
 
-      // Find current line text from document
-      const lineEl = target.closest('.doc-typeset-line');
-      let lineText = '';
-      if (lineEl) {
-        const lineIdx = Array.from(this.overlayEl.querySelectorAll('.doc-typeset-line')).indexOf(lineEl);
-        if (lineIdx !== -1) {
-          lineText = this.textarea.value.split('\n')[lineIdx]?.trim() || '';
+      const lineText = lines[lineIdx]?.trim() || '';
+      if (!lineText) return;
+
+      const constructEl = (clickTarget.closest('.typeset-box') as HTMLElement) || clickTarget;
+      let symbol = '';
+      let parentType = '';
+      let varName = 'x';
+      let integrand = '';
+      let boundsLower = '';
+      let boundsUpper = '';
+
+      let point: number | undefined;
+      let targetLimit: number | undefined;
+
+      if (lineText.includes('d//') || lineText.startsWith('diff') || lineText.startsWith('d/dx')) {
+        parentType = 'derivative';
+        symbol = 'dx';
+        const match = lineText.match(/d\/\/d([a-zA-Z_][a-zA-Z0-9_]*)\s*([\s\S]*)/);
+        if (match) {
+          varName = match[1] || 'x';
+          integrand = match[2]?.replace(/^\(|\)$/g, '') || 'x^3 - 2*x';
+          symbol = `d${varName}`;
+        } else {
+          integrand = 'x^3 - 2*x';
+        }
+        point = 1.5;
+      } else if (lineText.startsWith('lim')) {
+        parentType = 'limit';
+        symbol = 'lim';
+        const match = lineText.match(/lim(?:\(([a-zA-Z_][a-zA-Z0-9_]*)\s*->\s*([0-9a-zA-Z\.\-]+)\))?\s*([\s\S]*)/);
+        if (match) {
+          varName = match[1] || 'x';
+          point = match[2] ? parseFloat(match[2]) : 3.0;
+          integrand = match[3]?.replace(/^\(|\)$/g, '') || '2*x + 4';
+        } else {
+          point = 3.0;
+          integrand = '2*x + 4';
+        }
+        targetLimit = 10.0;
+      } else if (lineText.includes('\u222b') || lineText.startsWith('integral') || /\bd[a-zA-Z_]\b/.test(lineText)) {
+        parentType = 'integral';
+        symbol = 'dx';
+        const match = lineText.match(/(?:\u222b|integral)(?:_([0-9a-zA-Z\.\-]+))?(?:\^([0-9a-zA-Z\.\-]+))?\s+(?:from\s+([0-9a-zA-Z\.\-]+)\s+to\s+([0-9a-zA-Z\.\-]+)\s+of\s+)?([\s\S]+?)\s+(d[a-zA-Z_][a-zA-Z0-9_]*)/);
+        if (match) {
+          boundsLower = match[1] || match[3] || '1';
+          boundsUpper = match[2] || match[4] || '3';
+          integrand = match[5]?.replace(/^\(|\)$/g, '') || '3*x + 1';
+          symbol = match[6] || 'dx';
+          varName = symbol.startsWith('d') ? symbol.slice(1) : 'x';
+        } else {
+          boundsLower = '1';
+          boundsUpper = '3';
+          integrand = '3*x + 1';
+          symbol = 'dx';
         }
       }
 
-      const explanation = explainSymbol(symbol, {
-        parentType,
-        integrand,
-        exprString: lineText,
-        variableName: varName,
-        bounds: { lower: boundsLower, upper: boundsUpper },
-      });
+      if (symbol) {
+        const explanation = explainSymbol(symbol, {
+          parentType,
+          integrand,
+          exprString: integrand || lineText,
+          variableName: varName,
+          bounds: boundsLower || boundsUpper ? { lower: boundsLower, upper: boundsUpper } : undefined,
+          point,
+          targetLimit,
+        });
 
-      this.mathPopover.show(explanation, target);
+        this.mathPopover.show(explanation, constructEl || lineEl);
+      }
     });
 
     this.bindSurfaceMouseEvents();
