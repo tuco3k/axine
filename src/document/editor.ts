@@ -3,6 +3,7 @@ import { CORPUS_DOCUMENTS } from './corpus_data';
 import { FuelLimits, Value, GraphValue, DerivationValue, SolveTraceValue } from '../core/types';
 import { Canvas2DPlotter } from '../plot/canvas2d';
 import { Surface3DPlotter } from '../plot/surface3d';
+import { typesetMath } from '../core/math_typeset';
 import { ICONS } from '../styles/icons';
 
 function escapeHtml(str: string): string {
@@ -486,7 +487,13 @@ export class DocumentEditor {
 
     for (let i = 0; i < records.length; i++) {
       const rec = records[i];
-      gutterHtml += `<div class="doc-gutter-row" data-line="${i}">${this.formatGutterRow(rec)}</div>`;
+      const rowContent = this.formatGutterRow(rec);
+      gutterHtml += `
+        <div class="doc-gutter-row" data-line="${i}">
+          <span class="doc-gutter-lineno">L${i + 1}</span>
+          <div class="doc-gutter-content">${rowContent}</div>
+        </div>
+      `;
 
       if (rec.boundName && rec.result) {
         activeSymbols.set(rec.boundName, {
@@ -502,6 +509,23 @@ export class DocumentEditor {
       }
     }
     this.gutterEl.innerHTML = gutterHtml;
+
+    // Reciprocal hover highlighting between editor lines and gutter rows
+    const gutterRows = this.gutterEl.querySelectorAll('.doc-gutter-row');
+    gutterRows.forEach(row => {
+      const lineIdxStr = (row as HTMLElement).getAttribute('data-line');
+      const lineIdx = parseInt(lineIdxStr ?? '0', 10);
+      row.addEventListener('mouseenter', () => {
+        row.classList.add('hovered');
+        const editorLine = this.overlayEl.querySelectorAll('.doc-typeset-line')[lineIdx];
+        if (editorLine) editorLine.classList.add('hovered');
+      });
+      row.addEventListener('mouseleave', () => {
+        row.classList.remove('hovered');
+        const editorLine = this.overlayEl.querySelectorAll('.doc-typeset-line')[lineIdx];
+        if (editorLine) editorLine.classList.remove('hovered');
+      });
+    });
 
     // Attach plot click handlers to focus Visual tab
     const plotButtons = this.gutterEl.querySelectorAll('.doc-plot-btn');
@@ -642,19 +666,25 @@ export class DocumentEditor {
     }
   }
 
+  public typesetMathReadOnly(raw: string): string {
+    if (!raw) return '';
+    return typesetMath(raw, { displayMode: true });
+  }
+
   private renderDerivationFull(deriv: DerivationValue): string {
     let html = `<div class="visual-derivation-tree">`;
-    html += `<div class="derivation-orig-eq">${escapeHtml(deriv.originalEquation)}</div>`;
+    html += `<div class="derivation-orig-eq">${this.typesetMathReadOnly(deriv.originalEquation)}</div>`;
 
     for (let i = 0; i < deriv.steps.length; i++) {
       const step = deriv.steps[i];
+      const eqStr = step.after || step.equation || '';
       html += `
         <div class="derivation-step-card">
           <div class="step-card-header">
             <span class="step-num">Step ${i + 1}</span>
             <span class="step-rule-badge">${escapeHtml(step.rule)}</span>
           </div>
-          <div class="step-card-eq">${escapeHtml(step.after || step.equation || '')}</div>
+          <div class="step-card-eq">${this.typesetMathReadOnly(eqStr)}</div>
           <div class="step-card-just">${escapeHtml(step.justification)}</div>
           ${step.sideCondition ? `<div class="step-card-cond">${escapeHtml(step.sideCondition)}</div>` : ''}
         </div>
@@ -668,7 +698,7 @@ export class DocumentEditor {
               <div class="branch-condition-header">${escapeHtml(branch.condition ?? 'Branch')}</div>
               ${branch.steps.map(bs => `
                 <div class="branch-step-card">
-                  <div class="branch-step-eq">${escapeHtml(bs.after || bs.equation || '')}</div>
+                  <div class="branch-step-eq">${this.typesetMathReadOnly(bs.after || bs.equation || '')}</div>
                   <div class="branch-step-just">${escapeHtml(bs.justification)}</div>
                 </div>
               `).join('')}
@@ -750,7 +780,7 @@ export class DocumentEditor {
         const kind = (rec.result as any).kind;
         return `<span class="doc-claim-badge ${verified ? 'verified' : 'unverified'}">[Claim ${kind}: ${verified ? 'Verified' : 'Unverified'}]</span>`;
       }
-      return `<div class="doc-gutter-result"><span class="doc-result-value">${escapeHtml(this.formatValue(rec.result))}</span></div>`;
+      return `<div class="doc-gutter-result"><span class="doc-result-value">${this.typesetMathReadOnly(this.formatValue(rec.result))}</span></div>`;
     }
 
     return '';
@@ -759,10 +789,11 @@ export class DocumentEditor {
   private formatDerivationGutter(deriv: DerivationValue): string {
     let html = `<div class="derivation">`;
     for (const step of deriv.steps) {
+      const eqStr = step.after || step.equation || '';
       html += `
         <div class="derivation-step">
           <div class="step-main">
-            <span class="step-eq">${escapeHtml(step.after || step.equation || '')}</span>
+            <span class="step-eq">${this.typesetMathReadOnly(eqStr)}</span>
             <span class="step-rule">${escapeHtml(step.rule)}</span>
           </div>
           ${step.sideCondition ? `<div class="step-condition">${escapeHtml(step.sideCondition)}</div>` : ''}
@@ -822,17 +853,23 @@ export class DocumentEditor {
         const elRight = elRect.right - surfaceRect.left + this.overlayEl.scrollLeft;
 
         if (construct === 'sup' || construct === 'sub') {
-          const innerSpan = el.firstElementChild as HTMLElement;
+          const opSpan = el.querySelector('.typeset-op') as HTMLElement;
+          const innerSpan = el.querySelector('.typeset-sup, .typeset-sub') as HTMLElement;
           const innerTextNode = innerSpan?.firstChild;
           const innerText = innerTextNode?.textContent || '';
+
+          const opRect = opSpan ? opSpan.getBoundingClientRect() : elRect;
+          const opLeft = opRect.left - surfaceRect.left + this.overlayEl.scrollLeft;
+          const opRight = opRect.right - surfaceRect.left + this.overlayEl.scrollLeft;
+
           const innerRect = innerSpan ? innerSpan.getBoundingClientRect() : elRect;
           const innerLeft = innerRect.left - surfaceRect.left + this.overlayEl.scrollLeft;
           const innerRight = innerRect.right - surfaceRect.left + this.overlayEl.scrollLeft;
 
-          // 1. Operator character (^ or _) is zero-width boundary at innerLeft
+          // 1. Operator character (^ or _) has non-zero width from opLeft to opRight / innerLeft
           boxes.push({
-            left: elLeft,
-            right: innerLeft,
+            left: opLeft,
+            right: opRight > opLeft ? opRight : innerLeft,
             char: lineStr[boxes.length] || '^',
           });
 
@@ -933,7 +970,13 @@ export class DocumentEditor {
     } else if (colIdx < charBoxes.length) {
       caretX = charBoxes[colIdx].left;
     } else if (charBoxes.length > 0) {
-      caretX = charBoxes[charBoxes.length - 1].right;
+      const lastChild = lineEl.lastChild;
+      if (lastChild && lastChild.nodeType === Node.ELEMENT_NODE && (lastChild as HTMLElement).classList.contains('typeset-box')) {
+        const lastRect = (lastChild as HTMLElement).getBoundingClientRect();
+        caretX = lastRect.right - surfaceRect.left + this.overlayEl.scrollLeft;
+      } else {
+        caretX = charBoxes[charBoxes.length - 1].right;
+      }
     } else {
       caretX = lineRect.left - surfaceRect.left + this.overlayEl.scrollLeft + colIdx * 8.429;
     }
@@ -994,7 +1037,7 @@ export class DocumentEditor {
       if (sup) {
         const w = sup.length;
         const exp = sup.slice(1);
-        return `<span class="typeset-box typeset-sup-box" style="width:${w}ch;" data-construct="sup" data-src-len="${w}"><span class="typeset-sup">${escapeHtml(exp)}</span></span>`;
+        return `<span class="typeset-box typeset-sup-box" style="width:${w}ch;" data-construct="sup" data-src-len="${w}"><span class="typeset-op typeset-op-sup">^</span><span class="typeset-sup">${escapeHtml(exp)}</span></span>`;
       }
       if (trailingSup) {
         return `<span class="typeset-box typeset-sup-box typeset-incomplete" style="width:1ch;" data-construct="sup" data-src-len="1"><span class="typeset-sup dimmed">^</span></span>`;
@@ -1002,7 +1045,7 @@ export class DocumentEditor {
       if (sub) {
         const w = sub.length;
         const subText = sub.slice(1);
-        return `<span class="typeset-box typeset-sub-box" style="width:${w}ch;" data-construct="sub" data-src-len="${w}"><span class="typeset-sub">${escapeHtml(subText)}</span></span>`;
+        return `<span class="typeset-box typeset-sub-box" style="width:${w}ch;" data-construct="sub" data-src-len="${w}"><span class="typeset-op typeset-op-sub">_</span><span class="typeset-sub">${escapeHtml(subText)}</span></span>`;
       }
       if (trailingSub) {
         return `<span class="typeset-box typeset-sub-box typeset-incomplete" style="width:1ch;" data-construct="sub" data-src-len="1"><span class="typeset-sub dimmed">_</span></span>`;

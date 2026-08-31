@@ -1,5 +1,8 @@
 import { DocumentEditor } from './document/editor';
+import { typesetMath } from './core/math_typeset';
 import './styles/main.css';
+
+(window as any).typesetMath = typesetMath;
 
 function init() {
   const root = document.getElementById('app');

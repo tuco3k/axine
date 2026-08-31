@@ -120,7 +120,15 @@ export class Surface3DPlotter {
     this.ctx.save();
     this.ctx.scale(this.dpr, this.dpr);
 
-    this.ctx.fillStyle = '#0f172a';
+    // Read Design Tokens
+    const docStyles = getComputedStyle(document.documentElement);
+    const bgColor = docStyles.getPropertyValue('--color-bg-primary').trim() || '#0f172a';
+    const axisColor = docStyles.getPropertyValue('--color-border-strong').trim() || 'rgba(148, 163, 184, 0.4)';
+    const textColor = docStyles.getPropertyValue('--color-text-secondary').trim() || '#94a3b8';
+    const accentHex = docStyles.getPropertyValue('--color-accent').trim() || '#0d9488';
+    const accentRgb = parseColorToRgb(accentHex, [13, 148, 136]);
+
+    this.ctx.fillStyle = bgColor;
     this.ctx.fillRect(0, 0, width, height);
 
     // 3D Projection setup
@@ -134,10 +142,8 @@ export class Surface3DPlotter {
     const sinX = Math.sin(this.angleX);
 
     const project = (xNorm: number, yNorm: number, zNorm: number): { px: number; py: number; depth: number } => {
-      // Rotate around Z
       const rx = xNorm * cosZ - yNorm * sinZ;
       const ry = xNorm * sinZ + yNorm * cosZ;
-      // Rotate around X
       const rz = zNorm * cosX - ry * sinX;
       const rDepth = ry * cosX + zNorm * sinX;
 
@@ -146,26 +152,66 @@ export class Surface3DPlotter {
       return { px, py, depth: rDepth };
     };
 
-    // Draw background bounding box
-    const corners = [
-      project(-1, -1, -1), project(1, -1, -1), project(1, 1, -1), project(-1, 1, -1),
-      project(-1, -1, 1), project(1, -1, 1), project(1, 1, 1), project(-1, 1, 1),
-    ];
-    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-    this.ctx.lineWidth = 1;
-    this.ctx.setLineDash([4, 4]);
-    const edges = [
-      [0, 1], [1, 2], [2, 3], [3, 0],
-      [4, 5], [5, 6], [6, 7], [7, 4],
-      [0, 4], [1, 5], [2, 6], [3, 7]
-    ];
-    for (const [e1, e2] of edges) {
+    // Draw Ticked 3D Coordinate Axes (X, Y, Z from base corner (-1, -1, -1))
+    const origin = project(-1, -1, -1);
+    const xAxis = project(1.1, -1, -1);
+    const yAxis = project(-1, 1.1, -1);
+    const zAxis = project(-1, -1, 1.1);
+
+    this.ctx.strokeStyle = axisColor;
+    this.ctx.lineWidth = 1.5;
+
+    // X Axis with ticks
+    this.ctx.beginPath();
+    this.ctx.moveTo(origin.px, origin.py);
+    this.ctx.lineTo(xAxis.px, xAxis.py);
+    this.ctx.stroke();
+
+    for (let t = -1; t <= 1; t += 0.5) {
+      const p = project(t, -1, -1);
+      const tickP = project(t, -1.05, -1);
       this.ctx.beginPath();
-      this.ctx.moveTo(corners[e1].px, corners[e1].py);
-      this.ctx.lineTo(corners[e2].px, corners[e2].py);
+      this.ctx.moveTo(p.px, p.py);
+      this.ctx.lineTo(tickP.px, tickP.py);
       this.ctx.stroke();
     }
-    this.ctx.setLineDash([]);
+
+    // Y Axis with ticks
+    this.ctx.beginPath();
+    this.ctx.moveTo(origin.px, origin.py);
+    this.ctx.lineTo(yAxis.px, yAxis.py);
+    this.ctx.stroke();
+
+    for (let t = -1; t <= 1; t += 0.5) {
+      const p = project(-1, t, -1);
+      const tickP = project(-1.05, t, -1);
+      this.ctx.beginPath();
+      this.ctx.moveTo(p.px, p.py);
+      this.ctx.lineTo(tickP.px, tickP.py);
+      this.ctx.stroke();
+    }
+
+    // Z Axis with ticks
+    this.ctx.beginPath();
+    this.ctx.moveTo(origin.px, origin.py);
+    this.ctx.lineTo(zAxis.px, zAxis.py);
+    this.ctx.stroke();
+
+    for (let t = -1; t <= 1; t += 0.5) {
+      const p = project(-1, -1, t);
+      const tickP = project(-1.05, -1, t);
+      this.ctx.beginPath();
+      this.ctx.moveTo(p.px, p.py);
+      this.ctx.lineTo(tickP.px, tickP.py);
+      this.ctx.stroke();
+    }
+
+    // Axis Labels
+    this.ctx.font = '11px ui-monospace, monospace';
+    this.ctx.fillStyle = textColor;
+    this.ctx.fillText('x', xAxis.px + 5, xAxis.py + 4);
+    this.ctx.fillText('y', yAxis.px + 5, yAxis.py + 4);
+    this.ctx.fillText('z', zAxis.px + 5, zAxis.py - 4);
 
     interface RenderQuad {
       p1: { px: number; py: number };
@@ -225,7 +271,7 @@ export class Surface3DPlotter {
           const xNorm = ((p.x - xMin) / (xMax - xMin)) * 2 - 1;
           const yNorm = ((p.y - yMin) / (yMax - yMin)) * 2 - 1;
           const zNorm = ((p.z - zMin) / (zMax - zMin)) * 2 - 1;
-          return { ...project(xNorm, yNorm, zNorm), zVal: p.z };
+          return { ...project(xNorm, yNorm, zNorm), zVal: p.z, xNorm, yNorm, zNorm };
         })
       );
 
@@ -241,12 +287,12 @@ export class Surface3DPlotter {
           allQuads.push({
             p1, p2, p3, p4,
             depth: d,
-            color: viridisColor3D(t),
+            color: shadedAccentColor(accentRgb, t),
           });
         }
       }
     } else {
-      // Case 2: Explicit Surfaces z = f(x, y) (Single or Multi Intersecting Surfaces)
+      // Case 2: Explicit Surfaces z = f(x, y)
       const surfaceList = this.spec.surfaces || (this.spec.surface ? [this.spec.surface] : []);
 
       surfaceList.forEach((surf, surfIdx) => {
@@ -292,9 +338,11 @@ export class Surface3DPlotter {
             const xNorm = ((p.x - xMin) / (xMax - xMin)) * 2 - 1;
             const yNorm = ((p.y - yMin) / (yMax - yMin)) * 2 - 1;
             const zNorm = ((p.z - zMin) / (zMax - zMin)) * 2 - 1;
-            return { ...project(xNorm, yNorm, zNorm), zVal: p.z };
+            return { ...project(xNorm, yNorm, zNorm), zVal: p.z, xNorm, yNorm, zNorm };
           })
         );
+
+        const baseRgb = surfIdx === 0 ? accentRgb : [180, 83, 9]; // secondary warm tone for multi-surface
 
         for (let j = 0; j < M - 1; j++) {
           for (let i = 0; i < N - 1; i++) {
@@ -305,7 +353,7 @@ export class Surface3DPlotter {
             const d = (p1.depth + p2.depth + p3.depth + p4.depth) / 4;
             const avgZ = (p1.zVal + p2.zVal + p3.zVal + p4.zVal) / 4;
             const t = Math.max(0, Math.min(1, (avgZ - zMin) / (zMax - zMin)));
-            const color = surfIdx === 0 ? viridisColor3D(t) : magmaColor3D(t);
+            const color = shadedAccentColor(baseRgb, t);
             allQuads.push({
               p1, p2, p3, p4,
               depth: d,
@@ -321,7 +369,7 @@ export class Surface3DPlotter {
 
     for (const q of allQuads) {
       this.ctx.fillStyle = q.color;
-      this.ctx.strokeStyle = 'rgba(15, 23, 42, 0.35)';
+      this.ctx.strokeStyle = 'rgba(15, 23, 42, 0.25)';
       this.ctx.lineWidth = 0.5;
 
       this.ctx.beginPath();
@@ -334,80 +382,33 @@ export class Surface3DPlotter {
       this.ctx.stroke();
     }
 
-    // Header & Interaction controls guide
-    this.ctx.font = '11px ui-monospace, monospace';
-    this.ctx.fillStyle = '#94a3b8';
-    const label = this.spec.parametric ? '3D Parametric Torus' : '3D Surface Scene';
-    this.ctx.fillText(
-      `${label} | Zoom: ${this.zoom.toFixed(1)}x | Orbit (drag), Pan (shift+drag), Zoom (scroll), Reset (dblclick)`,
-      15,
-      20
-    );
-
     this.ctx.restore();
   }
 }
 
-function magmaColor3D(t: number): string {
-  const c0 = [0, 0, 4];
-  const c1 = [81, 18, 124];
-  const c2 = [182, 54, 121];
-  const c3 = [251, 136, 97];
-  const c4 = [252, 253, 191];
-
-  let r = 0, g = 0, b = 0;
-  if (t < 0.25) {
-    const u = t / 0.25;
-    r = c0[0] + (c1[0] - c0[0]) * u;
-    g = c0[1] + (c1[1] - c0[1]) * u;
-    b = c0[2] + (c1[2] - c0[2]) * u;
-  } else if (t < 0.5) {
-    const u = (t - 0.25) / 0.25;
-    r = c1[0] + (c2[0] - c1[0]) * u;
-    g = c1[1] + (c2[1] - c1[1]) * u;
-    b = c1[2] + (c2[2] - c1[2]) * u;
-  } else if (t < 0.75) {
-    const u = (t - 0.5) / 0.25;
-    r = c2[0] + (c3[0] - c2[0]) * u;
-    g = c2[1] + (c3[1] - c2[1]) * u;
-    b = c2[2] + (c3[2] - c2[2]) * u;
-  } else {
-    const u = (t - 0.75) / 0.25;
-    r = c3[0] + (c4[0] - c3[0]) * u;
-    g = c3[1] + (c4[1] - c3[1]) * u;
-    b = c3[2] + (c4[2] - c3[2]) * u;
+function parseColorToRgb(colorStr: string, fallback: [number, number, number]): [number, number, number] {
+  if (colorStr.startsWith('#')) {
+    const hex = colorStr.slice(1);
+    if (hex.length === 6) {
+      return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
+    }
+    if (hex.length === 3) {
+      return [parseInt(hex[0] + hex[0], 16), parseInt(hex[1] + hex[1], 16), parseInt(hex[2] + hex[2], 16)];
+    }
   }
-  return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+  const rgbMatch = colorStr.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if (rgbMatch) {
+    return [parseInt(rgbMatch[1], 10), parseInt(rgbMatch[2], 10), parseInt(rgbMatch[3], 10)];
+  }
+  return fallback;
 }
 
-function viridisColor3D(t: number): string {
-  const c0 = [68, 1, 84];
-  const c1 = [59, 82, 139];
-  const c2 = [33, 145, 140];
-  const c3 = [94, 201, 98];
-  const c4 = [253, 231, 37];
-
-  let r = 0, g = 0, b = 0;
-  if (t < 0.25) {
-    const u = t / 0.25;
-    r = c0[0] + (c1[0] - c0[0]) * u;
-    g = c0[1] + (c1[1] - c0[1]) * u;
-    b = c0[2] + (c1[2] - c0[2]) * u;
-  } else if (t < 0.5) {
-    const u = (t - 0.25) / 0.25;
-    r = c1[0] + (c2[0] - c1[0]) * u;
-    g = c1[1] + (c2[1] - c1[1]) * u;
-    b = c1[2] + (c2[2] - c1[2]) * u;
-  } else if (t < 0.75) {
-    const u = (t - 0.5) / 0.25;
-    r = c2[0] + (c3[0] - c2[0]) * u;
-    g = c2[1] + (c3[1] - c2[1]) * u;
-    b = c2[2] + (c3[2] - c2[2]) * u;
-  } else {
-    const u = (t - 0.75) / 0.25;
-    r = c3[0] + (c4[0] - c3[0]) * u;
-    g = c3[1] + (c4[1] - c3[1]) * u;
-    b = c3[2] + (c4[2] - c3[2]) * u;
-  }
-  return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+function shadedAccentColor(rgb: [number, number, number], t: number): string {
+  // Shaded single-hue ramp: from dark shaded accent (t=0) to bright lit accent tint (t=1)
+  const [r0, g0, b0] = rgb;
+  const factor = 0.35 + 0.65 * t;
+  const r = Math.min(255, Math.round(r0 * factor + (255 - r0) * Math.max(0, t - 0.7) * 0.5));
+  const g = Math.min(255, Math.round(g0 * factor + (255 - g0) * Math.max(0, t - 0.7) * 0.5));
+  const b = Math.min(255, Math.round(b0 * factor + (255 - b0) * Math.max(0, t - 0.7) * 0.5));
+  return `rgb(${r}, ${g}, ${b})`;
 }

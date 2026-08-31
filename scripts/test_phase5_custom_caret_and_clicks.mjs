@@ -61,7 +61,8 @@ async function runFullVerification() {
 
         if (measurements.length > 0) {
           const prevX = measurements[measurements.length - 1].caretX;
-          if (caretPhysicalX < prevX - 0.01) {
+          // Tightened Monotonicity: Strict > for any character with visible content
+          if (caretPhysicalX <= prevX) {
             isMonotonic = false;
             nonMonotonicOffsets.push({ offset, prevX, currX: caretPhysicalX });
           }
@@ -86,7 +87,7 @@ async function runFullVerification() {
     }, expr);
 
     console.log(`\nExpression: "${report.expr}"`);
-    console.log(`  -> Monotonicity Invariant: ${report.isMonotonic ? 'PASS (Strictly non-decreasing)' : 'FAIL: ' + JSON.stringify(report.nonMonotonicOffsets)}`);
+    console.log(`  -> Strict Monotonicity Invariant: ${report.isMonotonic ? 'PASS (Strictly increasing > for all offsets)' : 'FAIL: ' + JSON.stringify(report.nonMonotonicOffsets)}`);
     console.log(`  -> Max Caret Error: ${report.maxErr}px`);
     console.table(report.measurements);
   }
