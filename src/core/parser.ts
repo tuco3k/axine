@@ -6,6 +6,7 @@ import {
   BlockNode,
   ClaimNode,
   DiffNode,
+  LimitNode,
   FunctionCallNode,
   FunctionDefNode,
   GlobalAssignmentNode,
@@ -132,6 +133,7 @@ export class Parser {
   private readonly knownFunctions: Set<string>;
   private readonly knownVariables: Set<string>;
   private pos: number = 0;
+  private parsingIntegrand: boolean = false;
 
   constructor(tokens: Token[], options?: ParserOptions) {
     this.tokens = tokens;
@@ -613,9 +615,19 @@ export class Parser {
       return this.parseBlock();
     }
 
-    // Big Operators: Σ, Π, \u222b
-    if (token.type === 'SIGMA' || token.type === 'PI_PROD' || token.type === 'INTEGRAL') {
+    // Big Operators: Σ, Π
+    if (token.type === 'SIGMA' || token.type === 'PI_PROD') {
       return this.parseBigOp();
+    }
+
+    // Integral: \u222b or integral
+    if (token.type === 'INTEGRAL' || (token.type === 'IDENTIFIER' && (token.value === 'integral' || token.value.startsWith('integral_')))) {
+      return this.parseIntegral();
+    }
+
+    // Limit: lim(x -> a, expr)
+    if (token.type === 'IDENTIFIER' && (token.value === 'lim' || token.value === 'limit') && this.peek(1).type === 'LPAREN') {
+      return this.parseLimit();
     }
 
     // Number literal
@@ -1115,9 +1127,275 @@ export class Parser {
     };
   }
 
+  private parseIntegral(): ASTNode {
+    const opTok = this.advance();
+    let start: ASTNode | undefined;
+    let end: ASTNode | undefined;
+    let variable = 'x';
+    let body: ASTNode;
+
+    // Check if function call style: \u222b(body, x in a..b) or integral(body, x in a..b)
+    if (this.peek().type === 'LPAREN' && opTok.value !== 'integral_' && !opTok.value.startsWith('integral_')) {
+      this.expect('LPAREN', '(');
+      const firstArg = this.parseExpression(PREC_NONE);
+      if (this.peek().type === 'COMMA') {
+        this.advance(); // consume comma
+        const secondArg = this.parseExpression(PREC_NONE);
+        let thirdArg: ASTNode | undefined;
+        let fourthArg: ASTNode | undefined;
+        if (this.peek().type === 'COMMA') {
+          this.advance();
+          thirdArg = this.parseExpression(PREC_NONE);
+        }
+        if (this.peek().type === 'COMMA') {
+          this.advance();
+          fourthArg = this.parseExpression(PREC_NONE);
+        }
+        const rParen = this.expect('RPAREN', ')');
+
+        if (firstArg.type === 'Range') {
+          variable = firstArg.variable || 'x';
+          start = firstArg.start;
+          end = firstArg.end;
+          body = secondArg;
+        } else if (secondArg.type === 'Range') {
+          variable = secondArg.variable || 'x';
+          start = secondArg.start;
+          end = secondArg.end;
+          body = firstArg;
+        } else if (thirdArg !== undefined) {
+          // integral(body, lower, upper, var)
+          body = firstArg;
+          start = secondArg;
+          end = thirdArg;
+          if (fourthArg && fourthArg.type === 'Identifier') {
+            variable = fourthArg.name;
+          }
+        } else {
+          body = firstArg;
+        }
+
+        return {
+          type: 'BigOp',
+          op: 'integral',
+          variable,
+          start,
+          end,
+          body,
+          span: {
+            start: opTok.span.start,
+            end: rParen.span.end,
+            line: opTok.span.line,
+            col: opTok.span.col,
+          },
+        };
+      } else {
+        // Parenthesized integrand without comma, e.g. integral(x^2) dx
+        const rParen = this.expect('RPAREN', ')');
+        body = firstArg;
+        if (this.isBinderToken(this.peek())) {
+          const binder = this.advance();
+          variable = binder.value.slice(1);
+          return {
+            type: 'BigOp',
+            op: 'integral',
+            variable,
+            start,
+            end,
+            body,
+            span: {
+              start: opTok.span.start,
+              end: binder.span.end,
+              line: opTok.span.line,
+              col: opTok.span.col,
+            },
+          };
+        }
+        return {
+          type: 'BigOp',
+          op: 'integral',
+          variable,
+          start,
+          end,
+          body,
+          span: {
+            start: opTok.span.start,
+            end: rParen.span.end,
+            line: opTok.span.line,
+            col: opTok.span.col,
+          },
+        };
+      }
+    }
+
+    // Check for subscript limits on integral symbol: \u222b_a^b or integral_a^b or integral_{a}^{b}
+    let subVal: string | null = null;
+    const subSpan = opTok.span;
+
+    if (opTok.type === 'IDENTIFIER' && opTok.value.startsWith('integral_')) {
+      subVal = opTok.value.slice(9);
+    }
+
+    if (subVal !== null) {
+      if (subVal === '') {
+        this.expect('LBRACE', '{');
+        start = this.parseExpression(PREC_NONE);
+        this.expect('RBRACE', '}');
+      } else {
+        if (/^\d+$/.test(subVal)) {
+          start = { type: 'NumberLiteral', raw: subVal, span: subSpan };
+        } else {
+          start = { type: 'Identifier', name: subVal, span: subSpan };
+        }
+      }
+
+      // Check for superscript ^upper
+      if (this.peek().type === 'CARET') {
+        this.advance();
+        if (this.peek().type === 'LBRACE') {
+          this.advance();
+          end = this.parseExpression(PREC_NONE);
+          this.expect('RBRACE', '}');
+        } else {
+          const endTok = this.advance();
+          if (endTok.type === 'NUMBER') {
+            end = { type: 'NumberLiteral', raw: endTok.value, span: endTok.span };
+          } else if (endTok.type === 'IDENTIFIER') {
+            end = { type: 'Identifier', name: endTok.value, span: endTok.span };
+          }
+        }
+      }
+    } else if (this.peek().type === 'IDENTIFIER' && this.peek().value.startsWith('_')) {
+      const nextTok = this.advance();
+      const sub = nextTok.value.slice(1);
+      if (sub === '') {
+        this.expect('LBRACE', '{');
+        start = this.parseExpression(PREC_NONE);
+        this.expect('RBRACE', '}');
+      } else {
+        if (/^\d+$/.test(sub)) {
+          start = { type: 'NumberLiteral', raw: sub, span: nextTok.span };
+        } else {
+          start = { type: 'Identifier', name: sub, span: nextTok.span };
+        }
+      }
+
+      // Check for superscript ^upper
+      if (this.peek().type === 'CARET') {
+        this.advance();
+        if (this.peek().type === 'LBRACE') {
+          this.advance();
+          end = this.parseExpression(PREC_NONE);
+          this.expect('RBRACE', '}');
+        } else {
+          const endTok = this.advance();
+          if (endTok.type === 'NUMBER') {
+            end = { type: 'NumberLiteral', raw: endTok.value, span: endTok.span };
+          } else if (endTok.type === 'IDENTIFIER') {
+            end = { type: 'Identifier', name: endTok.value, span: endTok.span };
+          }
+        }
+      }
+    }
+
+    // Parse the integrand with early binder termination
+    const prevParsing = this.parsingIntegrand;
+    this.parsingIntegrand = true;
+    body = this.parseExpression(PREC_NONE);
+    this.parsingIntegrand = prevParsing;
+
+    let endSpan = body.span;
+
+    // Check and consume binder token (e.g. dx, dy, dt)
+    if (this.isBinderToken(this.peek())) {
+      const binder = this.advance();
+      variable = binder.value.slice(1);
+      endSpan = binder.span;
+    }
+
+    return {
+      type: 'BigOp',
+      op: 'integral',
+      variable,
+      start,
+      end,
+      body,
+      span: {
+        start: opTok.span.start,
+        end: endSpan.end,
+        line: opTok.span.line,
+        col: opTok.span.col,
+      },
+    };
+  }
+
+  private parseLimit(): LimitNode {
+    const limTok = this.advance(); // lim or limit
+    this.expect('LPAREN', '(');
+
+    const varTok = this.expect('IDENTIFIER', 'a variable identifier');
+    const variable = varTok.value;
+
+    this.expect('ARROW', '->');
+
+    let target: ASTNode;
+    let direction: 'two-sided' | 'left' | 'right' = 'two-sided';
+
+    const targetTok = this.peek();
+    if (targetTok.type === 'NUMBER' || targetTok.type === 'IDENTIFIER') {
+      this.advance();
+      target = {
+        type: targetTok.type === 'NUMBER' ? 'NumberLiteral' : 'Identifier',
+        name: targetTok.value,
+        raw: targetTok.value,
+        span: targetTok.span,
+      } as any;
+
+      if (this.peek().type === 'PLUS') {
+        this.advance();
+        direction = 'right';
+      } else if (this.peek().type === 'MINUS') {
+        this.advance();
+        direction = 'left';
+      }
+    } else {
+      target = this.parseExpression(PREC_NONE);
+    }
+
+    this.expect('COMMA', ',');
+
+    const expr = this.parseExpression(PREC_NONE);
+    const rParen = this.expect('RPAREN', ')');
+
+    return {
+      type: 'Limit',
+      variable,
+      target,
+      direction,
+      expr,
+      span: {
+        start: limTok.span.start,
+        end: rParen.span.end,
+        line: limTok.span.line,
+        col: limTok.span.col,
+      },
+    };
+  }
+
   private canBeginImplicitMultiplication(): boolean {
     const token = this.peek();
+    if (this.parsingIntegrand && this.isBinderToken(token)) {
+      return false;
+    }
     return this.canBeginExpression(token.type);
+  }
+
+  private isBinderToken(token: Token): boolean {
+    if (token.type !== 'IDENTIFIER') return false;
+    const val = token.value;
+    if (val.length < 2 || val[0] !== 'd') return false;
+    if (val === 'det' || val === 'dim') return false;
+    return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(val.slice(1));
   }
 
   private canBeginExpression(type: TokenType): boolean {

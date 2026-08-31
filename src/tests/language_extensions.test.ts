@@ -299,4 +299,95 @@ describe('Core Language Extensions & Problem Corpus Features', () => {
       expect(res.value).toEqual({ type: 'rational', n: 8n, d: 1n });
     });
   });
+
+  describe('Integrals Notation & AST Equivalence', () => {
+    it('asserts all integral spellings produce equivalent AST representations', async () => {
+      const { parse } = await import('../core/parser');
+      const ast1 = parse('\u222b_1^3 x^2 dx');
+      const ast2 = parse('integral_1^3 x^2 dx');
+      const ast3 = parse('\u222b(x^2, x in 1..3)');
+      const ast4 = parse('integral(x^2, 1, 3, x)');
+
+      expect(ast1.type).toBe('BigOp');
+      expect(ast2.type).toBe('BigOp');
+      expect(ast3.type).toBe('BigOp');
+      expect(ast4.type).toBe('BigOp');
+
+      if (ast1.type === 'BigOp' && ast2.type === 'BigOp' && ast3.type === 'BigOp' && ast4.type === 'BigOp') {
+        expect(ast1.op).toBe('integral');
+        expect(ast1.variable).toBe('x');
+        expect(ast2.variable).toBe('x');
+        expect(ast3.variable).toBe('x');
+        expect(ast4.variable).toBe('x');
+      }
+    });
+
+    it('parses indefinite integral and evaluates to unknown(requires-unavailable-theory)', () => {
+      const env = createInitialEnvironment();
+      const res = evaluate('\u222b x^2 dx', env);
+      expect(res.value.type).toBe('unknown');
+      if (res.value.type === 'unknown') {
+        expect(res.value.reason).toBe('requires-unavailable-theory');
+      }
+    });
+
+    it('evaluates definite integral accurately', () => {
+      const env = createInitialEnvironment();
+      const res = evaluate('\u222b_0^3 x^2 dx', env);
+      expect(res.value.type).toBe('float');
+      if (res.value.type === 'float') {
+        expect(res.value.value).toBeCloseTo(9, 3);
+      }
+    });
+  });
+
+  describe('Limit Evaluation & Non-existence Reasons', () => {
+    it('evaluates two-sided limits using direct substitution', () => {
+      const env = createInitialEnvironment();
+      const res = evaluate('lim(x -> 2, x^2 + 3*x + 1)', env);
+      expect(res.value.type).toBe('derivation');
+      if (res.value.type === 'derivation') {
+        expect(res.value.ruleSequence).toContain('substitution');
+        expect(res.value.roots[0]).toEqual({ type: 'float', value: 11 });
+      }
+    });
+
+    it('evaluates indeterminate 0/0 limit using L\'Hopital\'s rule', () => {
+      const env = createInitialEnvironment();
+      const res = evaluate('lim(x -> 2, (x^2 - 4) / (x - 2))', env);
+      expect(res.value.type).toBe('derivation');
+      if (res.value.type === 'derivation') {
+        expect(res.value.ruleSequence).toContain('lhopitals-rule');
+        expect(res.value.roots[0]).toEqual({ type: 'float', value: 4 });
+      }
+    });
+
+    it('evaluates one-sided limits', () => {
+      const env = createInitialEnvironment();
+      const res = evaluate('lim(x -> 0+, 1/x)', env);
+      expect(res.value.type).toBe('unknown');
+      if (res.value.type === 'unknown') {
+        expect(res.value.reason).toBe('unbounded');
+      }
+    });
+
+    it('detects one-sided limits disagreement', () => {
+      const env = createInitialEnvironment();
+      const res = evaluate('lim(x -> 0, (abs x) / x)', env);
+      expect(res.value.type).toBe('unknown');
+      if (res.value.type === 'unknown') {
+        expect(res.value.reason).toBe('one-sided-limits-disagree');
+      }
+    });
+  });
+
+  describe('Prose Typesetting & Spacing Preservation', () => {
+    it('preserves spaces and renders prose upright without collapsing words', async () => {
+      const { typesetStringExpression } = await import('../core/math_typeset');
+      const html = typesetStringExpression('unknown(requires-unavailable-theory, "cubics and higher polynomial degrees are not supported")');
+      expect(html).toContain('class="tm-unknown"');
+      expect(html).toContain('class="tm-prose"');
+      expect(html).toContain('cubics and higher polynomial degrees are not supported');
+    });
+  });
 });

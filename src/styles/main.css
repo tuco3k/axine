@@ -106,12 +106,19 @@ html, body {
   background-color: var(--color-bg-input);
   color: var(--color-text-primary);
   border: var(--border-width-default) solid var(--color-border-default);
-  padding: var(--space-2xs) var(--space-xs);
+  padding: 0 var(--space-md) 0 var(--space-xs);
   border-radius: var(--border-radius-sm);
   font-family: var(--font-family-ui);
   font-size: var(--font-size-xs);
   cursor: pointer;
   height: var(--control-height-sm);
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  background-size: 12px;
 }
 
 .doc-corpus-select:focus,
@@ -1161,6 +1168,20 @@ html, body {
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
+}
+
+/* Prose & Unknown Values in Typeset Context */
+.tm-unknown {
+  color: var(--color-semantic-unknown);
+  font-family: var(--font-family-ui);
+}
+
+.tm-prose {
+  font-family: var(--font-family-ui);
+  font-style: normal;
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  padding: 0 0.1em;
 }
 
 /* Variables (Italic Serif) */

@@ -130,3 +130,28 @@ domain_spec  = identifier , "in" , range , [ "," , identifier , "in" , range ] ;
 - When multiple expressions with two shared free variables are provided (e.g. `graph(f(x, y), g(x, y), x in a..b, y in c..d)`), the plotter composes all surfaces into a **single 3D coordinate frame**.
 - The surfaces are depth-sorted together polygon-by-polygon using quad subdivision and Painter's algorithm, yielding accurate mutual occlusion and intersection seams.
 
+---
+
+## 8. Integrals & Limits
+
+### 8.1 Integral Forms
+The following human notations and function-call spellings parse to identical `BigOp` AST representations:
+
+| Syntax | Notation Type | AST Representation |
+|---|---|---|
+| `∫ x^2 dx` | Indefinite (Unicode) | `BigOp(op='integral', variable='x', body=x^2)` |
+| `integral x^2 dx` | Indefinite (ASCII) | `BigOp(op='integral', variable='x', body=x^2)` |
+| `∫_1^3 x^2 dx` | Definite with subscript/superscript (Unicode) | `BigOp(op='integral', variable='x', start=1, end=3, body=x^2)` |
+| `integral_1^3 x^2 dx` | Definite with subscript/superscript (ASCII) | `BigOp(op='integral', variable='x', start=1, end=3, body=x^2)` |
+| `∫(x^2, x in 1..3)` | Definite (Range argument) | `BigOp(op='integral', variable='x', start=1, end=3, body=x^2)` |
+| `integral(x^2, 1, 3, x)` | Definite (Explicit argument list) | `BigOp(op='integral', variable='x', start=1, end=3, body=x^2)` |
+
+### 8.2 Limit Forms
+| Syntax | Meaning | AST Representation |
+|---|---|---|
+| `lim(x -> a, expr)` | Two-sided limit | `Limit(variable='x', target=a, direction='two-sided', expr=expr)` |
+| `lim(x -> a+, expr)` | Right-sided limit | `Limit(variable='x', target=a, direction='right', expr=expr)` |
+| `lim(x -> a-, expr)` | Left-sided limit | `Limit(variable='x', target=a, direction='left', expr=expr)` |
+| `lim(x -> inf, expr)` | Limit at infinity | `Limit(variable='x', target=inf, direction='two-sided', expr=expr)` |
+
+

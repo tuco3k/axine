@@ -105,8 +105,20 @@ function formatNode(node: ASTNode, parentPrec: number): string {
       return `${op}${node.variable} ${formatNode(node.expr, PREC_UNARY)}`;
     }
     case 'BigOp': {
-      const sym = node.op === 'sum' ? 'Σ' : (node.op === 'prod' ? 'Π' : '\u222b');
-      return `${sym}(${node.variable} in ${formatNode(node.start, PREC_IN)}..${formatNode(node.end, PREC_IN)}, ${formatNode(node.body, PREC_NONE)})`;
+      if (node.op === 'integral') {
+        if (node.start && node.end) {
+          return `\u222b_${formatNode(node.start, PREC_POSTFIX)}^${formatNode(node.end, PREC_POSTFIX)} ${formatNode(node.body, PREC_NONE)} d${node.variable}`;
+        }
+        return `\u222b ${formatNode(node.body, PREC_NONE)} d${node.variable}`;
+      }
+      const sym = node.op === 'sum' ? 'Σ' : 'Π';
+      const startStr = node.start ? formatNode(node.start, PREC_IN) : '1';
+      const endStr = node.end ? formatNode(node.end, PREC_IN) : 'n';
+      return `${sym}(${node.variable} in ${startStr}..${endStr}, ${formatNode(node.body, PREC_NONE)})`;
+    }
+    case 'Limit': {
+      const dirStr = node.direction === 'right' ? '+' : (node.direction === 'left' ? '-' : '');
+      return `lim(${node.variable} -> ${formatNode(node.target, PREC_NONE)}${dirStr}, ${formatNode(node.expr, PREC_NONE)})`;
     }
     case 'Claim': {
       return `claim ${node.name} {\n  statement: "${node.statement}",\n  proved_by: "${node.provedBy}",\n  relevance: "${node.relevance}",\n  kind: "${node.kind}",\n  shadow: ${formatNode(node.shadow, PREC_NONE)},\n  expect: ${formatNode(node.expect, PREC_NONE)}\n}`;

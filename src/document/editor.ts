@@ -5,7 +5,9 @@ import { Canvas2DPlotter } from '../plot/canvas2d';
 import { Surface3DPlotter } from '../plot/surface3d';
 import { typesetMath } from '../core/math_typeset';
 import { explainSymbol } from '../core/explainer';
-import { analyzeAndParse, createInitialEnvironment } from '../core/evaluator';
+import { analyzeAndParse, createInitialEnvironment, evaluate } from '../core/evaluator';
+import { formatAST } from '../core/formatter';
+import { valueToNumber } from '../core/numeric/tower';
 import { MathPopover } from './popover';
 import { ICONS } from '../styles/icons';
 
@@ -364,59 +366,54 @@ export class DocumentEditor {
       const lineText = lines[lineIdx]?.trim() || '';
       if (!lineText) return;
 
-      const constructEl = (clickTarget.closest('.typeset-box') as HTMLElement) || clickTarget;
-      let symbol = 'dx';
-      let parentType = '';
-      let varName = 'x';
-      let integrand = '';
-      let boundsLower: string | undefined;
-      let boundsUpper: string | undefined;
-      let point: number | undefined;
+      const clickableEl = (clickTarget.closest('.tm-clickable') as HTMLElement) || null;
+      const constructEl = clickableEl || (clickTarget.closest('.typeset-box') as HTMLElement) || lineEl;
+
+      let symbol = clickableEl?.dataset.symbol || 'dx';
+      let parentType = clickableEl?.dataset.parentType || '';
+      let varName = clickableEl?.dataset.var || 'x';
+      let integrand = clickableEl?.dataset.integrand || '';
+      let boundsLower: string | undefined = clickableEl?.dataset.boundsLower;
+      let boundsUpper: string | undefined = clickableEl?.dataset.boundsUpper;
+      let point: number | undefined = clickableEl?.dataset.point ? parseFloat(clickableEl.dataset.point) : undefined;
       let targetLimit: number | undefined;
 
       try {
         const env = createInitialEnvironment();
         const ast = analyzeAndParse(lineText, env);
 
-        // 1. BigOp integral: integral(3*x + 1, x in 1..3)
+        // 1. BigOp integral: \u222b x^2 dx or integral(3*x + 1, x in 1..3)
         if (ast.type === 'BigOp' && ast.op === 'integral') {
-          parentType = 'integral';
+          parentType = parentType || 'integral';
           varName = ast.variable;
-          symbol = `d${varName}`;
-          integrand = lineText.slice(ast.body.span.start, ast.body.span.end) || '3*x + 1';
-          boundsLower = ast.start.type === 'NumberLiteral' ? ast.start.raw : '1';
-          boundsUpper = ast.end.type === 'NumberLiteral' ? ast.end.raw : '3';
+          symbol = symbol || `d${varName}`;
+          integrand = formatAST(ast.body);
+          if (ast.start) boundsLower = formatAST(ast.start);
+          if (ast.end) boundsUpper = formatAST(ast.end);
         }
-        // 2. Builtin function call: integral(3*x + 1, 1, 3, x)
-        else if (ast.type === 'FunctionCall' && (ast.callee === 'integral' || ast.callee === '\u222b')) {
-          parentType = 'integral';
-          integrand = ast.args[0] ? lineText.slice(ast.args[0].span.start, ast.args[0].span.end) : '3*x + 1';
-          boundsLower = ast.args[1] && ast.args[1].type === 'NumberLiteral' ? ast.args[1].raw : '1';
-          boundsUpper = ast.args[2] && ast.args[2].type === 'NumberLiteral' ? ast.args[2].raw : '3';
-          varName = ast.args[3] && ast.args[3].type === 'Identifier' ? ast.args[3].name : 'x';
-          symbol = `d${varName}`;
+        // 2. LimitNode: lim(x -> 0, sin(x)/x)
+        else if (ast.type === 'Limit') {
+          parentType = parentType || 'limit';
+          symbol = 'lim';
+          varName = ast.variable;
+          integrand = formatAST(ast.expr);
+          try {
+            point = valueToNumber(evaluate(formatAST(ast.target), env).value);
+          } catch {
+            point = 0;
+          }
         }
         // 3. DiffNode: d//dx (x^3 - 2*x)
         else if (ast.type === 'Diff') {
-          parentType = 'derivative';
+          parentType = parentType || 'derivative';
           varName = ast.variable;
-          symbol = `d${varName}`;
-          integrand = lineText.slice(ast.expr.span.start, ast.expr.span.end) || 'x^3 - 2*x';
-          point = 1.5;
+          symbol = symbol || `d${varName}`;
+          integrand = formatAST(ast.expr);
+          point = point ?? 1.5;
         }
-        // 4. FunctionCall limit: lim(2*x + 4, x, 3) or limit(2*x + 4, x, 3)
-        else if (ast.type === 'FunctionCall' && ((ast as any).callee === 'lim' || (ast as any).callee === 'limit' || (ast as any).name === 'lim' || (ast as any).name === 'limit')) {
-          parentType = 'limit';
-          symbol = 'lim';
-          integrand = ast.args[0] ? lineText.slice(ast.args[0].span.start, ast.args[0].span.end) : '2*x + 4';
-          varName = ast.args[1] && ast.args[1].type === 'Identifier' ? ast.args[1].name : 'x';
-          const p = ast.args[2] && ast.args[2].type === 'NumberLiteral' ? parseFloat(ast.args[2].raw) : 3.0;
-          point = isNaN(p) ? 3.0 : p;
-          targetLimit = 10.0;
-        }
-        // 5. FunctionCall check: check(3/4 * pi * r^2, is: "sphere volume")
+        // 4. FunctionCall check: check(3/4 * pi * r^2, is: "sphere volume")
         else if (ast.type === 'FunctionCall' && ((ast as any).callee === 'check' || (ast as any).name === 'check')) {
-          parentType = 'check';
+          parentType = parentType || 'check';
           symbol = 'check';
           varName = 'r';
           integrand = lineText;
@@ -429,7 +426,7 @@ export class DocumentEditor {
       if (!parentType) {
         if (lineText.includes('d//') || lineText.startsWith('diff') || lineText.startsWith('d/dx')) {
           parentType = 'derivative';
-          symbol = 'dx';
+          symbol = symbol || 'dx';
           const match = lineText.match(/d\/\/d([a-zA-Z_][a-zA-Z0-9_]*)\s*([\s\S]*)/);
           if (match) {
             varName = match[1] || 'x';
@@ -438,7 +435,7 @@ export class DocumentEditor {
           } else {
             integrand = 'x^3 - 2*x';
           }
-          point = 1.5;
+          point = point ?? 1.5;
         } else if (lineText.startsWith('lim')) {
           parentType = 'limit';
           symbol = 'lim';
@@ -454,18 +451,16 @@ export class DocumentEditor {
           targetLimit = 10.0;
         } else if (lineText.includes('\u222b') || lineText.startsWith('integral')) {
           parentType = 'integral';
-          symbol = 'dx';
+          symbol = symbol || 'dx';
           const match = lineText.match(/(?:\u222b|integral)(?:_([0-9a-zA-Z\.\-]+))?(?:\^([0-9a-zA-Z\.\-]+))?\s+(?:from\s+([0-9a-zA-Z\.\-]+)\s+to\s+([0-9a-zA-Z\.\-]+)\s+of\s+)?([\s\S]+?)\s+(d[a-zA-Z_][a-zA-Z0-9_]*)/);
           if (match) {
-            boundsLower = match[1] || match[3] || '1';
-            boundsUpper = match[2] || match[4] || '3';
-            integrand = match[5]?.replace(/^\(|\)$/g, '') || '3*x + 1';
+            boundsLower = match[1] || match[3] || undefined;
+            boundsUpper = match[2] || match[4] || undefined;
+            integrand = match[5]?.replace(/^\(|\)$/g, '') || 'x^2';
             symbol = match[6] || 'dx';
             varName = symbol.startsWith('d') ? symbol.slice(1) : 'x';
           } else {
-            boundsLower = '1';
-            boundsUpper = '3';
-            integrand = '3*x + 1';
+            integrand = 'x^2';
             symbol = 'dx';
           }
         } else if (lineText.includes('check(') || lineText.startsWith('check')) {
@@ -479,15 +474,15 @@ export class DocumentEditor {
       if (symbol) {
         const explanation = explainSymbol(symbol, {
           parentType,
-          integrand,
+          integrand: integrand || lineText,
           exprString: integrand || lineText,
           variableName: varName,
-          bounds: boundsLower || boundsUpper ? { lower: boundsLower, upper: boundsUpper } : undefined,
+          bounds: boundsLower || boundsUpper ? { lower: boundsLower || '0', upper: boundsUpper || '1' } : undefined,
           point,
           targetLimit,
         });
 
-        this.mathPopover.show(explanation, constructEl || lineEl);
+        this.mathPopover.show(explanation, constructEl);
       }
     });
 

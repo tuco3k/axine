@@ -209,11 +209,21 @@ export function analyzeAST(
         break;
       }
       case 'BigOp': {
-        walk(n.start);
-        walk(n.end);
+        if (n.start) walk(n.start);
+        if (n.end) walk(n.end);
         const subParams = new Set(boundParams);
         subParams.add(n.variable);
         const bodyAnalysis = analyzeAST(n.body, env, subParams, source);
+        for (const fv of bodyAnalysis.freeVariables) {
+          if (!subParams.has(fv)) freeVars.add(fv);
+        }
+        break;
+      }
+      case 'Limit': {
+        walk(n.target);
+        const subParams = new Set(boundParams);
+        subParams.add(n.variable);
+        const bodyAnalysis = analyzeAST(n.expr, env, subParams, source);
         for (const fv of bodyAnalysis.freeVariables) {
           if (!subParams.has(fv)) freeVars.add(fv);
         }

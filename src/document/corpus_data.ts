@@ -361,5 +361,55 @@ claim mip_star_re {
   shadow: unknown(not-finitely-checkable, "Refutes Connes embedding problem via undecidability of Halting Problem"),
   expect: unknown(not-finitely-checkable)
 }`
+  },
+  {
+    id: 'projectile',
+    title: '25. Projectile Motion & Elevated Launch',
+    category: 'Analysis',
+    content: `# Projectile Motion & Elevated Launch Range Optimization
+g := 9.81
+v0 := 50
+h0 := 10
+theta0 := 0.785398
+
+# Initial Velocity Components
+vx0 := v0 * cos(theta0)
+vy0 := v0 * sin(theta0)
+
+# Trajectory Equations & Landing Time
+t_ground_deriv := isolate(35.35533328235472 * t - 4.905 * t^2 = 0, for: t)
+t_ground_num := solve(t -> vy0 * t - 0.5 * g * t^2, near: 7.2)
+
+t_cliff_deriv := isolate(10 + 35.35533328235472 * t - 4.905 * t^2 = 0, for: t)
+t_cliff_num := solve(t -> 10 + vy0 * t - 0.5 * g * t^2, near: 7.4)
+
+# Closed-Form Range Functions
+R0(th) := (v0^2 / g) * sin(2 * th)
+R10(th) := (v0 * cos(th) / g) * (v0 * sin(th) + sqrt(v0^2 * sin(th)^2 + 2 * g * h0))
+
+# Plot Range vs Launch Angle
+graph(R0(th), R10(th), th in 0.2..1.4)
+
+# 3D Parametric Trajectory Surface
+traj_3d(x, th) := h0 + tan(th) * x - (g / (2 * v0^2 * cos(th)^2)) * x^2
+graph(traj_3d(x, th), x in 0..260, th in 0.4..1.2)
+
+# Optimal Launch Angle Optimization
+opt_theta_ground := solve(d//dth R0(th), for: th, near: 0.75)
+opt_theta_cliff := solve(d//dth R10(th), for: th, near: 0.75)
+
+# Evaluated Maximum Ranges
+max_range_ground := R0(opt_theta_ground)
+max_range_cliff := R10(opt_theta_cliff)
+
+# Verified Claim
+claim optimal_angle_elevated {
+  statement: "For a projectile launched from an elevated cliff (h0 = 10m), the range-maximizing launch angle is strictly less than 45 degrees (pi/4 radians)",
+  proved_by: "Closed-form differential calculus optimization",
+  relevance: "Launching from an initial height h0 > 0 provides extra airborne duration during descent, so trading vertical velocity for horizontal forward velocity maximizes total horizontal displacement.",
+  kind: "B",
+  shadow: R10(opt_theta_cliff) > R10(0.785398) and opt_theta_cliff < 0.785398,
+  expect: true
+}`
   }
 ];

@@ -7,6 +7,7 @@ import {
   CurveSeries,
   DEFAULT_BUDGET_LIMITS,
   DiffNode,
+  LimitNode,
   Environment,
   FunctionCallNode,
   FunctionValue,
@@ -406,6 +407,9 @@ export class Evaluator {
       }
       case 'BigOp': {
         return this.evalBigOp(node, currentEnv);
+      }
+      case 'Limit': {
+        return this.evalLimit(node, currentEnv);
       }
       case 'Diff': {
         return this.evalDiff(node, currentEnv);
@@ -1262,8 +1266,16 @@ export class Evaluator {
   }
 
   private evalBigOp(node: BigOpNode, currentEnv: Environment): Value {
-    const startNum = valueToNumber(this.evalNode(node.start, currentEnv), node.start.span);
-    const endNum = valueToNumber(this.evalNode(node.end, currentEnv), node.end.span);
+    if (node.op === 'integral' && (!node.start || !node.end)) {
+      return {
+        type: 'unknown',
+        reason: 'requires-unavailable-theory',
+        detail: 'Indefinite integration is unsupported; try a definite integral with bounds, e.g. \u222b_a^b f(x) dx',
+      };
+    }
+
+    const startNum = node.start ? valueToNumber(this.evalNode(node.start, currentEnv), node.start.span) : 0;
+    const endNum = node.end ? valueToNumber(this.evalNode(node.end, currentEnv), node.end.span) : 0;
     const varName = node.variable;
 
     if (node.op === 'sum') {
@@ -1311,6 +1323,233 @@ export class Evaluator {
     }
 
     return { type: 'none' };
+  }
+
+  private evalLimit(node: LimitNode, currentEnv: Environment): Value {
+    const varName = node.variable;
+    let targetNum: number | 'inf' | '-inf' = 0;
+    let isInfinity = false;
+
+    if (node.target.type === 'Identifier' && (node.target.name === 'inf' || node.target.name === 'infinity' || node.target.name === '\u221e')) {
+      targetNum = 'inf';
+      isInfinity = true;
+    } else if (node.target.type === 'UnaryOp' && node.target.op === '-' && node.target.operand.type === 'Identifier' && (node.target.operand.name === 'inf' || node.target.operand.name === 'infinity' || node.target.operand.name === '\u221e')) {
+      targetNum = '-inf';
+      isInfinity = true;
+    } else {
+      const targetVal = this.evalNode(node.target, currentEnv);
+      targetNum = valueToNumber(targetVal, node.target.span);
+    }
+
+    const dirStr = node.direction === 'right' ? '+' : (node.direction === 'left' ? '-' : '');
+    const targetStr = `${targetNum}${dirStr}`;
+    const origEq = `lim(${varName} -> ${targetStr}, ${formatAST(node.expr)})`;
+
+    // 1. Direct Substitution (if finite target)
+    if (!isInfinity && typeof targetNum === 'number') {
+      try {
+        const localEnv = Object.create(currentEnv);
+        localEnv[varName] = { type: 'float', value: targetNum };
+        const subVal = this.evalNode(node.expr, localEnv);
+        const subNum = valueToNumber(subVal);
+        if (isFinite(subNum) && !isNaN(subNum) && subVal.type !== 'unknown') {
+          return {
+            type: 'derivation',
+            targetVar: varName,
+            originalEquation: origEq,
+            roots: [subVal],
+            steps: [{
+              before: origEq,
+              after: formatAST(node.expr),
+              rule: 'substitution',
+              justification: 'Direct substitution',
+              equation: `${origEq} = ${subNum}`,
+            }],
+            ruleSequence: ['substitution'],
+            verified: true,
+          };
+        }
+      } catch {
+        // Direct substitution yielded error / indeterminate
+      }
+    }
+
+    // 2. Factoring & L'Hopital (if fraction P(x)/Q(x))
+    if (!isInfinity && typeof targetNum === 'number' && node.expr.type === 'BinaryOp' && (node.expr.op === '/' || (node.expr as any).op === '//')) {
+      try {
+        const num = node.expr.left;
+        const den = node.expr.right;
+        const localEnv = Object.create(currentEnv);
+        localEnv[varName] = { type: 'float', value: targetNum };
+        
+        let numVal = 0;
+        let denVal = 0;
+        try { numVal = valueToNumber(this.evalNode(num, localEnv)); } catch {}
+        try { denVal = valueToNumber(this.evalNode(den, localEnv)); } catch {}
+
+        if (Math.abs(numVal) < 1e-9 && Math.abs(denVal) < 1e-9) {
+          const numDeriv = computeSymbolicDerivative(num, varName);
+          const denDeriv = computeSymbolicDerivative(den, varName);
+          const derivQuotient: ASTNode = {
+            type: 'BinaryOp',
+            op: '/',
+            left: numDeriv.derivativeAST,
+            right: denDeriv.derivativeAST,
+            span: node.span,
+          };
+          const lhopVal = this.evalNode(derivQuotient, localEnv);
+          const lhopNum = valueToNumber(lhopVal);
+          if (isFinite(lhopNum) && !isNaN(lhopNum)) {
+            return {
+              type: 'derivation',
+              targetVar: varName,
+              originalEquation: origEq,
+              roots: [lhopVal],
+              steps: [
+                {
+                  before: origEq,
+                  after: `lim(${varName} -> ${targetStr}, (${formatAST(numDeriv.derivativeAST)}) / (${formatAST(denDeriv.derivativeAST)}))`,
+                  rule: 'lhopitals-rule',
+                  justification: `L'H\u00f4pital's Rule (indeterminate form 0/0)`,
+                  equation: `lim(${varName} -> ${targetStr}, ${formatAST(node.expr)}) = lim(${varName} -> ${targetStr}, (${formatAST(numDeriv.derivativeAST)}) / (${formatAST(denDeriv.derivativeAST)}))`,
+                },
+                {
+                  before: `lim(${varName} -> ${targetStr}, (${formatAST(numDeriv.derivativeAST)}) / (${formatAST(denDeriv.derivativeAST)}))`,
+                  after: `${lhopNum}`,
+                  rule: 'substitution',
+                  justification: 'Direct substitution after differentiation',
+                  equation: `${origEq} = ${lhopNum}`,
+                }
+              ],
+              ruleSequence: ['lhopitals-rule', 'substitution'],
+              verified: true,
+            };
+          }
+        }
+      } catch {
+        // Fall through to numerical estimation
+      }
+    }
+
+    // 3. Fallback: Robust Numerical Limit Sequence
+    const est = this.estimateLimitNumerically(node.expr, varName, targetNum, node.direction, currentEnv);
+    if (est.converged) {
+      const resVal: Value = { type: 'float', value: est.value };
+      return {
+        type: 'derivation',
+        targetVar: varName,
+        originalEquation: origEq,
+        roots: [resVal],
+        steps: [{
+          before: origEq,
+          after: `${est.value}`,
+          rule: 'substitution',
+          justification: 'Numerical convergence analysis',
+          equation: `${origEq} = ${est.value}`,
+        }],
+        ruleSequence: ['substitution'],
+        verified: true,
+      };
+    }
+
+    const reason = est.reason || 'unbounded';
+    const detail =
+      reason === 'one-sided-limits-disagree'
+        ? 'Limit does not exist because left and right limits disagree'
+        : reason === 'unbounded'
+        ? 'Limit is unbounded (tends to infinity)'
+        : reason === 'oscillating'
+        ? 'Limit is oscillating and does not converge'
+        : 'Limit is undefined at target point';
+
+    return {
+      type: 'unknown',
+      reason: reason as UnknownReason,
+      detail,
+    };
+  }
+
+  private estimateLimitNumerically(
+    expr: ASTNode,
+    variable: string,
+    targetPoint: number | 'inf' | '-inf',
+    direction: 'two-sided' | 'left' | 'right',
+    env: Environment
+  ): { value: number; converged: boolean; reason?: 'one-sided-limits-disagree' | 'unbounded' | 'oscillating' | 'undefined' } {
+    if (targetPoint === 'inf' || targetPoint === '-inf') {
+      const sign = targetPoint === 'inf' ? 1 : -1;
+      const vals: number[] = [];
+      for (let i = 2; i <= 8; i++) {
+        try {
+          const lEnv = Object.create(env);
+          lEnv[variable] = { type: 'float', value: sign * Math.pow(10, i) };
+          vals.push(valueToNumber(this.evalNode(expr, lEnv)));
+        } catch {}
+      }
+      if (vals.length < 3) return { value: 0, converged: false, reason: 'undefined' };
+
+      const last = vals[vals.length - 1];
+      const prev = vals[vals.length - 2];
+      if (Math.abs(last) > 1e4 && Math.abs(last) > Math.abs(prev)) {
+        return { value: 0, converged: false, reason: 'unbounded' };
+      }
+      if (Math.abs(last - prev) > 0.05) {
+        return { value: 0, converged: false, reason: 'oscillating' };
+      }
+      return { value: last, converged: true };
+    }
+
+    const a = targetPoint;
+    const deltas = [1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7];
+
+    if (direction === 'two-sided') {
+      const leftVals: number[] = [];
+      const rightVals: number[] = [];
+      for (const d of deltas) {
+        try {
+          const lEnv = Object.create(env);
+          lEnv[variable] = { type: 'float', value: a - d };
+          leftVals.push(valueToNumber(this.evalNode(expr, lEnv)));
+        } catch {}
+        try {
+          const rEnv = Object.create(env);
+          rEnv[variable] = { type: 'float', value: a + d };
+          rightVals.push(valueToNumber(this.evalNode(expr, rEnv)));
+        } catch {}
+      }
+
+      if (leftVals.length < 2 || rightVals.length < 2) {
+        return { value: 0, converged: false, reason: 'undefined' };
+      }
+
+      const lEnd = leftVals[leftVals.length - 1];
+      const rEnd = rightVals[rightVals.length - 1];
+
+      if (Math.abs(lEnd) > 1e4 || Math.abs(rEnd) > 1e4) {
+        return { value: 0, converged: false, reason: 'unbounded' };
+      }
+      if (Math.abs(lEnd - rEnd) > 1e-3) {
+        return { value: 0, converged: false, reason: 'one-sided-limits-disagree' };
+      }
+      return { value: (lEnd + rEnd) / 2, converged: true };
+    }
+
+    const vals: number[] = [];
+    const sign = direction === 'left' ? -1 : 1;
+    for (const d of deltas) {
+      try {
+        const lEnv = Object.create(env);
+        lEnv[variable] = { type: 'float', value: a + sign * d };
+        vals.push(valueToNumber(this.evalNode(expr, lEnv)));
+      } catch {}
+    }
+    if (vals.length < 2) return { value: 0, converged: false, reason: 'undefined' };
+
+    const last = vals[vals.length - 1];
+    if (Math.abs(last) > 1e4) {
+      return { value: 0, converged: false, reason: 'unbounded' };
+    }
+    return { value: last, converged: true };
   }
 
   private evalDiff(node: DiffNode, currentEnv: Environment): Value {

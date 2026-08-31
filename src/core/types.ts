@@ -81,6 +81,7 @@ export type ASTNode =
   | BlockNode
   | DiffNode
   | BigOpNode
+  | LimitNode
   | ClaimNode
   | IndexNode
   | MemberAccessNode;
@@ -232,9 +233,18 @@ export interface BigOpNode {
   type: 'BigOp';
   op: 'sum' | 'prod' | 'integral';
   variable: string;
-  start: ASTNode;
-  end: ASTNode;
+  start?: ASTNode;
+  end?: ASTNode;
   body: ASTNode;
+  span: Span;
+}
+
+export interface LimitNode {
+  type: 'Limit';
+  variable: string;
+  target: ASTNode;
+  direction: 'two-sided' | 'left' | 'right';
+  expr: ASTNode;
   span: Span;
 }
 
@@ -452,7 +462,11 @@ export type StepRule =
   | 'negation-rule'
   | 'identity-rule'
   | 'general-exponential-rule'
-  | 'sqrt-rule';
+  | 'sqrt-rule'
+  | 'substitution'
+  | 'factoring'
+  | 'conjugate-multiplication'
+  | 'lhopitals-rule';
 
 export interface DerivationBranch {
   condition?: string;

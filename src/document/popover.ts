@@ -109,27 +109,21 @@ export class MathPopover {
     const popoverWidth = 400;
     const popoverHeight = 520;
 
-    // Anchor to the right of the clicked glyph with a 12px offset
-    let left = anchorRect.right + 12;
-    let top = anchorRect.top;
+    // Anchor below-right of clicked element (per SPEC Part 7)
+    let left = anchorRect.left;
+    let top = anchorRect.bottom + 8;
 
-    // If overflowing right viewport boundary, place below the glyph
-    if (left + popoverWidth > window.innerWidth - 16) {
-      left = Math.max(16, anchorRect.left);
-      top = anchorRect.bottom + 8;
-    }
-
-    // Check right boundary clamp
+    // If overflowing right viewport boundary, clamp
     if (left + popoverWidth > window.innerWidth - 16) {
       left = window.innerWidth - popoverWidth - 16;
     }
     if (left < 16) left = 16;
 
-    // Check top and bottom boundary clamp (never overlap header at y < 48)
-    if (top < 48) top = 48;
+    // If overflowing bottom viewport boundary, position above the glyph
     if (top + popoverHeight > window.innerHeight - 16) {
-      top = Math.max(48, window.innerHeight - popoverHeight - 16);
+      top = Math.max(48, anchorRect.top - popoverHeight - 8);
     }
+    if (top < 48) top = 48;
 
     this.el.style.left = `${Math.round(left)}px`;
     this.el.style.top = `${Math.round(top)}px`;

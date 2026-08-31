@@ -6,6 +6,7 @@
  */
 
 import { ASTNode } from './types';
+import { formatAST } from './formatter';
 
 export interface TypesetOptions {
   displayMode?: boolean; // display (large limits, stacked fractions) vs inline
@@ -196,10 +197,33 @@ function typesetASTNode(node: ASTNode, options: TypesetOptions): string {
     }
 
     case 'BigOp': {
+      if (node.op === 'integral') {
+        const lowerHtml = node.start ? typesetASTNode(node.start, options) : '';
+        const upperHtml = node.end ? typesetASTNode(node.end, options) : '';
+        const bodyHtml = typesetASTNode(node.body, options);
+        const hasLimits = Boolean(lowerHtml || upperHtml);
+
+        return `
+          <span class="tm-integral-wrap">
+            <span class="tm-integral-block">
+              <span class="tm-int-symbol tm-clickable" data-symbol="\u222b" data-parent-type="integral"${hasLimits ? ` data-bounds-lower="${escapeHtml(node.start ? formatAST(node.start) : '')}" data-bounds-upper="${escapeHtml(node.end ? formatAST(node.end) : '')}"` : ''}>&int;</span>
+              ${hasLimits ? `
+                <span class="tm-int-limits">
+                  <span class="tm-int-upper">${upperHtml}</span>
+                  <span class="tm-int-lower">${lowerHtml}</span>
+                </span>
+              ` : ''}
+            </span>
+            <span class="tm-integrand">${bodyHtml}</span>
+            <span class="tm-diff tm-clickable" data-symbol="d${escapeHtml(node.variable)}" data-parent-type="integral" data-integrand="${escapeHtml(formatAST(node.body))}" data-var="${escapeHtml(node.variable)}"><span class="tm-diff-d">d</span><span class="tm-var">${escapeHtml(node.variable)}</span></span>
+          </span>
+        `;
+      }
+
       const isSum = node.op === 'sum';
       const sym = isSum ? '&sum;' : '&prod;';
-      const lowerHtml = `<span class="tm-var">${escapeHtml(node.variable)}</span>=<span class="tm-num">${typesetASTNode(node.start, options)}</span>`;
-      const upperHtml = typesetASTNode(node.end, options);
+      const lowerHtml = node.start ? `<span class="tm-var">${escapeHtml(node.variable)}</span>=<span class="tm-num">${typesetASTNode(node.start, options)}</span>` : '';
+      const upperHtml = node.end ? typesetASTNode(node.end, options) : '';
       const bodyHtml = typesetASTNode(node.body, options);
 
       return `
@@ -212,6 +236,21 @@ function typesetASTNode(node: ASTNode, options: TypesetOptions): string {
             </span>
           </span>
           <span class="tm-bigop-body">${bodyHtml}</span>
+        </span>
+      `;
+    }
+
+    case 'Limit': {
+      const varHtml = typesetASTNode({ type: 'Identifier', name: node.variable, span: node.span }, options);
+      const targetHtml = typesetASTNode(node.target, options);
+      const dirHtml = node.direction === 'right' ? '<sup>+</sup>' : (node.direction === 'left' ? '<sup>&minus;</sup>' : '');
+      const exprHtml = typesetASTNode(node.expr, options);
+
+      return `
+        <span class="tm-lim-wrap">
+          <span class="tm-fn tm-clickable" data-symbol="lim" data-parent-type="limit" data-var="${escapeHtml(node.variable)}" data-point="${escapeHtml(formatAST(node.target))}" data-direction="${node.direction}">lim</span>
+          <sub class="tm-sub">${varHtml} &rarr; ${targetHtml}${dirHtml}</sub>
+          <span class="tm-lim-body">${exprHtml}</span>
         </span>
       `;
     }
@@ -253,11 +292,49 @@ function typesetASTNode(node: ASTNode, options: TypesetOptions): string {
 }
 
 /**
+ * Formats English prose strings preserving spaces and system font, while typesetting embedded $math$ fragments.
+ */
+export function typesetProseWithMath(text: string, options: TypesetOptions = { displayMode: false }): string {
+  const parts = text.split('$');
+  let html = '';
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 1) {
+      html += typesetStringExpression(parts[i], { ...options, displayMode: false });
+    } else {
+      html += `<span class="tm-prose">${escapeHtml(parts[i])}</span>`;
+    }
+  }
+  return html;
+}
+
+/**
  * Typesets mathematical string notation into HTML cleanly without tag pollution.
  */
 export function typesetStringExpression(expr: string, options: TypesetOptions = { displayMode: true }): string {
   if (!expr) return '';
   let trimmed = expr.trim();
+
+  // 0. Handle unknown(...) results and Verified/Not prose
+  if (trimmed.startsWith('unknown(') && trimmed.endsWith(')')) {
+    const inner = trimmed.slice(8, -1);
+    const commaIdx = inner.indexOf(',');
+    if (commaIdx !== -1) {
+      const reason = inner.substring(0, commaIdx).trim();
+      let detail = inner.substring(commaIdx + 1).trim();
+      if (detail.startsWith('"') && detail.endsWith('"')) {
+        detail = detail.slice(1, -1);
+      } else if (detail.startsWith("'") && detail.endsWith("'")) {
+        detail = detail.slice(1, -1);
+      }
+      return `<span class="tm-unknown">unknown(${escapeHtml(reason)}, ${typesetProseWithMath(detail, options)})</span>`;
+    } else {
+      return `<span class="tm-unknown">unknown(${escapeHtml(inner)})</span>`;
+    }
+  }
+
+  if (trimmed.startsWith('Verified:') || trimmed.startsWith('Not ')) {
+    return typesetProseWithMath(trimmed, options);
+  }
 
   // Strip matching outer parentheses if whole expression is wrapped: ( A ) -> A
   while (isWrappedInMatchingParens(trimmed)) {
