@@ -202,11 +202,65 @@ function typesetASTNode(node: ASTNode, options: TypesetOptions): string {
 }
 
 /**
+ * Renders mixed prose and mathematical notation by typesetting $...$ math blocks.
+ */
+export function renderProseWithMath(text: string): string {
+  if (!text) return '';
+  return text.replace(/\$([^$]+)\$/g, (_, math) => {
+    return `<span class="tm-inline-math">${typesetStringExpression(math, { displayMode: false })}</span>`;
+  });
+}
+
+/**
  * Typesets mathematical string notation into HTML cleanly without tag pollution.
  */
 export function typesetStringExpression(expr: string, options: TypesetOptions = { displayMode: true }): string {
   if (!expr) return '';
-  const trimmed = expr.trim();
+  let trimmed = expr.trim();
+
+  // 1. LaTeX fraction: \frac{a}{b}
+  const fracMatch = trimmed.match(/^\\frac\{([\s\S]+?)\}\{([\s\S]+?)\}$/);
+  if (fracMatch) {
+    return `
+      <span class="tm-frac">
+        <span class="tm-num-box">${typesetStringExpression(fracMatch[1], options)}</span>
+        <span class="tm-frac-bar"></span>
+        <span class="tm-den-box">${typesetStringExpression(fracMatch[2], options)}</span>
+      </span>
+    `;
+  }
+
+  // 2. LaTeX Limit: \lim_{a \to b} f(x)
+  const limMatch = trimmed.match(/^\\lim_\{([^}]+)\}\s*([\s\S]*)$/);
+  if (limMatch) {
+    const target = limMatch[1].replace(/\\Delta\s*([a-zA-Z_])/g, '&Delta;$1').replace(/\\to/g, '&rarr;').replace(/\\infty/g, '&infin;');
+    const rest = limMatch[2] ? ` ${typesetStringExpression(limMatch[2], options)}` : '';
+    return `<span class="tm-fn">lim</span><sub class="tm-sub">${target}</sub>${rest}`;
+  }
+
+  // 3. LaTeX Integral: \int_a^b f(x) \, \mathrm{d}x
+  const latexIntMatch = trimmed.match(/^\\int(?:_([a-zA-Z0-9]+))?(?:\^([a-zA-Z0-9]+))?\s*([\s\S]+?)\s*(?:\\mathrm\{d\}|d)([a-zA-Z_][a-zA-Z0-9_]*)$/);
+  if (latexIntMatch) {
+    const lower = latexIntMatch[1];
+    const upper = latexIntMatch[2];
+    const body = latexIntMatch[3];
+    const vName = latexIntMatch[4];
+    return `
+      <span class="tm-integral-wrap">
+        <span class="tm-integral-block">
+          <span class="tm-int-symbol">&int;</span>
+          ${(lower || upper) ? `
+            <span class="tm-int-limits">
+              <span class="tm-int-upper">${upper || ''}</span>
+              <span class="tm-int-lower">${lower || ''}</span>
+            </span>
+          ` : ''}
+        </span>
+        <span class="tm-integrand">${typesetStringExpression(body, options)}</span>
+        <span class="tm-diff"><span class="tm-diff-d">d</span><span class="tm-var">${escapeHtml(vName)}</span></span>
+      </span>
+    `;
+  }
 
   // 1. Matrix equation / product: A * x = b or A x = b
   if ((trimmed.includes(' = ') || trimmed.includes(' * ') || trimmed.includes('=')) && trimmed.includes('[[')) {
@@ -271,19 +325,34 @@ export function typesetStringExpression(expr: string, options: TypesetOptions = 
     return `
       <span class="tm-integral-wrap">
         <span class="tm-integral-block">
-          <span class="tm-int-symbol">&int;</span>
+          <span class="tm-int-symbol tm-clickable" data-symbol="\u222b" data-parent-type="integral" data-bounds-lower="${escapeHtml(lower)}" data-bounds-upper="${escapeHtml(upper)}">&int;</span>
           <span class="tm-int-limits">
             <span class="tm-int-upper">${upperHtml}</span>
             <span class="tm-int-lower">${lowerHtml}</span>
           </span>
         </span>
         <span class="tm-integrand">${bodyHtml}</span>
-        <span class="tm-diff"><span class="tm-diff-d">d</span><span class="tm-var">${escapeHtml(varName)}</span></span>
+        <span class="tm-diff tm-clickable" data-symbol="d${escapeHtml(varName)}" data-parent-type="integral" data-integrand="${escapeHtml(body)}" data-var="${escapeHtml(varName)}"><span class="tm-diff-d">d</span><span class="tm-var">${escapeHtml(varName)}</span></span>
       </span>
     `;
   }
 
-  // 4. Fractions: A // B or (A) // (B)
+  // 4. Differentials: d//dx, \u2202//\u2202x
+  if (trimmed.startsWith('d//d') || trimmed.startsWith('\u2202//\u2202')) {
+    const isPartial = trimmed.startsWith('\u2202');
+    const varName = trimmed.split('//')[1].replace(/^(?:d|\u2202)/, '');
+    const sym = isPartial ? '&part;' : 'd';
+    const opSym = isPartial ? '\u2202' : 'd';
+    return `
+      <span class="tm-frac tm-diff-frac">
+        <span class="tm-num-box"><span class="tm-diff-d tm-clickable" data-symbol="${opSym}" data-parent-type="derivative">${sym}</span></span>
+        <span class="tm-frac-bar"></span>
+        <span class="tm-den-box"><span class="tm-diff tm-clickable" data-symbol="${opSym}${escapeHtml(varName)}" data-parent-type="derivative" data-var="${escapeHtml(varName)}"><span class="tm-diff-d">${sym}</span><span class="tm-var">${escapeHtml(varName)}</span></span></span>
+      </span>
+    `;
+  }
+
+  // 5. Fractions: A // B or (A) // (B)
   const fracIdx = findTopLevelFrac(trimmed);
   if (fracIdx !== -1) {
     let num = trimmed.substring(0, fracIdx).trim();
@@ -330,25 +399,23 @@ function findTopLevelFrac(str: string): number {
 }
 
 function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
-  // Token patterns:
-  // 1. sqrt(...)
-  // 2. ^(n+1) or ^2
-  // 3. _(i+1) or _1
-  // 4. Relation operators (=, <=, >=, !=, <, >)
-  // 5. Binary operators (+, -, *)
-  // 6. Numbers (123, 3.14)
-  // 7. Functions (sin, cos, ln, exp)
-  // 8. Variables (x, y, theta)
-  // 9. Parentheses & punctuation
+  // Normalize LaTeX entities before tokenizing
+  const normalized = str
+    .replace(/\\mathrm\{([^}]+)\}/g, '$1')
+    .replace(/\\Delta\s*([a-zA-Z_])/g, '&Delta;$1')
+    .replace(/\\Delta/g, '&Delta;')
+    .replace(/\\to/g, '&rarr;')
+    .replace(/\\infty/g, '&infin;')
+    .replace(/\\,/g, ' ');
 
-  const tokenRegex = /(sqrt\((?:[^()]+|\([^()]*\))*\))|(\^(?:\([^)]+\)|[a-zA-Z0-9]+))|(_(?:\([^)]+\)|[a-zA-Z0-9]+))|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261)|(\+|\-|\*|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b(?:sin|cos|tan|ln|exp|det|sqrt|pi|inf)\b)|(\b[a-zA-Z_][a-zA-Z0-9_]*\b)|([()[\],])/g;
+  const tokenRegex = /(sqrt\((?:[^()]+|\([^()]*\))*\))|(\^(?:\([^)]+\)|[a-zA-Z0-9]+))|(_(?:\([^)]+\)|[a-zA-Z0-9]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261)|(\+|\-|\*|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b(?:sin|cos|tan|ln|exp|det|sqrt|pi|inf)\b)|(\b[a-zA-Z_][a-zA-Z0-9_]*\b)|([()[\],])/g;
 
   let out = '';
   let lastIndex = 0;
 
   let match: RegExpExecArray | null;
-  while ((match = tokenRegex.exec(str)) !== null) {
-    const [full, sqrtTok, supTok, subTok, relTok, binTok, numTok, fnTok, identTok, puncTok] = match;
+  while ((match = tokenRegex.exec(normalized)) !== null) {
+    const [full, sqrtTok, supTok, subTok, deltaTok, entityTok, relTok, binTok, numTok, fnTok, identTok, puncTok] = match;
 
     if (sqrtTok) {
       const inside = sqrtTok.replace(/^sqrt\(/, '').replace(/\)$/, '');
@@ -361,6 +428,10 @@ function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
       let sub = subTok.slice(1);
       if (sub.startsWith('(') && sub.endsWith(')')) sub = sub.slice(1, -1);
       out += `<sub class="tm-sub">${typesetStringExpression(sub, options)}</sub>`;
+    } else if (deltaTok) {
+      out += `<span class="tm-var">${deltaTok}</span>`;
+    } else if (entityTok) {
+      out += `<span class="tm-const">${entityTok}</span>`;
     } else if (relTok) {
       let sym = escapeHtml(relTok);
       if (relTok === '<=' || relTok === '\u2264') sym = '&le;';
@@ -376,9 +447,16 @@ function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
     } else if (fnTok) {
       if (fnTok === 'pi') out += `<span class="tm-const">&pi;</span>`;
       else if (fnTok === 'inf') out += `<span class="tm-const">&infin;</span>`;
+      else if (fnTok === 'lim') out += `<span class="tm-fn tm-clickable" data-symbol="lim" data-parent-type="limit">${escapeHtml(fnTok)}</span>`;
       else out += `<span class="tm-fn">${escapeHtml(fnTok)}</span>`;
     } else if (identTok) {
-      out += `<span class="tm-var">${escapeHtml(identTok)}</span>`;
+      if (identTok === 'sum' || identTok === '\u03a3') {
+        out += `<span class="tm-bigop-symbol tm-clickable" data-symbol="\u03a3" data-parent-type="summation">&sum;</span>`;
+      } else if (identTok.startsWith('d') && identTok.length > 1) {
+        out += `<span class="tm-diff tm-clickable" data-symbol="${escapeHtml(identTok)}" data-parent-type="differential">${escapeHtml(identTok)}</span>`;
+      } else {
+        out += `<span class="tm-var">${escapeHtml(identTok)}</span>`;
+      }
     } else if (puncTok) {
       if (puncTok === '(' || puncTok === ')') out += `<span class="tm-paren">${escapeHtml(puncTok)}</span>`;
       else if (puncTok === '[' || puncTok === ']') out += `<span class="tm-bracket">${escapeHtml(puncTok)}</span>`;

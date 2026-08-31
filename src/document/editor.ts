@@ -4,6 +4,8 @@ import { FuelLimits, Value, GraphValue, DerivationValue, SolveTraceValue } from 
 import { Canvas2DPlotter } from '../plot/canvas2d';
 import { Surface3DPlotter } from '../plot/surface3d';
 import { typesetMath } from '../core/math_typeset';
+import { explainSymbol } from '../core/explainer';
+import { MathPopover } from './popover';
 import { ICONS } from '../styles/icons';
 
 function escapeHtml(str: string): string {
@@ -34,10 +36,12 @@ export class DocumentEditor {
   private isPinned: boolean = false;
   private pinnedLine: number | null = null;
   private activeVisualLine: number = 0;
+  public mathPopover: MathPopover;
 
   constructor(container: HTMLElement) {
     this.container = container;
     this.state = new DocumentState();
+    this.mathPopover = new MathPopover();
     this.buildUI();
     this.bindEvents();
     this.state.subscribe((records, isEvaluating) => this.renderWorkPanel(records, isEvaluating));
@@ -344,6 +348,26 @@ export class DocumentEditor {
       if (document.activeElement === this.textarea) {
         this.updateCaret();
       }
+    });
+
+    // Explainable Math Clickable Elements
+    this.container.addEventListener('click', (e) => {
+      const target = (e.target as HTMLElement).closest('.tm-clickable') as HTMLElement;
+      if (!target) return;
+
+      const symbol = target.getAttribute('data-symbol') || target.textContent || '';
+      const parentType = target.getAttribute('data-parent-type') || '';
+      const integrand = target.getAttribute('data-integrand') || '';
+      const boundsLower = target.getAttribute('data-bounds-lower') || '';
+      const boundsUpper = target.getAttribute('data-bounds-upper') || '';
+
+      const explanation = explainSymbol(symbol, {
+        parentType,
+        integrand,
+        bounds: { lower: boundsLower, upper: boundsUpper },
+      });
+
+      this.mathPopover.show(explanation, target);
     });
 
     this.bindSurfaceMouseEvents();
@@ -970,13 +994,7 @@ export class DocumentEditor {
     } else if (colIdx < charBoxes.length) {
       caretX = charBoxes[colIdx].left;
     } else if (charBoxes.length > 0) {
-      const lastChild = lineEl.lastChild;
-      if (lastChild && lastChild.nodeType === Node.ELEMENT_NODE && (lastChild as HTMLElement).classList.contains('typeset-box')) {
-        const lastRect = (lastChild as HTMLElement).getBoundingClientRect();
-        caretX = lastRect.right - surfaceRect.left + this.overlayEl.scrollLeft;
-      } else {
-        caretX = charBoxes[charBoxes.length - 1].right;
-      }
+      caretX = charBoxes[charBoxes.length - 1].right;
     } else {
       caretX = lineRect.left - surfaceRect.left + this.overlayEl.scrollLeft + colIdx * 8.429;
     }
@@ -1028,27 +1046,24 @@ export class DocumentEditor {
 
     return code.replace(tokenRegex, (match, diffOp, fracOp, sup, trailingSup, sub, trailingSub, plain) => {
       if (diffOp) {
-        const w = diffOp.length;
-        return `<span class="typeset-box typeset-diff-inline" style="width:${w}ch;" data-construct="diff" data-src-len="${w}">${escapeHtml(diffOp)}</span>`;
+        return `<span class="typeset-box typeset-diff-inline" data-construct="diff">${escapeHtml(diffOp)}</span>`;
       }
       if (fracOp) {
-        return `<span class="typeset-box typeset-frac-inline" style="width:2ch;" data-construct="frac" data-src-len="2">//</span>`;
+        return `<span class="typeset-box typeset-frac-inline" data-construct="frac">//</span>`;
       }
       if (sup) {
-        const w = sup.length;
         const exp = sup.slice(1);
-        return `<span class="typeset-box typeset-sup-box" style="width:${w}ch;" data-construct="sup" data-src-len="${w}"><span class="typeset-op typeset-op-sup">^</span><span class="typeset-sup">${escapeHtml(exp)}</span></span>`;
+        return `<span class="typeset-box typeset-sup-box" data-construct="sup"><span class="typeset-op typeset-op-sup">^</span><span class="typeset-sup">${escapeHtml(exp)}</span></span>`;
       }
       if (trailingSup) {
-        return `<span class="typeset-box typeset-sup-box typeset-incomplete" style="width:1ch;" data-construct="sup" data-src-len="1"><span class="typeset-sup dimmed">^</span></span>`;
+        return `<span class="typeset-box typeset-sup-box typeset-incomplete" data-construct="sup"><span class="typeset-sup dimmed">^</span></span>`;
       }
       if (sub) {
-        const w = sub.length;
         const subText = sub.slice(1);
-        return `<span class="typeset-box typeset-sub-box" style="width:${w}ch;" data-construct="sub" data-src-len="${w}"><span class="typeset-op typeset-op-sub">_</span><span class="typeset-sub">${escapeHtml(subText)}</span></span>`;
+        return `<span class="typeset-box typeset-sub-box" data-construct="sub"><span class="typeset-op typeset-op-sub">_</span><span class="typeset-sub">${escapeHtml(subText)}</span></span>`;
       }
       if (trailingSub) {
-        return `<span class="typeset-box typeset-sub-box typeset-incomplete" style="width:1ch;" data-construct="sub" data-src-len="1"><span class="typeset-sub dimmed">_</span></span>`;
+        return `<span class="typeset-box typeset-sub-box typeset-incomplete" data-construct="sub"><span class="typeset-sub dimmed">_</span></span>`;
       }
       return escapeHtml(plain || match);
     });
@@ -1107,6 +1122,7 @@ export class DocumentEditor {
       this.activePlotter.dispose();
       this.activePlotter = null;
     }
+    this.mathPopover.dispose();
     this.state.dispose();
   }
 }

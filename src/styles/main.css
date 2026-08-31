@@ -1412,3 +1412,166 @@ html, body {
   line-height: 0;
   margin-left: 0.05em;
 }
+
+/* =========================================================================
+   Explainable Math Popover (Phase 9)
+   ========================================================================= */
+.tm-clickable {
+  cursor: pointer;
+  border-radius: var(--border-radius-xs);
+  transition: background-color var(--duration-fast), color var(--duration-fast);
+  padding: 0 1px;
+}
+
+.tm-clickable:hover {
+  background-color: var(--color-accent-subtle);
+  color: var(--color-accent);
+  outline: 1px solid var(--color-accent-border);
+}
+
+.doc-math-popover {
+  position: fixed;
+  z-index: 10000;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  background-color: var(--color-bg-surface-elevated);
+  border: var(--border-width-default) solid var(--color-border-default);
+  border-radius: var(--border-radius-md);
+  box-shadow: var(--shadow-floating);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: var(--font-family-ui);
+  animation: popoverFadeIn var(--duration-fast) ease-out;
+}
+
+.doc-math-popover.hidden {
+  display: none !important;
+}
+
+@keyframes popoverFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.popover-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  background-color: var(--color-bg-surface);
+  border-bottom: var(--border-width-default) solid var(--color-border-subtle);
+}
+
+.popover-symbol-badge {
+  font-family: var(--font-family-math);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-accent);
+  background-color: var(--color-accent-subtle);
+  border: var(--border-width-default) solid var(--color-accent-border);
+  border-radius: var(--border-radius-sm);
+  padding: 2px var(--space-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+}
+
+.popover-title-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.popover-role {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.popover-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-md);
+  cursor: pointer;
+  padding: 0 var(--space-2xs);
+  line-height: 1;
+}
+
+.popover-close-btn:hover {
+  color: var(--color-text-primary);
+}
+
+.popover-body {
+  padding: var(--space-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.popover-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+
+.popover-section-label {
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-accent);
+  cursor: default;
+}
+
+.popover-section-content {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  line-height: 1.45;
+}
+
+.popover-showme-preview {
+  background-color: var(--color-bg-base);
+  border: var(--border-width-default) solid var(--color-border-subtle);
+  border-radius: var(--border-radius-sm);
+  padding: var(--space-xs);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+}
+
+.popover-details {
+  cursor: pointer;
+}
+
+.popover-details summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+}
+
+.popover-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.popover-details summary::after {
+  content: ' \25B8';
+  font-size: 0.8em;
+  transition: transform var(--duration-fast);
+}
+
+.popover-details[open] summary::after {
+  transform: rotate(90deg);
+}
+
+.deeper-content {
+  margin-top: var(--space-2xs);
+  padding: var(--space-xs);
+  background-color: var(--color-bg-base);
+  border-left: 2px solid var(--color-accent);
+  border-radius: 0 var(--border-radius-sm) var(--border-radius-sm) 0;
+}
