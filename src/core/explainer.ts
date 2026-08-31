@@ -221,10 +221,25 @@ export function explainSymbol(symbol: string, context: ExplanationContext = {}):
   // Case 7: Check / Dimensional Verification
   if (sym === 'check' || parent === 'check' || expr.includes('check(')) {
     const exprStr = context.exprString || '(3/4)*pi*r^2';
-    const quantity = KNOWN_QUANTITIES['sphere volume'];
-    
+
+    // Dynamically resolve the target quantity from the is: argument in the expression
+    let quantity: typeof KNOWN_QUANTITIES[string] | undefined;
+    const isMatch = exprStr.match(/is:\s*"([^"]+)"/);
+    if (isMatch) {
+      const queryLower = isMatch[1].toLowerCase().trim();
+      for (const q of Object.values(KNOWN_QUANTITIES)) {
+        if (q.id === queryLower || q.name.toLowerCase() === queryLower ||
+            q.aliases.some(a => a.toLowerCase() === queryLower)) {
+          quantity = q;
+          break;
+        }
+      }
+    }
+    // Fallback to sphere volume if no quantity resolved
+    if (!quantity) quantity = KNOWN_QUANTITIES['sphere volume'];
+
     let derivHtml = '';
-    if (quantity && quantity.derivationSteps && quantity.derivationSteps.length > 0) {
+    if (quantity.derivationSteps && quantity.derivationSteps.length > 0) {
       const stepItems = quantity.derivationSteps.map(s => {
         return `<div style="font-size: 11px; margin-bottom: 2px; padding-left: 6px;"><strong>Step ${s.step}</strong> (${s.title}): ${typesetMath(s.math, { displayMode: false })} &mdash; ${s.explanation}</div>`;
       }).join('');
@@ -239,26 +254,26 @@ export function explainSymbol(symbol: string, context: ExplanationContext = {}):
     }
 
     const lines = [
-      '1. This is not the volume of a sphere.',
+      `1. Dimensional analysis for ${quantity.name}.`,
       `2. ${typesetMath('r^2', { displayMode: false })} has dimension 2 (area). A volume requires dimension 3.`,
-      `3. The correct formula is ${typesetMath('(4//3) * pi * r^3', { displayMode: false })}.`,
+      `3. The correct formula is ${typesetMath(quantity.formulaStr, { displayMode: false })}.`,
       derivHtml,
-      `5. What ${typesetMath('(3//4) * pi * r^2', { displayMode: false })} actually is: a scalar multiple of a circle's area, specifically 3/4 of ${typesetMath('pi * r^2', { displayMode: false })}.`
+      `5. Coefficient and dimension verification against canonical ${quantity.name} formula.`
     ];
 
     const showMeHtml = lines.map(line => `<div style="margin-bottom: 3px;">${line}</div>`).join('');
 
     return {
       symbol: 'check',
-      role: 'Geometric Dimension & Quantity Verifier',
-      whatItIs: 'Dimensional consistency and canonical geometric formula checker.',
-      whyItIsHere: 'Verifies whether a mathematical expression matches the spatial degree and canonical coefficient of a target geometric quantity.',
+      role: `Geometric Dimension & Quantity Verifier (${quantity.name})`,
+      whatItIs: `Dimensional consistency and canonical geometric formula checker for ${quantity.name}.`,
+      whyItIsHere: `Verifies whether a mathematical expression matches the spatial degree and canonical coefficient of ${quantity.name} (${typesetMath(quantity.formulaStr, { displayMode: false })}).`,
       showMe: showMeHtml,
-      goDeeper: `Dimensional analysis: ${typesetMath('[V] = L^3', { displayMode: false })} versus ${typesetMath('[A] = L^2', { displayMode: false })}. Shell integration: ${typesetMath('V = \u222b_0^R 4*pi*r^2 dr = (4/3)*pi*R^3', { displayMode: false })}.`,
+      goDeeper: `Dimensional analysis: ${typesetMath('[V] = L^3', { displayMode: false })} versus ${typesetMath('[A] = L^2', { displayMode: false })}. ${quantity.derivationTitle}: ${typesetMath(quantity.derivationSteps.length > 0 ? quantity.derivationSteps[quantity.derivationSteps.length - 1].math : quantity.formulaStr, { displayMode: false })}.`,
       visualization: {
         type: 'dimension_check',
         expression: exprStr,
-        variable: context.variableName || 'r',
+        variable: context.variableName || quantity.variables[0] || 'r',
       },
     };
   }

@@ -102,8 +102,17 @@ describe('Part 9.3: Zero LaTeX Command In String Literals Enforcement', () => {
       explainSymbol('\u222b', { parentType: 'integral' }),
       explainSymbol('\u03a3', { parentType: 'summation' }),
       explainSymbol('lim', { parentType: 'limit' }),
-      explainSymbol('check', { parentType: 'check', exprString: '3/4 * pi * r^2' }),
     ];
+
+    // Add a check context for every known quantity
+    for (const q of Object.values(KNOWN_QUANTITIES)) {
+      contexts.push(
+        explainSymbol('check', {
+          parentType: 'check',
+          exprString: `check(r^2, is: "${q.name}")`
+        })
+      );
+    }
 
     const forbiddenPhrases = [
       'as steps',
