@@ -34,6 +34,7 @@ export const BUILTIN_FUNCTIONS = new Set([
   'abs',
   'floor',
   'ceil',
+  'gamma',
   'round',
   'min',
   'max',

@@ -44,6 +44,7 @@ import { AlgebraicSimplifier } from './algebra/simplify';
 import { createError } from './errors';
 import { formatAST } from './formatter';
 import { inferExpressionDimensions, checkGeometricQuantity } from './dimensional';
+import { computeSymbolicDerivative } from './symbolic_diff';
 
 export function createInitialEnvironment(): Environment {
   const env: Environment = {};
@@ -1311,6 +1312,23 @@ export class Evaluator {
 
   private evalDiff(node: DiffNode, currentEnv: Environment): Value {
     const varName = node.variable;
+
+    // Symbolic derivation if variable is not bound in environment
+    if (!(varName in currentEnv) && !(node.expr.type === 'Identifier' && node.expr.name in currentEnv)) {
+      const symRes = computeSymbolicDerivative(node.expr, varName);
+      return {
+        type: 'derivation',
+        originalExpr: node.expr,
+        finalExpr: symRes.derivativeAST,
+        originalExprString: `d//d${varName} (${formatAST(node.expr)})`,
+        finalExprString: symRes.derivativeStr,
+        steps: symRes.steps,
+        ruleSequence: symRes.ruleSequence,
+        targetVar: varName,
+        verified: symRes.numericVerification.passed
+      };
+    }
+
     const currentVal = currentEnv[varName];
     const x0 = currentVal ? valueToNumber(currentVal, node.span) : 0;
     const h = 1e-6;

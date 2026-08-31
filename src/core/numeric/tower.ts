@@ -563,8 +563,15 @@ export function applyBuiltin(name: string, args: Value[], span?: Span): Value {
       return { type: 'float', value: floatLn(valueToNumber(args[0], span), span) };
     }
     case 'log': {
-      if (args.length !== 1) throw createError(`log expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      return { type: 'float', value: floatLog(valueToNumber(args[0], span), span) };
+      if (args.length === 1) {
+        return { type: 'float', value: floatLog(valueToNumber(args[0], span), span) };
+      }
+      if (args.length === 2) {
+        const val = valueToNumber(args[0], span);
+        const base = valueToNumber(args[1], span);
+        return { type: 'float', value: floatLn(val, span) / floatLn(base, span) };
+      }
+      throw createError(`log expects 1 or 2 arguments, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
     }
     case 'log2': {
       if (args.length !== 1) throw createError(`log2 expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
