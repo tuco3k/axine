@@ -598,8 +598,9 @@ export function applyBuiltin(name: string, args: Value[], span?: Span): Value {
       if (args.length !== 1) throw createError(`floor expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
       const a = args[0];
       if (a.type === 'rational') {
-        let q = a.n / a.d;
-        if (a.n < 0n && a.n % a.d !== 0n) {
+        const val: RationalValue = a;
+        let q: bigint = val.n / val.d;
+        if (val.n < 0n && val.n % val.d !== 0n) {
           q -= 1n;
         }
         return { type: 'rational', n: q, d: 1n };
@@ -610,8 +611,9 @@ export function applyBuiltin(name: string, args: Value[], span?: Span): Value {
       if (args.length !== 1) throw createError(`ceil expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
       const a = args[0];
       if (a.type === 'rational') {
-        let q = a.n / a.d;
-        if (a.n > 0n && a.n % a.d !== 0n) {
+        const val: RationalValue = a;
+        let q: bigint = val.n / val.d;
+        if (val.n > 0n && val.n % val.d !== 0n) {
           q += 1n;
         }
         return { type: 'rational', n: q, d: 1n };

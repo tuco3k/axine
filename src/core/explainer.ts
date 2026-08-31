@@ -47,12 +47,12 @@ export interface NodeExplanation {
 
 export function getRiemannRuleExplanation(rule: 'left' | 'midpoint' | 'right', varName: string = 'x'): string {
   if (rule === 'left') {
-    return `Left Riemann sum: evaluates the integrand at left endpoints ${typesetMath('x_i^* = x_{i-1}', { displayMode: false })}. For monotonically increasing functions, every rectangle sits below the curve, producing a strict underestimate.`;
+    return `Left Riemann sum: evaluates the integrand at left endpoints ${typesetMath(`${varName}_i^* = ${varName}_{i-1}`, { displayMode: false })}. For monotonically increasing functions, every rectangle sits below the curve, producing a strict underestimate.`;
   }
   if (rule === 'right') {
-    return `Right Riemann sum: evaluates the integrand at right endpoints ${typesetMath('x_i^* = x_i', { displayMode: false })}. For monotonically increasing functions, every rectangle extends above the curve, producing a strict overestimate.`;
+    return `Right Riemann sum: evaluates the integrand at right endpoints ${typesetMath(`${varName}_i^* = ${varName}_i`, { displayMode: false })}. For monotonically increasing functions, every rectangle extends above the curve, producing a strict overestimate.`;
   }
-  return `Midpoint Riemann sum: evaluates the integrand at midpoints ${typesetMath('x_i^* = (x_{i-1} + x_i)//2', { displayMode: false })}. Exact on linear functions by symmetric error cancellation.`;
+  return `Midpoint Riemann sum: evaluates the integrand at midpoints ${typesetMath(`${varName}_i^* = (${varName}_{i-1} + ${varName}_i)//2`, { displayMode: false })}. Exact on linear functions by symmetric error cancellation.`;
 }
 
 export function explainSymbol(symbol: string, context: ExplanationContext = {}): NodeExplanation {

@@ -485,13 +485,16 @@ export class Evaluator {
           }
         }
         if (targetVal.type === 'step') {
-          if (prop === 'before') return { type: 'string', value: targetVal.before } as any;
-          if (prop === 'after') return { type: 'string', value: targetVal.after } as any;
-          if (prop === 'rule') return { type: 'string', value: targetVal.rule } as any;
-          if (prop === 'justification') return { type: 'string', value: targetVal.justification } as any;
-          if (prop === 'sideCondition') return { type: 'string', value: targetVal.sideCondition ?? '' } as any;
+          if (prop === 'before') return { type: 'string', value: targetVal.before };
+          if (prop === 'after') return { type: 'string', value: targetVal.after };
+          if (prop === 'rule') return { type: 'string', value: targetVal.rule };
+          if (prop === 'justification') return { type: 'string', value: targetVal.justification };
+          if (prop === 'sideCondition') return { type: 'string', value: targetVal.sideCondition ?? '' };
         }
         throw createError(`Property '${prop}' does not exist on type '${targetVal.type}'`, node.span);
+      }
+      case 'StringLiteral': {
+        return { type: 'string', value: node.value };
       }
       case 'FunctionCall': {
         return this.evalFunctionCall(node, currentEnv);
@@ -1318,6 +1321,8 @@ export class Evaluator {
       const symRes = computeSymbolicDerivative(node.expr, varName);
       return {
         type: 'derivation',
+        originalEquation: `d//d${varName} (${formatAST(node.expr)})`,
+        roots: [],
         originalExpr: node.expr,
         finalExpr: symRes.derivativeAST,
         originalExprString: `d//d${varName} (${formatAST(node.expr)})`,
@@ -1637,7 +1642,7 @@ export class Evaluator {
     return AlgebraicSimplifier.simplify(exprArg, inVar, currentEnv);
   }
 
-  private evalDimension(node: FunctionCallNode, currentEnv: Environment): Value {
+  private evalDimension(node: FunctionCallNode, _currentEnv: Environment): Value {
     if (node.args.length === 0) {
       throw createError('dimension() expects 1 expression argument', node.span);
     }
@@ -1656,7 +1661,7 @@ export class Evaluator {
     }
   }
 
-  private evalCheck(node: FunctionCallNode, currentEnv: Environment): Value {
+  private evalCheck(node: FunctionCallNode, _currentEnv: Environment): Value {
     if (node.args.length === 0) {
       throw createError('check() expects at least 1 expression argument and an is: "quantity" target', node.span);
     }

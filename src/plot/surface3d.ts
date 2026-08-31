@@ -342,7 +342,7 @@ export class Surface3DPlotter {
           })
         );
 
-        const baseRgb = surfIdx === 0 ? accentRgb : [180, 83, 9]; // secondary warm tone for multi-surface
+        const baseRgb: [number, number, number] = surfIdx === 0 ? accentRgb : [180, 83, 9]; // secondary warm tone for multi-surface
 
         for (let j = 0; j < M - 1; j++) {
           for (let i = 0; i < N - 1; i++) {

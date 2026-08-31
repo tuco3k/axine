@@ -280,38 +280,4 @@ export class AlgebraicSimplifier {
     return result;
   }
 
-  private static formatPoly(poly: { coeffs: BigFraction[]; degree: number }, varName: string): string {
-    const terms: string[] = [];
-    for (let deg = poly.coeffs.length - 1; deg >= 0; deg--) {
-      const c = poly.coeffs[deg];
-      if (!c || c.n === 0n) continue;
-
-      let termStr = '';
-      if (deg === 0) {
-        termStr = c.toString();
-      } else if (deg === 1) {
-        if (c.equals(BigFraction.fromInt(1))) termStr = varName;
-        else if (c.equals(BigFraction.fromInt(-1))) termStr = `-${varName}`;
-        else termStr = `${c.toString()}${varName}`;
-      } else {
-        if (c.equals(BigFraction.fromInt(1))) termStr = `${varName}^${deg}`;
-        else if (c.equals(BigFraction.fromInt(-1))) termStr = `-${varName}^${deg}`;
-        else termStr = `${c.toString()}${varName}^${deg}`;
-      }
-      terms.push(termStr);
-    }
-
-    if (terms.length === 0) return '0';
-
-    let res = terms[0];
-    for (let i = 1; i < terms.length; i++) {
-      const t = terms[i];
-      if (t.startsWith('-')) {
-        res += ` - ${t.substring(1)}`;
-      } else {
-        res += ` + ${t}`;
-      }
-    }
-    return res;
-  }
 }

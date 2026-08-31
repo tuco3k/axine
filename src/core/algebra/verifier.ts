@@ -11,12 +11,14 @@ export class AlgebraicVerifier {
     varName: string,
     env: Environment
   ): DerivationValue | { type: 'unknown'; reason: any; detail: string } {
-    // 1. Verify claimed roots by substituting back into original equation
-    const rootsToVerify = derivation.roots.length > 0 ? derivation.roots : (Array.isArray(derivation.result) ? derivation.result : [derivation.result]).filter(v => v && (v.type === 'rational' || v.type === 'float'));
+    const rootsToVerify: Value[] = derivation.roots.length > 0
+      ? derivation.roots
+      : (Array.isArray(derivation.result) ? derivation.result : [derivation.result])
+          .filter((v): v is Value => !!v && (v.type === 'rational' || v.type === 'float'));
     if (!derivation.specialCase && rootsToVerify.length > 0) {
       for (const root of rootsToVerify) {
         try {
-          const testEnv = { ...env, [varName]: root };
+          const testEnv: Environment = { ...env, [varName]: root };
           const lhsVal = new Evaluator(testEnv).evaluate(origLhs);
           const rhsVal = new Evaluator(testEnv).evaluate(origRhs);
 
@@ -106,6 +108,7 @@ export class AlgebraicVerifier {
       const s2 = derivation.steps[k + 1];
 
       // Parse step equations
+      if (!s1.equation || !s2.equation) continue;
       const parts1 = s1.equation.split(' = ');
       const parts2 = s2.equation.split(' = ');
       if (parts1.length !== 2 || parts2.length !== 2) continue;

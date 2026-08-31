@@ -139,6 +139,9 @@ export class MathPopover {
     this.isVisible = false;
     this.currentAnchor = null;
     this.el.classList.add('hidden');
+    if (this.activeVisualizer) {
+      this.activeVisualizer = undefined;
+    }
   }
 
   public dispose() {

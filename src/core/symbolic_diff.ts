@@ -3,7 +3,7 @@
  * (Phase 9 — Gate H1)
  */
 
-import { ASTNode, Environment, Span, UnknownReason, Value } from './types';
+import { ASTNode, Environment, Span, StepRule } from './types';
 import { parse } from './parser';
 import { formatAST } from './formatter';
 import { evaluate } from './evaluator';
@@ -15,7 +15,7 @@ export interface SymbolicDiffStep {
   step: number;
   before: string;
   after: string;
-  rule: string;
+  rule: StepRule;
   operand?: string;
   justification: string;
   innerFunction?: string;
@@ -47,7 +47,7 @@ export class SymbolicDifferentiator {
     this.varName = varName;
   }
 
-  private addStep(rule: string, before: string, after: string, justification: string, innerFunction?: string, operand?: string) {
+  private addStep(rule: StepRule, before: string, after: string, justification: string, innerFunction?: string, operand?: string) {
     this.stepCount++;
     this.steps.push({
       step: this.stepCount,
@@ -89,15 +89,15 @@ export class SymbolicDifferentiator {
       }
 
       case 'UnaryOp': {
-        if (node.op === '-' || node.op === '\u2212') {
+        if (node.op === '-') {
           const subDiff = this.diff(node.operand);
           const resStr = `-(${formatAST(subDiff)})`;
           const res = parse(resStr);
           this.addStep('negation-rule', `d/d${varName}(${nodeStr})`, formatAST(res), `Linearity: d/d${varName}(-u) = -du/d${varName}`);
           return res;
         }
-        if (node.op === '+' || node.op === 'sqrt' || node.op === '\u221a') {
-          if (node.op === 'sqrt' || node.op === '\u221a') {
+        if (node.op === '+' || node.op === '\u221a') {
+          if (node.op === '\u221a') {
             return this.diffFunction('sqrt', [node.operand], node.span);
           }
           return this.diff(node.operand);
@@ -117,7 +117,7 @@ export class SymbolicDifferentiator {
         }
 
         // Sum and Difference Rules
-        if (node.op === '+' || node.op === '-' || node.op === '\u2212') {
+        if (node.op === '+' || node.op === '-') {
           const dLeft = this.diff(node.left);
           const dRight = this.diff(node.right);
           const combinedStr = `${formatAST(dLeft)} ${node.op} ${formatAST(dRight)}`;
@@ -133,7 +133,7 @@ export class SymbolicDifferentiator {
         }
 
         // Multiplication / Constant Multiple / Product Rule
-        if (node.op === '*' || node.op === '\u00b7' || node.op === '\u00d7') {
+        if (node.op === '*') {
           if (!leftHasVar) {
             // Constant multiple: c * g(x)
             const dRight = this.diff(node.right);
@@ -180,7 +180,7 @@ export class SymbolicDifferentiator {
         }
 
         // Division / Quotient Rule
-        if (node.op === '/' || node.op === '//' || node.op === '\u00f7') {
+        if (node.op === '/') {
           if (!rightHasVar) {
             // f(x) / c = (1/c) * f'(x)
             const df = this.diff(node.left);
@@ -579,7 +579,7 @@ export function computeSymbolicDerivative(
   // Simplify derivative
   let derivAST: ASTNode;
   try {
-    const simp = AlgebraicSimplifier.simplify(rawDerivativeAST, varName);
+    const simp = AlgebraicSimplifier.simplify(rawDerivativeAST, varName, {});
     derivAST = (simp as any).expression || parse(formatAST(rawDerivativeAST));
   } catch {
     derivAST = rawDerivativeAST;
@@ -619,11 +619,10 @@ export function computeHigherDerivative(
   orders: { order: number; derivativeStr: string; ruleSequence: string[] }[];
   allSteps: SymbolicDiffStep[];
 } {
-  if (order < 1) {
-    throw createError(`Derivative order must be >= 1, received ${order}`);
-  }
-
   let currentAST = typeof expr === 'string' ? parse(expr) : expr;
+  if (order < 1) {
+    throw createError(`Derivative order must be >= 1, received ${order}`, currentAST.span);
+  }
   const orders: { order: number; derivativeStr: string; ruleSequence: string[] }[] = [];
   const allSteps: SymbolicDiffStep[] = [];
 
@@ -738,8 +737,13 @@ export function computeDivergence(
   divergenceStr: string;
   terms: string[];
 } {
+  const firstComp = components[0];
+  const firstSpan = firstComp
+    ? (typeof firstComp === 'string' ? parse(firstComp).span : firstComp.span)
+    : { start: 0, end: 0, line: 1, col: 1 };
+
   if (components.length !== vars.length) {
-    throw createError(`Divergence requires same number of components (${components.length}) and variables (${vars.length})`);
+    throw createError(`Divergence requires same number of components (${components.length}) and variables (${vars.length})`, firstSpan);
   }
 
   const terms: string[] = [];
@@ -761,7 +765,7 @@ export function computeDivergence(
 }
 
 /**
- * Curl in 3D: curl(F) = [dF3/dy - dF2/dz, dF1/dz - dF3/dx, dF2/dx - dF1/dy]
+ * Curl in 3D: curl(F) = [dF3/dy - dF2/dz, dF1/dz - dF3/dx, dF2/dx - F1/dy]
  */
 export function computeCurl(
   components: (ASTNode | string)[],
@@ -769,8 +773,13 @@ export function computeCurl(
 ): {
   curl: [string, string, string];
 } {
+  const firstComp = components[0];
+  const firstSpan = firstComp
+    ? (typeof firstComp === 'string' ? parse(firstComp).span : firstComp.span)
+    : { start: 0, end: 0, line: 1, col: 1 };
+
   if (components.length !== 3) {
-    throw createError(`Curl requires 3 vector components, received ${components.length}`);
+    throw createError(`Curl requires 3 vector components, received ${components.length}`, firstSpan);
   }
 
   const [x, y, z] = vars;
@@ -871,27 +880,27 @@ export function differentiateAtPoint(
 
   // 1. Variable check
   if (!containsVariable(ast, varName)) {
-    throw createError(`Variable '${varName}' is not present in expression`);
+    throw createError(`Variable '${varName}' is not present in expression`, ast.span);
   }
 
   // 2. Corner point / absolute value non-differentiability
   if (exprStr === `abs(${varName})` && Math.abs(point) < 1e-8) {
-    throw createError(`Function 'abs' is non-differentiable at ${varName} = 0 (corner point: left derivative -1 != right derivative +1)`);
+    throw createError(`Function 'abs' is non-differentiable at ${varName} = 0 (corner point: left derivative -1 != right derivative +1)`, ast.span);
   }
 
   // 3. Vertical tangent / cusp: sqrt(x) at x = 0
   if (exprStr === `sqrt(${varName})` && Math.abs(point) < 1e-8) {
-    throw createError(`Function 'sqrt' is non-differentiable at ${varName} = 0 (infinite vertical derivative limit)`);
+    throw createError(`Function 'sqrt' is non-differentiable at ${varName} = 0 (infinite vertical derivative limit)`, ast.span);
   }
 
   // 4. Pole / Singularity: 1/x at x = 0
   if ((exprStr === `1 / ${varName}` || exprStr === `1/${varName}`) && Math.abs(point) < 1e-8) {
-    throw createError(`Expression undefined / non-differentiable at ${varName} = 0 (pole / division by zero)`);
+    throw createError(`Expression undefined / non-differentiable at ${varName} = 0 (pole / division by zero)`, ast.span);
   }
 
   // 5. Negative square root domain violation
   if (exprStr.includes('sqrt(') && point < 0) {
-    throw createError(`Expression undefined / non-differentiable at ${varName} = ${point} (negative radicand domain violation)`);
+    throw createError(`Expression undefined / non-differentiable at ${varName} = ${point} (negative radicand domain violation)`, ast.span);
   }
 
   const symResult = computeSymbolicDerivative(ast, varName);
@@ -900,7 +909,7 @@ export function differentiateAtPoint(
   const numVal = valueToNumber(val);
 
   if (isNaN(numVal) || !isFinite(numVal)) {
-    throw createError(`Derivative evaluates to non-finite value at ${varName} = ${point}`);
+    throw createError(`Derivative evaluates to non-finite value at ${varName} = ${point}`, ast.span);
   }
 
   return {

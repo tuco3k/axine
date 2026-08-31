@@ -11,8 +11,7 @@ import {
   computeGradient,
   computeDivergence,
   computeCurl,
-  differentiateAtPoint,
-  SymbolicDiffResult
+  differentiateAtPoint
 } from '../core/symbolic_diff';
 
 interface TestCase {

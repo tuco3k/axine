@@ -181,7 +181,7 @@ function typesetASTNode(node: ASTNode, options: TypesetOptions): string {
     case 'Diff': {
       const sym = node.isPartial ? '&part;' : 'd';
       const opSym = node.isPartial ? '\u2202' : 'd';
-      const varName = node.varName;
+      const varName = node.variable;
       const opHtml = `
         <span class="tm-frac tm-diff-frac">
           <span class="tm-num-box"><span class="tm-diff-d tm-clickable" data-symbol="${opSym}" data-parent-type="derivative">${sym}</span></span>
@@ -189,8 +189,8 @@ function typesetASTNode(node: ASTNode, options: TypesetOptions): string {
           <span class="tm-den-box"><span class="tm-diff tm-clickable" data-symbol="${opSym}${escapeHtml(varName)}" data-parent-type="derivative" data-var="${escapeHtml(varName)}"><span class="tm-diff-d">${sym}</span><span class="tm-var">${escapeHtml(varName)}</span></span></span>
         </span>
       `;
-      if (node.operand) {
-        return `${opHtml} ${typesetASTNode(node.operand, options)}`;
+      if (node.expr) {
+        return `${opHtml} ${typesetASTNode(node.expr, options)}`;
       }
       return opHtml;
     }
@@ -198,8 +198,8 @@ function typesetASTNode(node: ASTNode, options: TypesetOptions): string {
     case 'BigOp': {
       const isSum = node.op === 'sum';
       const sym = isSum ? '&sum;' : '&prod;';
-      const lowerHtml = `<span class="tm-var">${escapeHtml(node.varName)}</span>=<span class="tm-num">${typesetASTNode(node.lower, options)}</span>`;
-      const upperHtml = typesetASTNode(node.upper, options);
+      const lowerHtml = `<span class="tm-var">${escapeHtml(node.variable)}</span>=<span class="tm-num">${typesetASTNode(node.start, options)}</span>`;
+      const upperHtml = typesetASTNode(node.end, options);
       const bodyHtml = typesetASTNode(node.body, options);
 
       return `

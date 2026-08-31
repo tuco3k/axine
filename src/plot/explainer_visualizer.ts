@@ -504,9 +504,9 @@ export class ExplainerVisualizer {
     const isValid = maxDev <= eps + 1e-5;
 
     // Update DOM
-    const targetEl = this.container.querySelector('#vis-val-target');
-    const maxdevEl = this.container.querySelector('#vis-val-maxdev');
-    const statusEl = this.container.querySelector('#vis-val-status');
+    const targetEl = this.container.querySelector<HTMLElement>('#vis-val-target');
+    const maxdevEl = this.container.querySelector<HTMLElement>('#vis-val-maxdev');
+    const statusEl = this.container.querySelector<HTMLElement>('#vis-val-status');
     if (targetEl) targetEl.textContent = `(${x0.toFixed(1)}, ${L.toFixed(1)})`;
     if (maxdevEl) maxdevEl.textContent = maxDev.toFixed(4);
     if (statusEl) {

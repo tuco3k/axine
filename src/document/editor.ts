@@ -1,12 +1,11 @@
 import { DocumentState, DocumentLineRecord } from './document_state';
 import { CORPUS_DOCUMENTS } from './corpus_data';
-import { FuelLimits, Value, GraphValue, DerivationValue, SolveTraceValue } from '../core/types';
+import { Value, GraphValue, DerivationValue, SolveTraceValue } from '../core/types';
 import { Canvas2DPlotter } from '../plot/canvas2d';
 import { Surface3DPlotter } from '../plot/surface3d';
 import { typesetMath } from '../core/math_typeset';
 import { explainSymbol } from '../core/explainer';
 import { analyzeAndParse, createInitialEnvironment } from '../core/evaluator';
-import { ASTNode } from '../core/types';
 import { MathPopover } from './popover';
 import { ICONS } from '../styles/icons';
 
@@ -28,13 +27,13 @@ export class DocumentEditor {
   private lineNumbersEl!: HTMLElement;
   private gutterEl!: HTMLElement;
   private scopePanelEl!: HTMLElement;
-  private tracePanelEl!: HTMLElement;
   private framesPanelEl!: HTMLElement;
   private statusBadge!: HTMLElement;
   private statsBadge!: HTMLElement;
   private activePlotter: Canvas2DPlotter | Surface3DPlotter | null = null;
   private activeTab: 'results' | 'visual' | 'scope' | 'trace' | 'frames' = 'results';
-  private frames: { line: number; type: string; summary: string; timestamp: number }[] = [];
+  private frames: { id: number; line: number; type: string; summary: string; timestamp: number; value: Value }[] = [];
+  private nextFrameId: number = 0;
   private isPinned: boolean = false;
   private pinnedLine: number | null = null;
   private activeVisualLine: number = 0;
@@ -389,7 +388,7 @@ export class DocumentEditor {
           boundsUpper = ast.end.type === 'NumberLiteral' ? ast.end.raw : '3';
         }
         // 2. Builtin function call: integral(3*x + 1, 1, 3, x)
-        else if (ast.type === 'FunctionCall' && (ast.name === 'integral' || ast.name === '\u222b')) {
+        else if (ast.type === 'FunctionCall' && (ast.callee === 'integral' || ast.callee === '\u222b')) {
           parentType = 'integral';
           integrand = ast.args[0] ? lineText.slice(ast.args[0].span.start, ast.args[0].span.end) : '3*x + 1';
           boundsLower = ast.args[1] && ast.args[1].type === 'NumberLiteral' ? ast.args[1].raw : '1';
@@ -955,15 +954,15 @@ export class DocumentEditor {
   }
 
   private formatGutterRow(rec: DocumentLineRecord): string {
-    if (rec.type === 'PROSE') return '';
-    if (rec.type === 'INCOMPLETE') return '<span class="doc-gutter-incomplete">...</span>';
-    if (rec.type === 'ERROR') {
+    if (rec.classification.state === 'PROSE') return '';
+    if (rec.classification.state === 'INCOMPLETE') return '<span class="doc-gutter-incomplete">...</span>';
+    if (rec.classification.state === 'ERROR') {
       return `<span class="doc-gutter-error" title="${escapeHtml(rec.error?.message ?? '')}">${ICONS.warning} ${escapeHtml(rec.error?.message ?? 'Error')}</span>`;
     }
 
     if (rec.result) {
       if (rec.result.type === 'graph') {
-        return `<button class="doc-plot-btn" data-line="${rec.line - 1}">${ICONS.plot} View Plot (${rec.result.spec.kind})</button>`;
+        return `<button class="doc-plot-btn" data-line="${rec.lineIndex}">${ICONS.plot} View Plot (${rec.result.spec.kind})</button>`;
       }
       if (rec.result.type === 'derivation') {
         const deriv = rec.result as DerivationValue;

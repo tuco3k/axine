@@ -52,6 +52,7 @@ dropped.
 - `npm test` does not verify UI behavior. Any claim about timing,
   responsiveness, or interaction requires running the browser and
   measuring it.
+- `npm test` does not typecheck. Run `npm run build` at every gate. A commit that does not build is not a completed phase.
 - Never report a phase complete based on code inspection. Only after tests
   pass AND you have watched it run.
 - A test that would pass on an unimplemented feature is not a test. Two

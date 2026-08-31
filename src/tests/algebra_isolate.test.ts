@@ -147,7 +147,7 @@ describe('Step-by-Step Algebraic Solving (isolate) & Solve Trace', () => {
       const corruptedDeriv: DerivationValue = {
         ...validDeriv,
         steps: [
-          { equation: '3*x = 99', rule: 'subtract-both-sides', justification: 'Corrupted step' },
+          { before: '3*x + 7 = 22', after: '3*x = 99', equation: '3*x = 99', rule: 'subtract-both-sides', justification: 'Corrupted step' },
           ...validDeriv.steps.slice(1),
         ],
       };

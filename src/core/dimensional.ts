@@ -9,12 +9,9 @@
  *    and complete formal derivation steps.
  */
 
-import { ASTNode, Span, UnknownReason, Value } from './types';
+import { ASTNode } from './types';
 import { formatAST } from './formatter';
-import { BigFraction } from './numeric/rational';
-import { valueToNumber } from './numeric/tower';
 import { createError } from './errors';
-import { typesetMath } from './math_typeset';
 
 export interface DimensionMap {
   [variable: string]: number;
@@ -334,8 +331,6 @@ const CONSTANT_IDENTIFIERS = new Set([
  * Recursively infers the dimension map (variable -> degree) of an AST expression.
  */
 export function inferExpressionDimensions(node: ASTNode): DimensionResult {
-  const map: DimensionMap = {};
-
   function addMap(target: DimensionMap, source: DimensionMap, factor: number = 1) {
     for (const [k, v] of Object.entries(source)) {
       target[k] = (target[k] || 0) + v * factor;
@@ -366,7 +361,7 @@ export function inferExpressionDimensions(node: ASTNode): DimensionResult {
       }
 
       case 'UnaryOp': {
-        if (n.op === 'sqrt' || n.op === '\u221a') {
+        if (n.op === '\u221a') {
           const sub = walk(n.operand);
           const res: DimensionMap = {};
           addMap(res, sub, 0.5);
@@ -379,19 +374,19 @@ export function inferExpressionDimensions(node: ASTNode): DimensionResult {
         const left = walk(n.left);
         const right = walk(n.right);
 
-        if (n.op === '*' || n.op === '\u00b7' || n.op === '\u00d7') {
+        if (n.op === '*') {
           const res: DimensionMap = { ...left };
           addMap(res, right, 1);
           return res;
         }
 
-        if (n.op === '/' || n.op === '//' || n.op === '\u00f7') {
+        if (n.op === '/') {
           const res: DimensionMap = { ...left };
           addMap(res, right, -1);
           return res;
         }
 
-        if (n.op === '+' || n.op === '-' || n.op === '\u2212') {
+        if (n.op === '+' || n.op === '-') {
           // Check dimensional homogeneity
           const leftSum = Object.values(left).reduce((a, b) => a + b, 0);
           const rightSum = Object.values(right).reduce((a, b) => a + b, 0);

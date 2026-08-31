@@ -325,6 +325,7 @@ export interface ClaimValue {
   verified: boolean;
   status?: 'PASS' | 'FAIL' | 'DIVERGED';
   fuelConsumed?: { steps: number; wallMs: number };
+  span?: Span;
 }
 
 export interface RangeValue {
@@ -426,7 +427,32 @@ export type StepRule =
   | 'complete-square'
   | 'quadratic-formula'
   | 'cancel-common-factor'
-  | 'evaluate-constant';
+  | 'evaluate-constant'
+  | 'power-rule'
+  | 'constant-rule'
+  | 'constant-multiple-rule'
+  | 'sum-rule'
+  | 'difference-rule'
+  | 'product-rule'
+  | 'quotient-rule'
+  | 'chain-rule'
+  | 'sin-rule'
+  | 'cos-rule'
+  | 'tan-rule'
+  | 'asin-rule'
+  | 'acos-rule'
+  | 'atan-rule'
+  | 'sinh-rule'
+  | 'cosh-rule'
+  | 'tanh-rule'
+  | 'exp-rule'
+  | 'ln-rule'
+  | 'log-base-rule'
+  | 'logarithmic-differentiation'
+  | 'negation-rule'
+  | 'identity-rule'
+  | 'general-exponential-rule'
+  | 'sqrt-rule';
 
 export interface DerivationBranch {
   condition?: string;
@@ -457,6 +483,11 @@ export interface DerivationValue {
   verified: boolean;
   excludedRoots?: Value[];
   extraneousRoots?: Value[];
+  originalExpr?: ASTNode;
+  finalExpr?: ASTNode;
+  originalExprString?: string;
+  finalExprString?: string;
+  ruleSequence?: string[];
 }
 
 export interface SolveTraceIteration {
@@ -498,6 +529,12 @@ export interface DimensionValue {
   isDimensionless: boolean;
 }
 
+export interface ExpressionValue {
+  type: 'expression';
+  ast: ASTNode;
+  text: string;
+}
+
 export interface CheckResultValue {
   type: 'check_result';
   isValid: boolean;
@@ -508,6 +545,11 @@ export interface CheckResultValue {
   messageLines: string[];
   derivationSteps: { step: number; title: string; math: string; explanation: string }[];
   actualExprString: string;
+}
+
+export interface StringValue {
+  type: 'string';
+  value: string;
 }
 
 export type Value =
@@ -531,7 +573,8 @@ export type Value =
   | ExpressionValue
   | SolveTraceValue
   | DimensionValue
-  | CheckResultValue;
+  | CheckResultValue
+  | StringValue;
 
 export type Environment = Record<string, Value>;
 

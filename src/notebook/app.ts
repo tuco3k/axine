@@ -1,6 +1,7 @@
 import { NotebookState } from './state';
 import { CellView } from './cell';
 import { NotebookStorage } from './storage';
+import { ICONS } from '../styles/icons';
 
 export class NotebookApp {
   private state: NotebookState;

@@ -278,13 +278,13 @@ export class CellView {
       case 'boolean':
         return val.value ? 'true' : 'false';
       case 'tuple':
-        return `(${val.elements.map(e => this.formatValue(e)).join(', ')})`;
+        return `(${val.elements.map((e: Value) => this.formatValue(e)).join(', ')})`;
       case 'range':
         return `${val.variable} in [${val.start}, ${val.end}]${val.step ? ` step ${val.step}` : ''}`;
       case 'function':
         return `function ${val.name}(${val.params.join(', ')})`;
       case 'list':
-        return `[${val.elements.map(e => this.formatValue(e)).join(', ')}]`;
+        return `[${val.elements.map((e: Value) => this.formatValue(e)).join(', ')}]`;
       case 'lambda':
         return `lambda (${val.params.join(', ')})`;
       case 'none':

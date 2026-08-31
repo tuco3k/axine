@@ -3,8 +3,7 @@ import { parse } from '../core/parser';
 import { Evaluator, createInitialEnvironment } from '../core/evaluator';
 import { solveAlgebraic } from '../core/algebra';
 import { AlgebraicVerifier } from '../core/algebra/verifier';
-import { AlgebraicSimplifier } from '../core/algebra/simplify';
-import { DerivationValue, StepValue, Value } from '../core/types';
+import { DerivationValue, StepValue } from '../core/types';
 import { formatAST } from '../core/formatter';
 
 describe('Part B: Derivations as First-Class Values & Self-Verification', () => {
@@ -280,24 +279,24 @@ describe('Part B: Derivations as First-Class Values & Self-Verification', () => 
     env['d'] = dVal;
 
     // 2. d.result returns the roots
-    const resVal = eval1.evaluate(parse('d.result'), env);
+    const resVal = eval1.evaluate(parse('d.result'));
     expect(resVal.type).toBe('list');
     expect((resVal as any).elements.length).toBe(2);
 
     // 3. d.steps is a list of steps
-    const stepsVal = eval1.evaluate(parse('d.steps'), env);
+    const stepsVal = eval1.evaluate(parse('d.steps'));
     expect(stepsVal.type).toBe('list');
     expect((stepsVal as any).elements.length).toBeGreaterThanOrEqual(2);
 
     // 4. d.steps[1] (or d.steps[2]) is a step value
-    const step2 = eval1.evaluate(parse('d.steps[1]'), env) as StepValue;
+    const step2 = eval1.evaluate(parse('d.steps[1]')) as StepValue;
     expect(step2.type).toBe('step');
     expect(step2.rule).toBeDefined();
     expect(step2.after).toBeDefined();
 
     // 5. Feed step.after into simplify
     env['step2'] = step2;
-    const simpRes = eval1.evaluate(parse('simplify(step2.after, in: x)'), env);
+    const simpRes = eval1.evaluate(parse('simplify(step2.after, in: x)'));
     expect(simpRes).toBeDefined();
   });
 });
