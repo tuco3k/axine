@@ -1308,6 +1308,27 @@ export class Evaluator {
     const x0 = currentVal ? valueToNumber(currentVal, node.span) : 0;
     const h = 1e-6;
 
+    // Check if node.expr is a function identifier without application: d//dx f
+    if (node.expr.type === 'Identifier' && node.expr.name in currentEnv) {
+      const fnVal = currentEnv[node.expr.name];
+      if (fnVal.type === 'function' || fnVal.type === 'lambda') {
+        const paramCount = fnVal.params.length;
+        if (paramCount !== 1) {
+          throw createError(
+            `cannot differentiate ${paramCount}-argument function '${node.expr.name}' without application; expected d//d${varName} ${node.expr.name}(${fnVal.params.join(', ')})`,
+            node.span
+          );
+        }
+        const yPlus = valueToNumber(this.invokeCallable(fnVal, [{ type: 'float', value: x0 + h }], node.span), node.span);
+        const yMinus = valueToNumber(this.invokeCallable(fnVal, [{ type: 'float', value: x0 - h }], node.span), node.span);
+        const deriv = (yPlus - yMinus) / (2 * h);
+        if (Math.abs(deriv - Math.round(deriv)) < 1e-6) {
+          return { type: 'rational', n: BigInt(Math.round(deriv)), d: 1n };
+        }
+        return { type: 'float', value: deriv };
+      }
+    }
+
     const envPlus = Object.create(currentEnv);
     envPlus[varName] = { type: 'float', value: x0 + h };
     const yPlus = valueToNumber(this.evalNode(node.expr, envPlus), node.span);
@@ -1344,6 +1365,7 @@ export class Evaluator {
       shadowVal,
       expectVal,
       verified,
+      span: node.span,
     };
     this.env[node.name] = claimVal;
     currentEnv[node.name] = claimVal;
@@ -1352,33 +1374,53 @@ export class Evaluator {
 
   private evalSolve(node: FunctionCallNode, currentEnv: Environment): Value {
     let traceMode = false;
-    for (const arg of node.args) {
-      if (arg.type === 'NamedArg' && arg.name === 'trace') {
-        const tVal = this.evalNode(arg.value, currentEnv);
-        traceMode = tVal.type === 'boolean' ? tVal.value : true;
-      }
-    }
-
-    // 1. Newton's method: solve(f, near: x0)
+    let forVar: string | undefined;
     let nearVal: number | undefined;
+
     for (const arg of node.args) {
-      if (arg.type === 'NamedArg' && arg.name === 'near') {
-        nearVal = valueToNumber(this.evalNode(arg.value, currentEnv), arg.value.span);
+      if (arg.type === 'NamedArg') {
+        if (arg.name === 'trace') {
+          const tVal = this.evalNode(arg.value, currentEnv);
+          traceMode = tVal.type === 'boolean' ? tVal.value : true;
+        } else if (arg.name === 'near') {
+          nearVal = valueToNumber(this.evalNode(arg.value, currentEnv), arg.value.span);
+        } else if (arg.name === 'for' || arg.name === 'var') {
+          if (arg.value.type === 'Identifier') {
+            forVar = arg.value.name;
+          }
+        }
       }
     }
 
+    // 1. Newton's method: solve(f, near: x0) OR solve(expr, for: x, near: x0)
     if (nearVal !== undefined) {
       const fnArg = node.args[0];
-      let fnVal: Value;
-      if (fnArg.type === 'Identifier' && fnArg.name in currentEnv) {
-        fnVal = currentEnv[fnArg.name];
-      } else {
-        fnVal = this.evalNode(fnArg, currentEnv);
+      let fnVal: Value | undefined;
+
+      if (!forVar) {
+        if (fnArg.type === 'Identifier' && fnArg.name in currentEnv) {
+          fnVal = currentEnv[fnArg.name];
+        } else {
+          try {
+            fnVal = this.evalNode(fnArg, currentEnv);
+          } catch {
+            // Might be an unevaluated expression without explicit 'for:'
+          }
+        }
       }
 
       const evalF = (x: number): number => {
-        const val = this.invokeCallable(fnVal, [{ type: 'float', value: x }], node.span);
-        return valueToNumber(val, node.span);
+        if (forVar) {
+          const localEnv = { ...currentEnv, [forVar]: { type: 'float', value: x } as Value };
+          return valueToNumber(this.evalNode(fnArg, localEnv), node.span);
+        }
+        if (fnVal && (fnVal.type === 'function' || fnVal.type === 'lambda')) {
+          const val = this.invokeCallable(fnVal, [{ type: 'float', value: x }], node.span);
+          return valueToNumber(val, node.span);
+        }
+        // Fallback: if single free variable can be identified in fnArg
+        const localEnv = { ...currentEnv, x: { type: 'float', value: x } as Value };
+        return valueToNumber(this.evalNode(fnArg, localEnv), node.span);
       };
 
       let x = nearVal;
@@ -1678,18 +1720,24 @@ export class Evaluator {
       return { type: 'graph', spec };
     }
 
-    const seriesList: CurveSeries[] = [];
+    const domainVarSet = new Set<string>();
     const allFreeVars = new Set<string>();
+    for (const r of ranges) {
+      domainVarSet.add(r.variable);
+      allFreeVars.add(r.variable);
+    }
+
+    const seriesList: CurveSeries[] = [];
 
     for (const expr of exprArgs) {
-      const analysis = analyzeAST(expr, currentEnv, new Set(), this.source);
+      const analysis = analyzeAST(expr, currentEnv, domainVarSet, this.source);
       for (const fv of analysis.freeVariables) {
         allFreeVars.add(fv);
       }
       const label = formatAST(expr);
       seriesList.push({
         expr,
-        variable: analysis.freeVariables[0] ?? 'x',
+        variable: Array.from(domainVarSet)[0] ?? analysis.freeVariables[0] ?? 'x',
         label,
       });
     }

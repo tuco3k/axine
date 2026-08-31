@@ -124,7 +124,24 @@ export function analyzeAST(
             freeVars.add(n.callee);
           }
         }
-        if (n.callee === 'isolate' || n.callee === 'simplify') {
+        if (n.callee === 'graph') {
+          const subParams = new Set(boundParams);
+          for (const arg of n.args) {
+            if (arg.type === 'BinaryOp' && arg.op === 'in' && arg.left.type === 'Identifier') {
+              subParams.add(arg.left.name);
+            } else if (arg.type === 'Range' && (arg as any).variable) {
+              subParams.add((arg as any).variable);
+            }
+          }
+          for (const arg of n.args) {
+            const subRes = analyzeAST(arg, env, subParams, source);
+            for (const fv of subRes.freeVariables) {
+              if (!subParams.has(fv)) freeVars.add(fv);
+            }
+          }
+          break;
+        }
+        if (n.callee === 'isolate' || n.callee === 'simplify' || n.callee === 'solve') {
           let targetVar = 'x';
           for (const arg of n.args) {
             if (arg.type === 'NamedArg' && (arg.name === 'for' || arg.name === 'in' || arg.name === 'var') && arg.value.type === 'Identifier') {

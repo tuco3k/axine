@@ -180,8 +180,24 @@ describe('Part B: Derivations as First-Class Values & Self-Verification', () => 
     expect(res.result.text).toContain('5');
     expect(res.result.text).toContain('x');
     expect(res.result.text).toContain('4');
+  });
 
-    // Round-trip: evaluate original and simplified at 10 sample x values, must agree
+  it('simplify(3x + 2x - 4, in: x).result round-trips through parser to AST', () => {
+    const env = createInitialEnvironment();
+    const ast = parse('simplify(3*x + 2*x - 4, in: x)');
+    const res = new Evaluator(env).evaluate(ast) as any;
+
+    expect(res.result).toBeDefined();
+    expect(res.result.type).toBe('expression');
+    const parsedAST = parse(res.result.text);
+    expect(formatAST(parsedAST)).toBe(formatAST(res.result.ast));
+  });
+
+  it('simplify(3x + 2x - 4, in: x) satisfies 10-point numerical agreement', () => {
+    const env = createInitialEnvironment();
+    const ast = parse('simplify(3*x + 2*x - 4, in: x)');
+    const res = new Evaluator(env).evaluate(ast) as any;
+
     const originalAST = parse('3*x + 2*x - 4');
     const simplifiedAST = res.result.ast;
     const sampleXs = [-10, -5, -1, 0, 1, 2, 5, 10, 50, 100];

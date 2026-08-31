@@ -45,6 +45,11 @@ unicode_math   = "π" | "τ" | "ϕ" | "√" | "≤" | "≥" | "≠" | "×" | "÷
 | `sin(x)` | Function call $\sin(x)$ | `FunctionCall('sin', [Id('x')])` | Standard parenthesized function call |
 | `2^3^2` | $2^{(3^2)} = 2^9 = 512$ | `BinaryOp('^', Number(2), BinaryOp('^', Number(3), Number(2)))` | Exponentiation is right-associative |
 | `-x^2` | $-(x^2)$ | `UnaryOp('-', BinaryOp('^', Id('x'), Number(2)))` | Powers bind tighter than unary negation |
+| `d//dx f(x)` | $\frac{d}{dx}[f(x)]$ | `Diff('x', FunctionCall('f', [Id('x')]))` | Differentiator binds tightly to following function application |
+| `d//dx f(x) g(x)` | $(\frac{d}{dx}[f(x)]) \cdot g(x)$ | `BinaryOp('*', Diff('x', FunctionCall('f', [Id('x')])), FunctionCall('g', [Id('x')]))` | Operator differentiates immediate operand; trailing implicit product is preserved |
+| `d//dx (f(x) * g(x))` | $\frac{d}{dx}[f(x) \cdot g(x)]$ | `Diff('x', BinaryOp('*', FunctionCall('f', [Id('x')]), FunctionCall('g', [Id('x')])))` | Parentheses group full product under differentiation |
+| `d//dx f` | $\frac{d}{dx}[f(x)]$ | `Diff('x', Id('f'))` | 1-parameter function value evaluated at $(x \pm h)$ directly |
+| `solve(expr, for: x, near: x0)` | Root of `expr(x) = 0` | `FunctionCall('solve', [expr, NamedArg('for', Id('x')), NamedArg('near', x0)])` | Inline expression root finding with explicit bound variable |
 
 ---
 

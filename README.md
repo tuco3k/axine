@@ -83,7 +83,9 @@ AST Formatter           Scope Analyzer         Kleene 3-Valued Logic    Numeric 
   - Pure Untyped $\lambda$-Calculus with Church arithmetic ($3 \times 4 = 12$) and the $Y$-combinator.
 - **Mathematical Notation**:
   - Stacked fractions `a // b` vs inline `a / b`.
-  - Differentials `d//dx (x^3)` and $\partial//\partial x$.
+  - Differentials `d//dx (x^3)`, `d//dx f(x)`, and $\partial//\partial x$.
+  - First-class algebraic derivations `isolate(equation, for: x)` with branch tracking and solution-set self-verification.
+  - Multi-method root finding `solve(f, near: x0)` and inline `solve(expr, for: x, near: x0)`.
   - Big operators $\Sigma(i \text{ in } 1..n, \text{expr})$, $\Pi(i \text{ in } 1..n, \text{expr})$, $\int(x \text{ in } a..b, \text{expr})$.
   - Matrix linear algebra: creation `matrix([[1, 2], [3, 4]])`, determinant `det(A)`, inverse `inverse(A)`, trace, transpose, rank, and eigenvalues.
 - **3D Canvas Visualization**:

@@ -278,7 +278,11 @@ export class Parser {
   }
 
   public parseExpression(precedence: number): ASTNode {
-    let left = this.parsePrefix();
+    return this.parseExpressionWithLeft(this.parsePrefix(), precedence);
+  }
+
+  public parseExpressionWithLeft(initialLeft: ASTNode, precedence: number): ASTNode {
+    let left = initialLeft;
 
     while (true) {
       // Check for Postfix operators (! and superscript digits)
@@ -1086,7 +1090,14 @@ export class Parser {
       if (vTok.startsWith('d') || vTok.startsWith('\u2202')) vTok = vTok.slice(1);
       if (vTok) varName = vTok;
     }
-    const expr = this.parseExpression(PREC_UNARY);
+    let expr: ASTNode;
+    if (this.peek().type === 'IDENTIFIER' && this.peek(1).type === 'LPAREN') {
+      const fnTok = this.advance();
+      const fnCall = this.parseFunctionCallArgs(fnTok.value, fnTok.span);
+      expr = this.parseExpressionWithLeft(fnCall, PREC_IMPLICIT_MUL);
+    } else {
+      expr = this.parseExpression(PREC_IMPLICIT_MUL);
+    }
     return {
       type: 'Diff',
       variable: varName,

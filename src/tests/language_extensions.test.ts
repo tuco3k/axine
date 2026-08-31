@@ -248,5 +248,55 @@ describe('Core Language Extensions & Problem Corpus Features', () => {
         /no sign change in interval/
       );
     });
+
+    it('solve with inline expression solve(expr, for: x, near: x0) finds root', () => {
+      const env = createInitialEnvironment();
+      evaluate('R(th) := sin(2 * th)', env);
+      const res = evaluate('solve(d//dth R(th), for: th, near: 0.75)', env);
+      expect(res.value.type).toBe('float');
+      if (res.value.type === 'float') {
+        expect(res.value.value).toBeCloseTo(Math.PI / 4, 5); // 0.785398
+      }
+    });
+  });
+
+  describe('Differential Operator (d//dx) Precedence & Function Application', () => {
+    it('d//dx f(x) differentiates the applied expression', () => {
+      const env = createInitialEnvironment();
+      evaluate('f(x) := x^3', env);
+      evaluate('x := 2', env);
+      const res = evaluate('d//dx f(x)', env);
+      // d/dx(x^3) at x=2 is 3*(2^2) = 12
+      expect(res.value).toEqual({ type: 'rational', n: 12n, d: 1n });
+    });
+
+    it('d//dx f(x) g(x) parses as (d//dx f(x)) * g(x)', () => {
+      const env = createInitialEnvironment();
+      evaluate('f(x) := x^2', env);
+      evaluate('g(x) := x + 1', env);
+      evaluate('x := 3', env);
+      // d//dx f(x) at x=3 is 2*3 = 6. g(3) = 4. Product = 24.
+      const res = evaluate('d//dx f(x) g(x)', env);
+      expect(res.value).toEqual({ type: 'rational', n: 24n, d: 1n });
+    });
+
+    it('d//dx (f(x) * g(x)) differentiates the entire product', () => {
+      const env = createInitialEnvironment();
+      evaluate('f(x) := x^2', env);
+      evaluate('g(x) := x + 1', env);
+      evaluate('x := 3', env);
+      // Product is x^3 + x^2. Derivative is 3x^2 + 2x at x=3 -> 27 + 6 = 33.
+      const res = evaluate('d//dx (f(x) * g(x))', env);
+      expect(res.value).toEqual({ type: 'rational', n: 33n, d: 1n });
+    });
+
+    it('d//dx f differentiates a 1-parameter function value directly without application', () => {
+      const env = createInitialEnvironment();
+      evaluate('f(x) := x^2', env);
+      evaluate('x := 4', env);
+      const res = evaluate('d//dx f', env);
+      // d/dx(x^2) at x=4 is 8
+      expect(res.value).toEqual({ type: 'rational', n: 8n, d: 1n });
+    });
   });
 });
