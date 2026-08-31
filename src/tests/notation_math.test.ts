@@ -25,7 +25,7 @@ describe('Phase 3: Mathematical Notation, Differentials, Big Operators, and Matr
     });
   });
 
-  describe('Big Operators: Σ, Π, ∫', () => {
+  describe('Big Operators: Σ, Π, \u222b', () => {
     it('evaluates Σ summation', () => {
       const env = createInitialEnvironment();
       // sum of squares 1..10 is 385
@@ -40,10 +40,10 @@ describe('Phase 3: Mathematical Notation, Differentials, Big Operators, and Matr
       expect(res).toEqual({ type: 'rational', n: 120n, d: 1n });
     });
 
-    it('evaluates ∫ numerical integral', () => {
+    it('evaluates \u222b numerical integral', () => {
       const env = createInitialEnvironment();
       // integral of x^2 from 0 to 1 is 1/3 ~ 0.333333
-      const res = evalVal('∫(x in 0..1, x^2)', env);
+      const res = evalVal('\u222b(x in 0..1, x^2)', env);
       expect(res.type).toBe('float');
       expect((res as any).value).toBeCloseTo(1 / 3, 4);
     });

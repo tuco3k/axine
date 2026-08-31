@@ -101,11 +101,11 @@ function formatNode(node: ASTNode, parentPrec: number): string {
       return res;
     }
     case 'Diff': {
-      const op = node.isPartial ? '∂//∂' : 'd//d';
+      const op = node.isPartial ? '\u2202//\u2202' : 'd//d';
       return `${op}${node.variable} ${formatNode(node.expr, PREC_UNARY)}`;
     }
     case 'BigOp': {
-      const sym = node.op === 'sum' ? 'Σ' : (node.op === 'prod' ? 'Π' : '∫');
+      const sym = node.op === 'sum' ? 'Σ' : (node.op === 'prod' ? 'Π' : '\u222b');
       return `${sym}(${node.variable} in ${formatNode(node.start, PREC_IN)}..${formatNode(node.end, PREC_IN)}, ${formatNode(node.body, PREC_NONE)})`;
     }
     case 'Claim': {
@@ -133,7 +133,7 @@ function formatNode(node: ASTNode, parentPrec: number): string {
       return `${node.target} := ${formatNode(node.value, PREC_NONE)}`;
     }
     case 'GlobalAssignment': {
-      return `${node.target} :≡ ${formatNode(node.value, PREC_NONE)}`;
+      return `${node.target} :\u2261 ${formatNode(node.value, PREC_NONE)}`;
     }
     case 'FunctionDef': {
       return `${node.name}(${node.params.join(', ')}) := ${formatNode(node.body, PREC_NONE)}`;

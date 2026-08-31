@@ -391,27 +391,27 @@ const GOLDEN_CORPUS: GoldenTestCase[] = [
     expectedValue: { type: 'rational', n: 42n, d: 1n },
   },
   {
-    source: '10 − 3',
+    source: '10 \u2212 3',
     expectedNormalized: '10 - 3',
     expectedValue: { type: 'rational', n: 7n, d: 1n },
   },
   {
-    source: '5 ≤ 10',
+    source: '5 \u2264 10',
     expectedNormalized: '5 <= 10',
     expectedValue: { type: 'boolean', value: true },
   },
   {
-    source: '10 ≥ 5',
+    source: '10 \u2265 5',
     expectedNormalized: '10 >= 5',
     expectedValue: { type: 'boolean', value: true },
   },
   {
-    source: '5 ≠ 3',
+    source: '5 \u2260 3',
     expectedNormalized: '5 != 3',
     expectedValue: { type: 'boolean', value: true },
   },
   {
-    source: '√100',
+    source: '\u221a100',
     expectedNormalized: 'sqrt(100)',
     expectedValue: { type: 'rational', n: 10n, d: 1n },
   },

@@ -3,6 +3,7 @@ import { formatAST } from '../core/formatter';
 import { Value } from '../core/types';
 import { GraphPlotEngine } from '../plot/engine';
 import { AutocompleteEngine, AutocompleteItem } from './autocomplete';
+import { ICONS } from '../styles/icons';
 
 export class CellView {
   public readonly element: HTMLElement;
@@ -40,7 +41,7 @@ export class CellView {
     const btnRun = document.createElement('button');
     btnRun.className = 'action-btn run-btn';
     btnRun.title = 'Run cell (Enter)';
-    btnRun.textContent = '▶ Run';
+    btnRun.innerHTML = `${ICONS.run} Run`;
     btnRun.onclick = () => this.state.runCell(this.cell.id);
 
     const btnAdd = document.createElement('button');
@@ -52,19 +53,19 @@ export class CellView {
     const btnUp = document.createElement('button');
     btnUp.className = 'action-btn';
     btnUp.title = 'Move up';
-    btnUp.textContent = '▲';
+    btnUp.innerHTML = ICONS.up;
     btnUp.onclick = () => this.state.moveCell(this.cell.id, 'up');
 
     const btnDown = document.createElement('button');
     btnDown.className = 'action-btn';
     btnDown.title = 'Move down';
-    btnDown.textContent = '▼';
+    btnDown.innerHTML = ICONS.down;
     btnDown.onclick = () => this.state.moveCell(this.cell.id, 'down');
 
     const btnDel = document.createElement('button');
     btnDel.className = 'action-btn del-btn';
     btnDel.title = 'Delete cell';
-    btnDel.textContent = '✕';
+    btnDel.innerHTML = ICONS.close;
     btnDel.onclick = () => this.state.removeCell(this.cell.id);
 
     cellToolbar.appendChild(btnRun);

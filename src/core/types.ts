@@ -27,16 +27,16 @@ export type TokenType =
   | 'CARET'
   | 'BANG'
   | 'ASSIGN' // :=
-  | 'GLOBAL_ASSIGN' // :≡ or :==
+  | 'GLOBAL_ASSIGN' // :\u2261 or :==
   | 'DOT' // .
   | 'DOTDOT' // ..
   | 'EQ'     // = or ==
-  | 'NEQ'    // != or ≠
+  | 'NEQ'    // != or \u2260
   | 'LT'     // <
-  | 'LTE'    // <= or ≤
+  | 'LTE'    // <= or \u2264
   | 'GT'     // >
-  | 'GTE'    // >= or ≥
-  | 'CONGRUENT' // ≡
+  | 'GTE'    // >= or \u2265
+  | 'CONGRUENT' // \u2261
   | 'LPAREN' // (
   | 'RPAREN' // )
   | 'LBRACKET' // [
@@ -48,8 +48,8 @@ export type TokenType =
   | 'SEMICOLON' // ;
   | 'SIGMA' // Σ
   | 'PI_PROD' // Π
-  | 'INTEGRAL' // ∫
-  | 'DIFF_OP' // d//dx, ∂//∂x, dy//dx
+  | 'INTEGRAL' // \u222b
+  | 'DIFF_OP' // d//dx, \u2202//\u2202x, dy//dx
   | 'CLAIM'
   | 'SUPERSCRIPT_DIGITS' // ², ³, etc.
   | 'EOF';
@@ -119,7 +119,7 @@ export interface IdentifierNode {
 
 export interface UnaryOpNode {
   type: 'UnaryOp';
-  op: '-' | '+' | '√' | 'not';
+  op: '-' | '+' | '\u221a' | 'not';
   operand: ASTNode;
   span: Span;
 }

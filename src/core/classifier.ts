@@ -60,8 +60,8 @@ export function hasKnownFunctionCall(line: string, knownFunctions: Set<string> =
  * e.g. "3 +", "2*", "3 + * 4", "2 ++ 3", "10!", "5^", "+ 4"
  */
 export function hasDigitAdjacentToOperator(line: string): boolean {
-  // Operator adjacent to digit: [0-9]\s*[\+\-\*\/\%\^\!\=\<\>\×\÷\≤\≥\≠\√] or [\+\-\*\/\%\^\!\=\<\>\×\÷\≤\≥\≠\√]\s*[0-9]
-  const pattern = /(\d\s*[\+\-\*\/\%\^\!\=\<\>\×\÷\≤\≥\≠\√]|[\+\-\*\/\%\^\!\=\<\>\×\÷\≤\≥\≠\√]\s*\d)/;
+  // Operator adjacent to digit: [0-9]\s*[\+\-\*\/\%\^\!\=\<\>\×\÷\u2264\u2265\u2260\u221a] or [\+\-\*\/\%\^\!\=\<\>\×\÷\u2264\u2265\u2260\u221a]\s*[0-9]
+  const pattern = /(\d\s*[\+\-\*\/\%\^\!\=\<\>\×\÷\u2264\u2265\u2260\u221a]|[\+\-\*\/\%\^\!\=\<\>\×\÷\u2264\u2265\u2260\u221a]\s*\d)/;
   return pattern.test(line);
 }
 
@@ -78,7 +78,7 @@ export function hasHighMathTokenRatio(line: string, tokens?: Token[]): boolean {
       tokenList = tokenize(line);
     } catch {
       // If tokenization fails, fallback to character counting
-      const mathChars = line.match(/[\d\+\-\*\/\%\^\!\=\<\>\(\)\[\]\,\:\.\_×÷≤≥≠√πτε]/g);
+      const mathChars = line.match(/[\d\+\-\*\/\%\^\!\=\<\>\(\)\[\]\,\:\.\_×÷\u2264\u2265\u2260\u221aπτε]/g);
       const count = mathChars ? mathChars.length : 0;
       return count / nonSpaceChars.length > 0.5;
     }

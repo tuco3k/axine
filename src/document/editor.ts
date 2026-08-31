@@ -1,8 +1,18 @@
 import { DocumentState, DocumentLineRecord } from './document_state';
 import { CORPUS_DOCUMENTS } from './corpus_data';
-import { Value } from '../core/types';
+import { FuelLimits, Value, GraphValue, DerivationValue, SolveTraceValue } from '../core/types';
 import { Canvas2DPlotter } from '../plot/canvas2d';
 import { Surface3DPlotter } from '../plot/surface3d';
+import { ICONS } from '../styles/icons';
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
 
 export class DocumentEditor {
   private container: HTMLElement;
@@ -10,22 +20,21 @@ export class DocumentEditor {
   private textarea!: HTMLTextAreaElement;
   private lineNumbersEl!: HTMLElement;
   private gutterEl!: HTMLElement;
+  private scopePanelEl!: HTMLElement;
+  private tracePanelEl!: HTMLElement;
+  private framesPanelEl!: HTMLElement;
   private statusBadge!: HTMLElement;
   private statsBadge!: HTMLElement;
-  private scopePanelEl!: HTMLElement;
-  private framesPanelEl!: HTMLElement;
-  private activeTab: 'results' | 'visual' | 'scope' | 'trace' | 'frames' = 'results';
   private activePlotter: Canvas2DPlotter | Surface3DPlotter | null = null;
-  private frames: Array<{ id: number; line: number; type: string; summary: string; timestamp: number; value: Value }> = [];
-  private nextFrameId: number = 1;
+  private activeTab: 'results' | 'visual' | 'scope' | 'trace' | 'frames' = 'results';
+  private frames: { line: number; type: string; summary: string; timestamp: number }[] = [];
   private isPinned: boolean = false;
   private pinnedLine: number | null = null;
-  private activeVisualLine: number | null = null;
+  private activeVisualLine: number = 0;
 
-  constructor(container: HTMLElement, initialText?: string) {
+  constructor(container: HTMLElement) {
     this.container = container;
-    const defaultText = initialText ?? CORPUS_DOCUMENTS[0].content;
-    this.state = new DocumentState(defaultText);
+    this.state = new DocumentState();
     this.buildUI();
     this.bindEvents();
     this.state.subscribe((records, isEvaluating) => this.renderWorkPanel(records, isEvaluating));
@@ -36,7 +45,7 @@ export class DocumentEditor {
       <div class="doc-app-shell">
         <header class="doc-header">
           <div class="doc-brand">
-            <span class="doc-logo">∫dx</span>
+            <span class="doc-logo">&int;dx</span>
             <span class="doc-app-title">Live Document Editor</span>
           </div>
 
@@ -60,11 +69,12 @@ export class DocumentEditor {
               </select>
             </div>
 
-            <button id="doc-run-btn" class="doc-btn primary" title="Run in Invoked Worker Pool">▶ Run All</button>
-            <button id="doc-stop-btn" class="doc-btn danger" title="Stop execution immediately (<100ms)">⏹ Stop</button>
-            <span id="doc-status-badge" class="doc-status-badge ready">● Ambient</span>
+            <button id="doc-run-btn" class="doc-btn primary" title="Run in Invoked Worker Pool">${ICONS.run} Run All</button>
+            <button id="doc-stop-btn" class="doc-btn danger" title="Stop execution immediately (<100ms)">${ICONS.stop} Stop</button>
+            <span id="doc-status-badge" class="doc-status-badge ready">Ambient</span>
             <span id="doc-stats-badge" class="doc-stats-badge">0 ms</span>
             <button id="doc-clear-btn" class="doc-btn">Clear</button>
+            <button id="doc-theme-btn" class="doc-theme-btn" title="Toggle Light/Dark Theme">${ICONS.sun}</button>
           </div>
         </header>
 
@@ -78,7 +88,7 @@ export class DocumentEditor {
               spellcheck="false"
               autocomplete="off"
               autocapitalize="off"
-            >${this.state.getText()}</textarea>
+            ></textarea>
           </div>
 
           <div id="doc-splitter" class="doc-splitter" title="Drag to resize panel"></div>
@@ -89,7 +99,7 @@ export class DocumentEditor {
               <button class="doc-tab-btn" data-tab="visual">Visual</button>
               <button class="doc-tab-btn" data-tab="scope">Scope</button>
               <button class="doc-tab-btn" data-tab="trace">Trace & Fuel</button>
-              <button class="doc-tab-btn" data-tab="frames">Frames (<span id="frame-count">0</span>)</button>
+              <button class="doc-tab-btn" data-tab="frames">Frames</button>
             </div>
 
             <div id="tab-results-panel" class="doc-tab-content active">
@@ -100,7 +110,7 @@ export class DocumentEditor {
               <div class="doc-visual-header">
                 <div class="doc-visual-title-row">
                   <span id="visual-title" class="doc-panel-section-title">Visual Output</span>
-                  <button id="visual-pin-btn" class="doc-pin-btn" title="Pin visual to current line">📌 Pin</button>
+                  <button id="visual-pin-btn" class="doc-pin-btn" title="Pin visual to current line">${ICONS.pin} Pin</button>
                 </div>
                 <div id="visual-meta" class="doc-visual-meta">Line 1: No visual content</div>
               </div>
@@ -110,40 +120,36 @@ export class DocumentEditor {
                   <canvas id="visual-canvas"></canvas>
                 </div>
                 <div id="visual-derivation-wrapper" class="doc-visual-derivation-wrapper hidden">
-                  <div id="visual-derivation-content"></div>
+                  <div id="visual-derivation-content" class="visual-derivation-tree"></div>
                 </div>
               </div>
             </div>
 
             <div id="tab-scope-panel" class="doc-tab-content">
-              <div class="doc-panel-section-title">Active Scope Symbols</div>
+              <div class="doc-panel-section-title">Active Scope (Definitions)</div>
               <div id="doc-scope-list" class="doc-scope-list"></div>
             </div>
 
             <div id="tab-trace-panel" class="doc-tab-content">
-              <div class="doc-panel-section-title">Execution Telemetry & Fuel</div>
-              <div id="doc-trace-content" class="doc-trace-content">
+              <div class="doc-panel-section-title">Execution Trace & Fuel Consumption</div>
+              <div class="doc-trace-content">
                 <div class="trace-metric">
-                  <span class="trace-label">Ambient Worker Pool:</span>
-                  <span class="trace-value">Active (250ms / 2M steps budget)</span>
-                </div>
-                <div class="trace-metric">
-                  <span class="trace-label">Invoked Worker Pool:</span>
-                  <span class="trace-value">Ready (Independent thread)</span>
-                </div>
-                <div class="trace-metric">
-                  <span class="trace-label">Total Execution Duration:</span>
+                  <span class="trace-label">Ambient Worker Pool Duration:</span>
                   <span id="trace-duration" class="trace-value">0 ms</span>
                 </div>
                 <div class="trace-metric">
-                  <span class="trace-label">Total Evaluated Lines:</span>
+                  <span class="trace-label">Evaluated Lines:</span>
                   <span id="trace-line-count" class="trace-value">0</span>
+                </div>
+                <div class="trace-metric">
+                  <span class="trace-label">Status:</span>
+                  <span class="trace-value">Continuous Ambient Reactive</span>
                 </div>
               </div>
             </div>
 
             <div id="tab-frames-panel" class="doc-tab-content">
-              <div class="doc-panel-section-title">Frame Ring Buffer (Last 20)</div>
+              <div class="doc-panel-section-title">Captured Visual Frames</div>
               <div id="doc-frames-list" class="doc-frames-list"></div>
             </div>
           </div>
@@ -233,8 +239,8 @@ export class DocumentEditor {
     const stopBtn = this.container.querySelector('#doc-stop-btn') as HTMLButtonElement;
     stopBtn.addEventListener('click', () => {
       const { durationMs } = this.state.stop();
-      this.statusBadge.className = 'doc-status-badge';
-      this.statusBadge.textContent = `● Stopped (${durationMs.toFixed(1)} ms)`;
+      this.statusBadge.className = 'doc-status-badge stopped';
+      this.statusBadge.textContent = `Stopped (${durationMs.toFixed(1)} ms)`;
     });
 
     // Clear button
@@ -242,6 +248,17 @@ export class DocumentEditor {
     clearBtn.addEventListener('click', () => {
       this.textarea.value = '';
       this.state.setText('');
+    });
+
+    // Theme Toggle Button
+    const themeBtn = this.container.querySelector('#doc-theme-btn') as HTMLButtonElement;
+    themeBtn.addEventListener('click', () => {
+      const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+      const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', nextTheme);
+      themeBtn.innerHTML = nextTheme === 'light' ? ICONS.moon : ICONS.sun;
+      localStorage.setItem('math_notebook_theme', nextTheme);
+      if (this.activePlotter) this.activePlotter.render();
     });
 
     // Draggable Splitter
@@ -276,7 +293,7 @@ export class DocumentEditor {
     const pinBtn = this.container.querySelector('#visual-pin-btn') as HTMLButtonElement;
     pinBtn.addEventListener('click', () => {
       this.isPinned = !this.isPinned;
-      pinBtn.textContent = this.isPinned ? '📌 Pinned' : '📌 Pin';
+      pinBtn.innerHTML = this.isPinned ? `${ICONS.pinned} Pinned` : `${ICONS.pin} Pin`;
       pinBtn.classList.toggle('pinned', this.isPinned);
       if (this.isPinned) {
         this.pinnedLine = this.activeVisualLine;
@@ -313,13 +330,13 @@ export class DocumentEditor {
   private renderWorkPanel(records: DocumentLineRecord[], isEvaluating: boolean) {
     if (this.state.getIsInvokedRunning()) {
       this.statusBadge.className = 'doc-status-badge evaluating';
-      this.statusBadge.textContent = '● Invoked Running...';
+      this.statusBadge.textContent = 'Invoked Running...';
     } else if (isEvaluating) {
       this.statusBadge.className = 'doc-status-badge evaluating';
-      this.statusBadge.textContent = '● Ambient Evaluating...';
+      this.statusBadge.textContent = 'Ambient Evaluating...';
     } else {
       this.statusBadge.className = 'doc-status-badge ready';
-      this.statusBadge.textContent = '● Ready';
+      this.statusBadge.textContent = 'Ready';
       this.statsBadge.textContent = `${this.state.getLastDurationMs()} ms (${records.length} lines)`;
     }
 
@@ -584,14 +601,14 @@ export class DocumentEditor {
 
   private formatGutterRow(rec: DocumentLineRecord): string {
     if (rec.type === 'PROSE') return '';
-    if (rec.type === 'INCOMPLETE') return '<span class="doc-gutter-incomplete">⋯</span>';
+    if (rec.type === 'INCOMPLETE') return '<span class="doc-gutter-incomplete">...</span>';
     if (rec.type === 'ERROR') {
-      return `<span class="doc-gutter-error" title="${escapeHtml(rec.error?.message ?? '')}">⚠ ${escapeHtml(rec.error?.message ?? 'Error')}</span>`;
+      return `<span class="doc-gutter-error" title="${escapeHtml(rec.error?.message ?? '')}">${ICONS.warning} ${escapeHtml(rec.error?.message ?? 'Error')}</span>`;
     }
 
     if (rec.result) {
       if (rec.result.type === 'graph') {
-        return `<button class="doc-plot-btn" data-line="${rec.line - 1}">📈 View Plot (${rec.result.spec.kind})</button>`;
+        return `<button class="doc-plot-btn" data-line="${rec.line - 1}">${ICONS.plot} View Plot (${rec.result.spec.kind})</button>`;
       }
       if (rec.result.type === 'derivation') {
         const deriv = rec.result as DerivationValue;
@@ -631,7 +648,7 @@ export class DocumentEditor {
 
   private formatSolveTraceGutter(trace: SolveTraceValue): string {
     let html = `<div class="solve-trace">`;
-    html += `<div class="trace-header">${trace.method === 'newton' ? 'Newton' : 'Bisection'} (${trace.iterations.length} iters) x ≈ ${escapeHtml(this.formatValue(trace.root))}</div>`;
+    html += `<div class="trace-header">${trace.method === 'newton' ? 'Newton' : 'Bisection'} (${trace.iterations.length} iters) x \u2248 ${escapeHtml(this.formatValue(trace.root))}</div>`;
     html += `<table class="trace-table"><thead><tr><th>Iter</th><th>x</th><th>f(x)</th><th>Error</th></tr></thead><tbody>`;
     for (const it of trace.iterations) {
       const xStr = it.x.toFixed(6);
@@ -668,7 +685,7 @@ export class DocumentEditor {
         return `[Derivation: ${val.steps.length} steps]`;
       }
       case 'solve_trace':
-        return `${val.method === 'newton' ? "Newton's" : 'Bisection'} root ≈ ${this.formatValue(val.root)} (${val.iterations.length} iterations)`;
+        return `${val.method === 'newton' ? "Newton's" : 'Bisection'} root \u2248 ${this.formatValue(val.root)} (${val.iterations.length} iterations)`;
       case 'matrix':
         return `[${val.data.map(row => '[' + row.map(cell => this.formatValue(cell)).join(', ') + ']').join(', ')}]`;
       case 'tuple':
@@ -698,13 +715,4 @@ export class DocumentEditor {
     }
     this.state.dispose();
   }
-}
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
 }

@@ -319,7 +319,7 @@ export function compareValues(op: '=' | '==' | '!=' | '<' | '<=' | '>' | '>=', a
     if (a.type === 'unknown' && b.type === 'unknown') return { type: 'boolean', value: true };
     if (a.type === 'unknown' || b.type === 'unknown') return { type: 'boolean', value: false };
   }
-  if (op === '!=' || (op as any) === '≠') {
+  if (op === '!=' || (op as any) === '\u2260') {
     if (a.type === 'unknown' && b.type === 'unknown') return { type: 'boolean', value: false };
     if (a.type === 'unknown' || b.type === 'unknown') return { type: 'boolean', value: true };
   }

@@ -14,7 +14,7 @@ export class AlgebraicClassifier {
     const checkUnsupported = (node: ASTNode, inDenominator: boolean = false): { unsupported: boolean; reason?: string } => {
       switch (node.type) {
         case 'UnaryOp':
-          if (node.op === '√') {
+          if (node.op === '\u221a') {
             const innerHasVar = this.containsVariable(node.operand, varName);
             if (innerHasVar) {
               return { unsupported: true, reason: 'radical equations containing variable are unsupported; try solve(f, near: x0)' };

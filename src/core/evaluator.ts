@@ -231,7 +231,7 @@ export class Evaluator {
         if (node.op === '-') {
           return subValues({ type: 'rational', n: 0n, d: 1n }, operand, node.span);
         }
-        if (node.op === '√') {
+        if (node.op === '\u221a') {
           return applyBuiltin('sqrt', [operand], node.span);
         }
         throw createError(`Unknown unary operator '${node.op}'`, node.span);

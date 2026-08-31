@@ -1,0 +1,171 @@
+/**
+ * Design Tokens — Mathematical IDE Token System
+ * Governs all colors, typography, spacing, borders, radii, and transitions.
+ * No literal color, pixel value, or radius may be used outside this file.
+ */
+
+:root {
+  /* =========================================================================
+     1. Color System: Dark Theme (Default) - Warm Neutral Foundation
+     ========================================================================= */
+  --color-bg-base: #181716;
+  --color-bg-surface: #22201e;
+  --color-bg-surface-elevated: #2c2927;
+  --color-bg-surface-hover: #35322f;
+  --color-bg-surface-active: #3e3a36;
+  --color-bg-input: #1b1a18;
+
+  --color-border-subtle: #2e2b28;
+  --color-border-default: #3d3936;
+  --color-border-strong: #544f4a;
+
+  /* Document Math Text (Brightest element on screen) */
+  --color-text-primary: #f5f4f0;
+  /* Secondary / UI Chrome Text (At least 1 step down in contrast) */
+  --color-text-secondary: #a8a39d;
+  /* Muted / Line numbers / Guides */
+  --color-text-tertiary: #8c867e;
+  --color-text-disabled: #5a554e;
+
+  /* Single Focused Accent */
+  --color-accent: #2dd4bf;
+  --color-accent-subtle: rgba(45, 212, 191, 0.12);
+  --color-accent-border: rgba(45, 212, 191, 0.35);
+
+  /* Semantic States (Verified, Unknown, Error, Stale) */
+  --color-semantic-verified: #4ade80;
+  --color-semantic-verified-bg: rgba(74, 222, 128, 0.08);
+  --color-semantic-verified-border: rgba(74, 222, 128, 0.25);
+
+  --color-semantic-unknown: #fbbf24;
+  --color-semantic-unknown-bg: rgba(251, 191, 36, 0.08);
+  --color-semantic-unknown-border: rgba(251, 191, 36, 0.25);
+
+  --color-semantic-error: #f87171;
+  --color-semantic-error-bg: rgba(248, 113, 113, 0.08);
+  --color-semantic-error-border: rgba(248, 113, 113, 0.25);
+
+  --color-semantic-stale: #9ca3af;
+  --color-semantic-stale-bg: rgba(156, 163, 175, 0.08);
+  --color-semantic-stale-border: rgba(156, 163, 175, 0.25);
+
+  /* Canvas Plot Colorways */
+  --color-plot-bg: #181716;
+  --color-plot-axis: #8c867e;
+  --color-plot-grid: #2e2b28;
+  --color-plot-text: #a8a39d;
+
+  /* =========================================================================
+     2. Typography System
+     ========================================================================= */
+  --font-family-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-family-doc: "SF Mono", "Menlo", "Consolas", "Liberation Mono", monospace;
+  --font-family-math: "KaTeX_Main", "Cambria Math", "TeX Gyre Termes", "Times New Roman", "Nimbus Roman No9 L", serif;
+
+  /* Modular Scale: 1.25 Ratio */
+  --font-size-2xs: 0.6875rem; /* 11px */
+  --font-size-xs: 0.75rem;     /* 12px */
+  --font-size-sm: 0.875rem;    /* 14px */
+  --font-size-base: 1rem;      /* 16px */
+  --font-size-md: 1.25rem;     /* 20px */
+  --font-size-lg: 1.5625rem;   /* 25px */
+  --font-size-xl: 1.953rem;    /* 31.25px */
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --line-height-tight: 1.25;
+  --line-height-ui: 1.4;
+  --line-height-doc: 1.7;
+
+  /* TeXbook Mathematical Spacing Units */
+  --math-thick-space: 0.2778em; /* 5/18 em for relations (=, <, >, \le) */
+  --math-med-space: 0.2222em;   /* 4/18 em for binary operators (+, -) */
+  --math-thin-space: 0.1667em;  /* 3/18 em for implicit multiplication */
+  --math-bar-thickness: 0.06em;
+
+  /* =========================================================================
+     3. Space & Layout Tokens
+     ========================================================================= */
+  --space-2xs: 0.125rem; /* 2px */
+  --space-xs: 0.25rem;   /* 4px */
+  --space-sm: 0.5rem;    /* 8px */
+  --space-md: 0.75rem;   /* 12px */
+  --space-lg: 1rem;      /* 16px */
+  --space-xl: 1.5rem;    /* 24px */
+  --space-2xl: 2rem;     /* 32px */
+
+  /* Density & Heights */
+  --toolbar-height: 2.5rem;   /* 40px */
+  --tab-height: 2.125rem;     /* 34px */
+  --gutter-row-height: 1.75rem; /* 28px */
+  --control-height-sm: 1.625rem; /* 26px */
+  --control-height-base: 1.875rem; /* 30px */
+
+  /* =========================================================================
+     4. Chrome, Borders, and Radii
+     ========================================================================= */
+  --border-width-default: 1px;
+  --border-radius-xs: 2px;
+  --border-radius-sm: 3px;
+  --border-radius-md: 4px;
+
+  /* Zero Drop Shadows in Base Chrome */
+  --shadow-none: none;
+  --shadow-floating: 0 4px 12px rgba(0, 0, 0, 0.4);
+
+  /* Transitions */
+  --duration-fast: 100ms;
+  --duration-normal: 180ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* =========================================================================
+   Light Theme Tokens — Designed Warm Paper Foundation
+   ========================================================================= */
+[data-theme="light"], .theme-light {
+  --color-bg-base: #faf9f5;
+  --color-bg-surface: #f0eee6;
+  --color-bg-surface-elevated: #e6e3d8;
+  --color-bg-surface-hover: #dedad0;
+  --color-bg-surface-active: #d6d1c5;
+  --color-bg-input: #ffffff;
+
+  --color-border-subtle: #e5e2d6;
+  --color-border-default: #d4cfc1;
+  --color-border-strong: #aba494;
+
+  --color-text-primary: #1c1917;
+  --color-text-secondary: #57534e;
+  --color-text-tertiary: #78716c;
+  --color-text-disabled: #a8a29e;
+
+  --color-accent: #0f766e;
+  --color-accent-subtle: rgba(15, 118, 110, 0.08);
+  --color-accent-border: rgba(15, 118, 110, 0.3);
+
+  --color-semantic-verified: #15803d;
+  --color-semantic-verified-bg: rgba(21, 128, 61, 0.08);
+  --color-semantic-verified-border: rgba(21, 128, 61, 0.25);
+
+  --color-semantic-unknown: #b45309;
+  --color-semantic-unknown-bg: rgba(180, 83, 9, 0.08);
+  --color-semantic-unknown-border: rgba(180, 83, 9, 0.25);
+
+  --color-semantic-error: #b91c1c;
+  --color-semantic-error-bg: rgba(185, 28, 28, 0.08);
+  --color-semantic-error-border: rgba(185, 28, 28, 0.25);
+
+  --color-semantic-stale: #57534e;
+  --color-semantic-stale-bg: rgba(87, 83, 78, 0.08);
+  --color-semantic-stale-border: rgba(87, 83, 78, 0.25);
+
+  --color-plot-bg: #faf9f5;
+  --color-plot-axis: #78716c;
+  --color-plot-grid: #e5e2d6;
+  --color-plot-text: #57534e;
+
+  --shadow-floating: 0 4px 12px rgba(0, 0, 0, 0.12);
+}

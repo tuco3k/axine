@@ -67,7 +67,7 @@ export class NotebookApp {
 
     const btnRunAll = document.createElement('button');
     btnRunAll.className = 'tool-btn primary-btn';
-    btnRunAll.textContent = '▶ Run All';
+    btnRunAll.innerHTML = `${ICONS.run} Run All`;
     btnRunAll.onclick = () => this.state.recomputeAll();
 
     const btnAddCell = document.createElement('button');
@@ -77,7 +77,7 @@ export class NotebookApp {
 
     const btnSave = document.createElement('button');
     btnSave.className = 'tool-btn';
-    btnSave.textContent = '💾 Save';
+    btnSave.innerHTML = `${ICONS.save} Save`;
     btnSave.onclick = () => {
       NotebookStorage.saveDocument(this.currentDocId, this.state);
       this.showToast('Saved to localStorage');
@@ -85,7 +85,7 @@ export class NotebookApp {
 
     const btnExport = document.createElement('button');
     btnExport.className = 'tool-btn';
-    btnExport.textContent = '⭳ Export';
+    btnExport.innerHTML = `${ICONS.export} Export`;
     btnExport.onclick = () => NotebookStorage.exportJSON(this.state);
 
     const importInput = document.createElement('input');
@@ -102,7 +102,7 @@ export class NotebookApp {
 
     const btnImport = document.createElement('button');
     btnImport.className = 'tool-btn';
-    btnImport.textContent = '⭱ Import';
+    btnImport.innerHTML = `${ICONS.import} Import`;
     btnImport.onclick = () => importInput.click();
 
     const btnClear = document.createElement('button');

@@ -82,11 +82,11 @@ export class Tokenizer {
         continue;
       }
 
-      // Global assignment :≡ or :==
-      if (char === ':' && this.peek(1) === '≡') {
+      // Global assignment :\u2261 or :==
+      if (char === ':' && this.peek(1) === '\u2261') {
         this.advance();
         this.advance();
-        tokens.push(this.makeToken('GLOBAL_ASSIGN', ':≡', startPos, startLine, startCol, leadingWhitespace));
+        tokens.push(this.makeToken('GLOBAL_ASSIGN', ':\u2261', startPos, startLine, startCol, leadingWhitespace));
         continue;
       }
       if (char === ':' && this.peek(1) === '=' && this.peek(2) === '=') {
@@ -148,17 +148,17 @@ export class Tokenizer {
       }
 
       // Unicode comparisons & operators
-      if (char === '≠') {
+      if (char === '\u2260') {
         this.advance();
         tokens.push(this.makeToken('NEQ', '!=', startPos, startLine, startCol, leadingWhitespace));
         continue;
       }
-      if (char === '≤') {
+      if (char === '\u2264') {
         this.advance();
         tokens.push(this.makeToken('LTE', '<=', startPos, startLine, startCol, leadingWhitespace));
         continue;
       }
-      if (char === '≥') {
+      if (char === '\u2265') {
         this.advance();
         tokens.push(this.makeToken('GTE', '>=', startPos, startLine, startCol, leadingWhitespace));
         continue;
@@ -173,12 +173,12 @@ export class Tokenizer {
         tokens.push(this.makeToken('SLASH', '/', startPos, startLine, startCol, leadingWhitespace));
         continue;
       }
-      if (char === '−') { // Unicode minus U+2212
+      if (char === '\u2212') { // Unicode minus U+2212
         this.advance();
         tokens.push(this.makeToken('MINUS', '-', startPos, startLine, startCol, leadingWhitespace));
         continue;
       }
-      if (char === '√') { // Unicode square root U+221A
+      if (char === '\u221a') { // Unicode square root U+221A
         this.advance();
         tokens.push(this.makeToken('IDENTIFIER', 'sqrt', startPos, startLine, startCol, leadingWhitespace));
         continue;
@@ -194,9 +194,9 @@ export class Tokenizer {
         continue;
       }
 
-      if (char === '≡') {
+      if (char === '\u2261') {
         this.advance();
-        tokens.push(this.makeToken('CONGRUENT', '≡', startPos, startLine, startCol, leadingWhitespace));
+        tokens.push(this.makeToken('CONGRUENT', '\u2261', startPos, startLine, startCol, leadingWhitespace));
         continue;
       }
       if (char === 'Σ') {
@@ -209,14 +209,14 @@ export class Tokenizer {
         tokens.push(this.makeToken('PI_PROD', 'Π', startPos, startLine, startCol, leadingWhitespace));
         continue;
       }
-      if (char === '∫') {
+      if (char === '\u222b') {
         this.advance();
-        tokens.push(this.makeToken('INTEGRAL', '∫', startPos, startLine, startCol, leadingWhitespace));
+        tokens.push(this.makeToken('INTEGRAL', '\u222b', startPos, startLine, startCol, leadingWhitespace));
         continue;
       }
-      if (char === '∂') {
+      if (char === '\u2202') {
         this.advance();
-        tokens.push(this.makeToken('IDENTIFIER', '∂', startPos, startLine, startCol, leadingWhitespace));
+        tokens.push(this.makeToken('IDENTIFIER', '\u2202', startPos, startLine, startCol, leadingWhitespace));
         continue;
       }
 

@@ -170,12 +170,12 @@ export class AlgebraicSolver {
           condition: `${varName} >= 0`,
           steps: [{
             before: origEq,
-            after: `${varName} = √${k.toString()}`,
+            after: `${varName} = \u221a${k.toString()}`,
             rule: 'take-root' as const,
             operand: `^(1/${exp})`,
             target: 'both-sides',
             justification: 'Positive root branch',
-            equation: `${varName} = √${k.toString()}`,
+            equation: `${varName} = \u221a${k.toString()}`,
           }],
           result: { type: 'float' as const, value: rootNum },
         },
@@ -183,12 +183,12 @@ export class AlgebraicSolver {
           condition: `${varName} < 0`,
           steps: [{
             before: origEq,
-            after: `${varName} = -√${k.toString()}`,
+            after: `${varName} = -\u221a${k.toString()}`,
             rule: 'take-root' as const,
             operand: `^(1/${exp})`,
             target: 'both-sides',
             justification: 'Negative root branch',
-            equation: `${varName} = -√${k.toString()}`,
+            equation: `${varName} = -\u221a${k.toString()}`,
           }],
           result: { type: 'float' as const, value: -rootNum },
         },
@@ -196,23 +196,23 @@ export class AlgebraicSolver {
 
       const justification = exp === 2
         ? 'Take square root of both sides (branches into positive and negative cases)'
-        : `Take ${exp}th root of both sides (2 real roots ±√${k.toString()}; ${exp - 2} complex roots unrepresented)`;
+        : `Take ${exp}th root of both sides (2 real roots ±\u221a${k.toString()}; ${exp - 2} complex roots unrepresented)`;
 
       steps.push({
         before: origEq,
-        after: `${varName} = √${k.toString()} or ${varName} = -√${k.toString()}`,
+        after: `${varName} = \u221a${k.toString()} or ${varName} = -\u221a${k.toString()}`,
         rule: 'take-root',
         operand: `^(1/${exp})`,
         target: 'both-sides',
         justification,
         sideCondition: 'even power splits into positive and negative branches',
         branches,
-        equation: `${varName} = ±√${k.toString()}`,
+        equation: `${varName} = ±\u221a${k.toString()}`,
       });
 
       const roots: Value[] = [
-        { type: 'float', value: -rootNum, notice: `approximate root -√${k.toString()}` },
-        { type: 'float', value: rootNum, notice: `approximate root √${k.toString()}` },
+        { type: 'float', value: -rootNum, notice: `approximate root -\u221a${k.toString()}` },
+        { type: 'float', value: rootNum, notice: `approximate root \u221a${k.toString()}` },
       ];
 
       return {
@@ -290,9 +290,9 @@ export class AlgebraicSolver {
 
     let sideCondition = '';
     if (denLhsConst && denLhsConst.n !== 0n) {
-      sideCondition = `valid since ${denLhsConst.toString()} != 0 (≠ 0)`;
+      sideCondition = `valid since ${denLhsConst.toString()} != 0 (\u2260 0)`;
     } else {
-      sideCondition = `${formatAST(prop.lhsDen)} != 0 (≠ 0, excluded from domain)`;
+      sideCondition = `${formatAST(prop.lhsDen)} != 0 (\u2260 0, excluded from domain)`;
     }
 
     const crossEq = `${formatAST(lhsCross)} = ${formatAST(rhsCross)}`;
@@ -444,7 +444,7 @@ export class AlgebraicSolver {
         operand: netA.toString(),
         target: 'both-sides',
         justification: `Divide both sides by ${netA.toString()}`,
-        sideCondition: `valid since ${netA.toString()} != 0 (≠ 0)`,
+        sideCondition: `valid since ${netA.toString()} != 0 (\u2260 0)`,
       });
     }
 
@@ -576,18 +576,18 @@ export class AlgebraicSolver {
     const root1Val = (-b.toNumber() + dFloatVal) / twoA.toNumber();
     const root2Val = (-b.toNumber() - dFloatVal) / twoA.toNumber();
 
-    const quadEq = `${varName} = (-(${b.toString()}) ± √(${D.toString()})) / (${twoA.toString()})`;
+    const quadEq = `${varName} = (-(${b.toString()}) ± \u221a(${D.toString()})) / (${twoA.toString()})`;
     steps.push({
       before: currEq,
       after: quadEq,
       equation: quadEq,
       rule: 'quadratic-formula',
-      justification: 'Apply quadratic formula x = (-b ± √(b² - 4ac)) / (2a)',
+      justification: 'Apply quadratic formula x = (-b ± \u221a(b² - 4ac)) / (2a)',
     });
 
     const roots: Value[] = [
-      { type: 'float', value: Math.min(root1Val, root2Val), notice: `approximate root (-${b.toString()} - √${D.toString()}) / ${twoA.toString()}` },
-      { type: 'float', value: Math.max(root1Val, root2Val), notice: `approximate root (-${b.toString()} + √${D.toString()}) / ${twoA.toString()}` },
+      { type: 'float', value: Math.min(root1Val, root2Val), notice: `approximate root (-${b.toString()} - \u221a${D.toString()}) / ${twoA.toString()}` },
+      { type: 'float', value: Math.max(root1Val, root2Val), notice: `approximate root (-${b.toString()} + \u221a${D.toString()}) / ${twoA.toString()}` },
     ];
 
     return {

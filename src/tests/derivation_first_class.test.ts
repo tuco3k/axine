@@ -92,7 +92,7 @@ describe('Part B: Derivations as First-Class Values & Self-Verification', () => 
 
     const crossMulStep = res.steps.find(s => s.rule === 'cross-multiply');
     expect(crossMulStep).toBeDefined();
-    expect(crossMulStep?.sideCondition).toContain('≠ 0');
+    expect(crossMulStep?.sideCondition).toContain('\u2260 0');
   });
 
   it('linear 2*(x - 3) = 4*x + 1 isolates to -7/2', () => {

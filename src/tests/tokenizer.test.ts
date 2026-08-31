@@ -14,7 +14,7 @@ describe('Tokenizer', () => {
   });
 
   it('handles unicode operators and symbols', () => {
-    const tokens = tokenize('2 × 3 ÷ 4 ≤ 5 ≥ 6 ≠ 7 − 8 √9 π τ');
+    const tokens = tokenize('2 × 3 ÷ 4 \u2264 5 \u2265 6 \u2260 7 \u2212 8 \u221a9 π τ');
     expect(tokens.map(t => [t.type, t.value])).toEqual([
       ['NUMBER', '2'],
       ['STAR', '*'],

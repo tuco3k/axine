@@ -177,7 +177,7 @@ export class Parser {
       return this.parseClaim();
     }
 
-    // Check for f(x, y) := expr OR f(x, y) :≡ expr
+    // Check for f(x, y) := expr OR f(x, y) :\u2261 expr
     if (
       this.peek().type === 'IDENTIFIER' &&
       this.peek(1).type === 'LPAREN'
@@ -215,7 +215,7 @@ export class Parser {
           }
         }
         this.expect('RPAREN', ')');
-        this.advance(); // consume := or :≡
+        this.advance(); // consume := or :\u2261
 
         this.knownFunctions.add(nameToken.value);
         const body = this.parseExpression(PREC_NONE);
@@ -235,10 +235,10 @@ export class Parser {
       }
     }
 
-    // Check for variable :≡ expr or variable :== expr (Global assignment)
+    // Check for variable :\u2261 expr or variable :== expr (Global assignment)
     if (this.peek().type === 'IDENTIFIER' && this.peek(1).type === 'GLOBAL_ASSIGN') {
       const targetToken = this.advance();
-      this.advance(); // consume :≡ or :==
+      this.advance(); // consume :\u2261 or :==
       const value = this.parseExpression(PREC_NONE);
       const span: Span = {
         start: targetToken.span.start,
@@ -606,7 +606,7 @@ export class Parser {
       return this.parseBlock();
     }
 
-    // Big Operators: Σ, Π, ∫
+    // Big Operators: Σ, Π, \u222b
     if (token.type === 'SIGMA' || token.type === 'PI_PROD' || token.type === 'INTEGRAL') {
       return this.parseBigOp();
     }
@@ -621,8 +621,8 @@ export class Parser {
       };
     }
 
-    // Differential operator d//dx expr or ∂//∂x expr
-    if ((token.value === 'd' || token.value === '∂') && (this.peek(1).type === 'DOUBLE_SLASH' || this.peek(1).type === 'SLASH')) {
+    // Differential operator d//dx expr or \u2202//\u2202x expr
+    if ((token.value === 'd' || token.value === '\u2202') && (this.peek(1).type === 'DOUBLE_SLASH' || this.peek(1).type === 'SLASH')) {
       return this.parseDiff();
     }
 
@@ -1077,13 +1077,13 @@ export class Parser {
   }
 
   private parseDiff(): DiffNode {
-    const dTok = this.advance(); // d or ∂
-    const isPartial = dTok.value === '∂';
+    const dTok = this.advance(); // d or \u2202
+    const isPartial = dTok.value === '\u2202';
     this.advance(); // // or /
     let varName = 'x';
     if (this.peek().type === 'IDENTIFIER') {
       let vTok = this.advance().value;
-      if (vTok.startsWith('d') || vTok.startsWith('∂')) vTok = vTok.slice(1);
+      if (vTok.startsWith('d') || vTok.startsWith('\u2202')) vTok = vTok.slice(1);
       if (vTok) varName = vTok;
     }
     const expr = this.parseExpression(PREC_UNARY);

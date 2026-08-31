@@ -41,10 +41,10 @@ describe('Phase 2: Lexical Scopes, Blocks, Global Assignment, and Forward Refere
     });
   });
 
-  describe('Global Assignment (:≡ and :==)', () => {
-    it('exports global variables from inside a block using :≡', () => {
+  describe('Global Assignment (:\u2261 and :==)', () => {
+    it('exports global variables from inside a block using :\u2261', () => {
       const env = createInitialEnvironment();
-      const res = evalVal('{ secret := 999; exported :≡ secret * 2; exported + 1 }', env);
+      const res = evalVal('{ secret := 999; exported :\u2261 secret * 2; exported + 1 }', env);
       expect(res).toEqual({ type: 'rational', n: 1999n, d: 1n });
 
       // secret is local

@@ -55,7 +55,7 @@ describe('Step-by-Step Algebraic Solving (isolate) & Solve Trace', () => {
       expect(res.steps.some(s => s.rule === 'factor')).toBe(true);
     });
 
-    it('solves pure quadratic x^2 - 2 = 0 -> roots ±√2', () => {
+    it('solves pure quadratic x^2 - 2 = 0 -> roots ±\u221a2', () => {
       const env = createInitialEnvironment();
       const res = evaluate('isolate(x^2 - 2 == 0, for: x)', env).value as DerivationValue;
       expect(res.type).toBe('derivation');
