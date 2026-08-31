@@ -7,13 +7,13 @@ const __dirname = path.dirname(__filename);
 const ARTIFACT_DIR = '/Users/noahslayton/.gemini/antigravity/brain/bbf7ad1a-fbf5-49df-8168-b6708c0a496b';
 
 async function verifyGateF2() {
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
 
   console.log('Navigating to app for Gate F2 verification...');
-  await page.goto('http://localhost:5173');
-  await page.waitForSelector('#doc-textarea');
+  await page.goto('http://localhost:5173', { waitUntil: 'load', timeout: 10000 });
+  await page.waitForSelector('#doc-textarea', { timeout: 10000 });
 
   const textarea = await page.$('#doc-textarea');
 
@@ -28,7 +28,7 @@ d//dx f(x)`;
 
   // Render showcase cards in browser with live interactive popovers for both contexts
   await page.evaluate(() => {
-    const { explainSymbol, typesetMath, renderProseWithMath } = window;
+    const { explainSymbol, typesetMath } = window;
     const expInt = explainSymbol('dx', { parentType: 'integral', integrand: 'x^2', variableName: 'x' });
     const expDeriv = explainSymbol('dx', { parentType: 'derivative', variableName: 'x' });
 
@@ -38,28 +38,28 @@ d//dx f(x)`;
           <div class="popover-header">
             <div class="popover-symbol-badge">${typesetMath(exp.symbol, { displayMode: false })}</div>
             <div class="popover-title-group">
-              <span class="popover-role">${renderProseWithMath(exp.role)}</span>
+              <span class="popover-role">${exp.role}</span>
             </div>
           </div>
           <div class="popover-body">
             <div class="popover-section">
               <div class="popover-section-label">1. WHAT IT IS</div>
-              <div class="popover-section-content">${renderProseWithMath(exp.whatItIs)}</div>
+              <div class="popover-section-content">${exp.whatItIs}</div>
             </div>
             <div class="popover-section">
               <div class="popover-section-label">2. WHY IT IS HERE</div>
-              <div class="popover-section-content">${renderProseWithMath(exp.whyItIsHere)}</div>
+              <div class="popover-section-content">${exp.whyItIsHere}</div>
             </div>
             <div class="popover-section popover-showme-section">
               <div class="popover-section-label">3. SHOW ME</div>
               <div class="popover-section-content">
-                <div class="popover-showme-preview">${renderProseWithMath(exp.showMe)}</div>
+                <div class="popover-showme-preview">${exp.showMe}</div>
               </div>
             </div>
             <div class="popover-section popover-deeper-section">
               <details class="popover-details" open>
                 <summary class="popover-section-label">4. GO DEEPER</summary>
-                <div class="popover-section-content deeper-content">${renderProseWithMath(exp.goDeeper)}</div>
+                <div class="popover-section-content deeper-content">${exp.goDeeper}</div>
               </details>
             </div>
           </div>
@@ -89,7 +89,7 @@ d//dx f(x)`;
       <div style="display: flex; gap: 32px;">
         <div style="display: flex; flex-direction: column; gap: 12px;">
           <div style="font-family: var(--font-family-math); font-size: 20px; color: var(--color-accent); background: #22201e; padding: 8px 16px; border-radius: 4px; border: 1px solid #3d3936;">
-            Context A: ${typesetMath('∫ x^2 dx')}
+            Context A: ${typesetMath('\u222b x^2 dx')}
           </div>
           ${renderPopoverHtml(expInt)}
         </div>
@@ -115,18 +115,19 @@ d//dx f(x)`;
     console.log(`Saved Gate F2 comparison screenshot: ${showcasePath}`);
   }
 
-  // 2. Test interactive click on live element in DOM
+  // 2. Test interactive click on live element in DOM (anchored to the dx glyph in line 1)
   await page.evaluate(() => {
     const showcase = document.getElementById('gate-f2-showcase');
     if (showcase) showcase.style.display = 'none';
 
-    // Click first typeset line to trigger popover
     const editor = window.editor;
     if (editor) {
-      const target = document.querySelector('.doc-gutter-row');
-      if (target) {
+      // Find the specific typeset token inside line 1
+      const line1 = document.querySelector('.doc-typeset-line');
+      const token = line1?.querySelector('.typeset-diff') || line1?.querySelector('.typeset-box') || line1?.lastElementChild || line1;
+      if (token) {
         const exp = window.explainSymbol('dx', { parentType: 'integral', integrand: 'x^2' });
-        editor.mathPopover.show(exp, target);
+        editor.mathPopover.show(exp, token);
       }
     }
   });

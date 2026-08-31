@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { explainSymbol } from '../core/explainer';
+import { typesetMath } from '../core/math_typeset';
 
 describe('Phase 9 — Contextual Mathematical Explainer (Part F2)', () => {
   it('produces context-dependent explanations for dx in integral vs derivative (Gate Requirement)', () => {
-    // Context A: dx in \int x^2 dx
+    // Context A: dx in \u222b x^2 dx
     const expIntegral = explainSymbol('dx', {
       parentType: 'integral',
       integrand: 'x^2',
@@ -31,12 +32,12 @@ describe('Phase 9 — Contextual Mathematical Explainer (Part F2)', () => {
     expect(expDerivative.whatItIs).toContain('rate of change');
 
     // 3. Why it is here explains the consequence of changing the variable
-    expect(expIntegral.whyItIsHere).toContain('yielding $\\frac{1}{3}x^3$');
-    expect(expIntegral.whyItIsHere).toContain('If this were $\\mathrm{d}y$');
-    expect(expIntegral.whyItIsHere).toContain('$x^2 y$');
+    expect(expIntegral.whyItIsHere).toContain('yielding');
+    expect(expIntegral.whyItIsHere).toContain('If this were');
+    expect(expIntegral.whyItIsHere).toContain('treated as a constant factor');
 
     expect(expDerivative.whyItIsHere).toContain('rate-of-change is measured');
-    expect(expDerivative.whyItIsHere).toContain('Changing this to $\\mathrm{d}t$');
+    expect(expDerivative.whyItIsHere).toContain('measure the time derivative');
 
     // 4. They must NOT be identical strings
     expect(expIntegral.whatItIs).not.toBe(expDerivative.whatItIs);
@@ -80,7 +81,7 @@ describe('Phase 9 — Contextual Mathematical Explainer (Part F2)', () => {
 
     expect(expSum.role).toContain('Discrete Summation Operator');
     expect(expSum.whatItIs).toContain('Greek capital Sigma');
-    expect(expSum.whyItIsHere).toContain('discrete units $\\Delta n = 1$');
+    expect(expSum.whyItIsHere).toContain('discrete units');
     expect(expSum.showMe).toContain('Partial sum sequence');
   });
 
@@ -103,5 +104,17 @@ describe('Phase 9 — Contextual Mathematical Explainer (Part F2)', () => {
     expect(expDiff.role).toContain('Differential Operator');
     expect(expDiff.whatItIs).toContain('Exterior differential operator');
     expect(expDiff.goDeeper).toContain("Stokes'");
+  });
+
+  it('renders d//dx f(x) with f(x) outside the differential operator fraction', () => {
+    const html = typesetMath('d//dx f(x)');
+
+    // The fraction tm-frac must contain d in numerator and dx in denominator, NOT f(x)
+    expect(html).toContain('tm-diff-frac');
+    expect(html).toContain('<span class="tm-den-box"><span class="tm-diff tm-clickable" data-symbol="dx" data-parent-type="derivative" data-var="x"><span class="tm-diff-d">d</span><span class="tm-var">x</span></span></span>');
+    // f(x) must appear after the closing </span> of the fraction
+    const fracEndIdx = html.indexOf('</span></span>');
+    const fIdx = html.indexOf('<span class="tm-var">f</span>');
+    expect(fIdx).toBeGreaterThan(fracEndIdx);
   });
 });

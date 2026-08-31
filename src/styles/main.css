@@ -1206,10 +1206,11 @@ html, body {
 .tm-frac {
   display: inline-flex;
   flex-direction: column;
-  vertical-align: -0.6em;
+  vertical-align: middle;
   text-align: center;
-  padding: 0 0.2em;
-  font-size: 0.92em;
+  padding: 0 0.15em;
+  margin: 0 0.1em;
+  font-size: 0.88em;
 }
 
 .tm-num-box {
