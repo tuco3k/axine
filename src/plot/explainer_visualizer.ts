@@ -11,7 +11,7 @@
  * Minimal visual ink: at most 2 distinct hues (neutral + single accent).
  */
 
-import { VisualizationConfig } from '../core/explainer';
+import { VisualizationConfig, getRiemannRuleExplanation } from '../core/explainer';
 import { evaluate, createInitialEnvironment } from '../core/evaluator';
 import { valueToNumber } from '../core/numeric/tower';
 import { Environment } from '../core/types';
@@ -188,6 +188,13 @@ export class ExplainerVisualizer {
         ruleBtns.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         this.riemannRule = (btn as HTMLElement).getAttribute('data-rule') as any;
+
+        // Dynamically update the SHOW ME explanation text in the parent popover
+        const previewEl = this.container.closest('.popover-body')?.querySelector('.popover-showme-preview');
+        if (previewEl) {
+          previewEl.innerHTML = getRiemannRuleExplanation(this.riemannRule, this.config.variable || 'x');
+        }
+
         this.render();
       });
     });

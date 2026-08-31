@@ -43,7 +43,18 @@ export interface NodeExplanation {
 /**
  * Generates an anchored explanation for a symbol in its specific expression context.
  */
-export function explainSymbol(symbol: string, context: ExplanationContext): NodeExplanation {
+
+export function getRiemannRuleExplanation(rule: 'left' | 'midpoint' | 'right', varName: string = 'x'): string {
+  if (rule === 'left') {
+    return `Left Riemann sum: evaluates the integrand at left endpoints ${typesetMath('x_i^* = x_{i-1}', { displayMode: false })}. For monotonically increasing functions, every rectangle sits below the curve, producing a strict underestimate.`;
+  }
+  if (rule === 'right') {
+    return `Right Riemann sum: evaluates the integrand at right endpoints ${typesetMath('x_i^* = x_i', { displayMode: false })}. For monotonically increasing functions, every rectangle extends above the curve, producing a strict overestimate.`;
+  }
+  return `Midpoint Riemann sum: evaluates the integrand at midpoints ${typesetMath('x_i^* = (x_{i-1} + x_i)//2', { displayMode: false })}. Exact on linear functions by symmetric error cancellation.`;
+}
+
+export function explainSymbol(symbol: string, context: ExplanationContext = {}): NodeExplanation {
   const sym = symbol.trim();
   const parent = context.parentType || '';
   const expr = context.exprString || '';
@@ -63,7 +74,7 @@ export function explainSymbol(symbol: string, context: ExplanationContext): Node
         role: `Variable of Integration for ${typesetMath('\u222b', { displayMode: false })} (${typesetMath(varName, { displayMode: false })})`,
         whatItIs: `The infinitesimal displacement ${typesetMath('d' + varName, { displayMode: false })} and accumulation variable in this integral.`,
         whyItIsHere: `It identifies ${typesetMath(varName, { displayMode: false })} as the integration variable. Integrating ${typesetMath(integrand, { displayMode: false })} with respect to ${typesetMath('d' + varName, { displayMode: false })} accumulates slices along the ${typesetMath(varName, { displayMode: false })}-axis (yielding ${typesetMath('1//3', { displayMode: false })}${typesetMath(varName + '^3', { displayMode: false })} for ${typesetMath(varName + '^2', { displayMode: false })}). If this were ${typesetMath('dy', { displayMode: false })}, ${typesetMath(varName, { displayMode: false })} would be treated as a constant factor, yielding ${typesetMath(varName + '^2 y', { displayMode: false })} instead.`,
-        showMe: `Midpoint Riemann sum convergence: partitioning the domain into ${typesetMath('n', { displayMode: false })} strips of width ${typesetMath('Delta_' + varName, { displayMode: false })} whose midpoint sum ${typesetMath('\u03a3', { displayMode: false })} ${typesetMath('f(x_i) * Delta_' + varName, { displayMode: false })} converges to the exact integral as ${typesetMath('n -> \u221e', { displayMode: false })}.`,
+        showMe: getRiemannRuleExplanation('midpoint', varName),
         goDeeper: `Fundamental Theorem of Calculus: ${typesetMath('\u222b_a^b f(' + varName + ') d' + varName + ' = F(b) - F(a)', { displayMode: false })} where ${typesetMath("F'(" + varName + ") = f(" + varName + ")", { displayMode: false })}.`,
         visualization: {
           type: 'riemann_sum',

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { explainSymbol } from '../core/explainer';
+import { explainSymbol, getRiemannRuleExplanation } from '../core/explainer';
 import { typesetMath } from '../core/math_typeset';
 
 describe('Phase 9 — Contextual Mathematical Explainer (Part F2)', () => {
@@ -117,4 +117,31 @@ describe('Phase 9 — Contextual Mathematical Explainer (Part F2)', () => {
     const fIdx = html.indexOf('<span class="tm-var">f</span>');
     expect(fIdx).toBeGreaterThan(fracEndIdx);
   });
+
+  it('generates distinct rule-dependent explanation text for Left, Midpoint, and Right Riemann sums', () => {
+    const leftText = explainSymbol('dx', { parentType: 'integral', integrand: '3*x + 1' });
+    // Default is midpoint
+    expect(leftText.showMe).toContain('Midpoint Riemann sum');
+    expect(leftText.showMe).toContain('Exact on linear functions');
+
+    // Dynamic rule explanation generator
+    const leftDesc = getRiemannRuleExplanation('left', 'x');
+    const midDesc = getRiemannRuleExplanation('midpoint', 'x');
+    const rightDesc = getRiemannRuleExplanation('right', 'x');
+
+    expect(leftDesc).toContain('Left Riemann sum');
+    expect(leftDesc).toContain('underestimate');
+
+    expect(midDesc).toContain('Midpoint Riemann sum');
+    expect(midDesc).toContain('linear functions');
+
+    expect(rightDesc).toContain('Right Riemann sum');
+    expect(rightDesc).toContain('overestimate');
+
+    // All three descriptions must be mutually distinct
+    expect(leftDesc).not.toBe(midDesc);
+    expect(midDesc).not.toBe(rightDesc);
+    expect(leftDesc).not.toBe(rightDesc);
+  });
 });
+
