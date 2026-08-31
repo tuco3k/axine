@@ -90,4 +90,52 @@ describe('Part 9.3: Zero LaTeX Command In String Literals Enforcement', () => {
       expect(text).not.toContain('}');
     }
   });
+
+  it('asserts zero placeholder or instructional leaks in rendered explainer outputs', async () => {
+    const { explainSymbol } = await import('../core/explainer');
+    const { KNOWN_QUANTITIES } = await import('../core/dimensional');
+
+    const contexts = [
+      explainSymbol('dx', { parentType: 'integral', integrand: 'x^2', variableName: 'x' }),
+      explainSymbol('dx', { parentType: 'derivative', variableName: 'x' }),
+      explainSymbol('\u2202', { parentType: 'derivative', variableName: 'x' }),
+      explainSymbol('\u222b', { parentType: 'integral' }),
+      explainSymbol('\u03a3', { parentType: 'summation' }),
+      explainSymbol('lim', { parentType: 'limit' }),
+      explainSymbol('check', { parentType: 'check', exprString: '3/4 * pi * r^2' }),
+    ];
+
+    const forbiddenPhrases = [
+      'as steps',
+      'TODO',
+      'not implemented yet',
+      'placeholder',
+      'insert derivation',
+      'steps here',
+    ];
+
+    // Bracketed lowercase instructional phrases e.g. [derivation by shell integration, as steps]
+    const bracketedInstructionPattern = /\[[a-z\s,_-]{3,}\]/;
+
+    for (const exp of contexts) {
+      for (const key of ['whatItIs', 'whyItIsHere', 'showMe', 'goDeeper', 'role'] as const) {
+        const text = exp[key].replace(/<[^>]+>/g, '');
+        for (const phrase of forbiddenPhrases) {
+          expect(text).not.toContain(phrase);
+        }
+        expect(text).not.toMatch(bracketedInstructionPattern);
+      }
+    }
+
+    // Also assert all known quantities derivations have zero placeholders
+    for (const q of Object.values(KNOWN_QUANTITIES)) {
+      for (const s of q.derivationSteps) {
+        for (const phrase of forbiddenPhrases) {
+          expect(s.explanation).not.toContain(phrase);
+          expect(s.title).not.toContain(phrase);
+        }
+        expect(s.explanation).not.toMatch(bracketedInstructionPattern);
+      }
+    }
+  });
 });

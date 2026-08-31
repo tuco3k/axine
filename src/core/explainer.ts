@@ -9,6 +9,7 @@
 
 import { ASTNode } from './types';
 import { typesetMath } from './math_typeset';
+import { KNOWN_QUANTITIES } from './dimensional';
 
 export interface VisualizationConfig {
   type: 'riemann_sum' | 'derivative_tangent' | 'epsilon_delta' | 'dimension_check';
@@ -220,12 +221,29 @@ export function explainSymbol(symbol: string, context: ExplanationContext = {}):
   // Case 7: Check / Dimensional Verification
   if (sym === 'check' || parent === 'check' || expr.includes('check(')) {
     const exprStr = context.exprString || '(3/4)*pi*r^2';
+    const quantity = KNOWN_QUANTITIES['sphere volume'];
+    
+    let derivHtml = '';
+    if (quantity && quantity.derivationSteps && quantity.derivationSteps.length > 0) {
+      const stepItems = quantity.derivationSteps.map(s => {
+        return `<div style="font-size: 11px; margin-bottom: 2px; padding-left: 6px;"><strong>Step ${s.step}</strong> (${s.title}): ${typesetMath(s.math, { displayMode: false })} &mdash; ${s.explanation}</div>`;
+      }).join('');
+      derivHtml = `
+        <div style="margin: 4px 0;">
+          <div style="font-weight: 600; font-size: 11px; margin-bottom: 2px; color: var(--color-accent);">4. ${quantity.derivationTitle}:</div>
+          ${stepItems}
+        </div>
+      `;
+    } else {
+      derivHtml = `<div style="font-size: 11px; margin: 4px 0;">4. Derivation not implemented for this quantity.</div>`;
+    }
+
     const lines = [
       '1. This is not the volume of a sphere.',
       `2. ${typesetMath('r^2', { displayMode: false })} has dimension 2 (area). A volume requires dimension 3.`,
-      `3. The correct formula is ${typesetMath('(4/3)*pi*r^3', { displayMode: false })}.`,
-      '4. [derivation by shell integration, as steps]',
-      `5. What ${typesetMath('(3/4)*pi*r^2', { displayMode: false })} actually is: a scalar multiple of a circle's area, specifically 3/4 of ${typesetMath('pi*r^2', { displayMode: false })}.`
+      `3. The correct formula is ${typesetMath('(4//3) * pi * r^3', { displayMode: false })}.`,
+      derivHtml,
+      `5. What ${typesetMath('(3//4) * pi * r^2', { displayMode: false })} actually is: a scalar multiple of a circle's area, specifically 3/4 of ${typesetMath('pi * r^2', { displayMode: false })}.`
     ];
 
     const showMeHtml = lines.map(line => `<div style="margin-bottom: 3px;">${line}</div>`).join('');

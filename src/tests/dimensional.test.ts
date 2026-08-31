@@ -102,7 +102,11 @@ describe('Part 1 — F4: The Dimensional Checker', () => {
       expect(res.messageLines[2]).toBe('3. The correct formula is (4/3) * pi * r^3.');
 
       // Part 4
-      expect(res.messageLines[3]).toBe('4. [derivation by shell integration, as steps]');
+      expect(res.messageLines[3]).toContain('Derivation by spherical shell integration');
+      expect(res.messageLines[3]).toContain('Step 1 (Partition into concentric spherical shells): A(r) = 4 * pi * r^2');
+      expect(res.messageLines[3]).toContain('Step 2 (Infinitesimal shell volume): dV = 4 * pi * r^2 dr');
+      expect(res.messageLines[3]).toContain('Step 3 (Definite integral accumulation): V = \u222b_0^R 4 * pi * r^2 dr');
+      expect(res.messageLines[3]).toContain('Step 4 (Antiderivative evaluation): V = 4 * pi * [r^3 / 3]_0^R = (4/3) * pi * R^3');
 
       // Part 5
       expect(res.messageLines[4]).toBe("5. What (3/4)*pi*r^2 actually is: a scalar multiple of a circle's area, specifically 3/4 of pi*r^2.");
@@ -125,7 +129,9 @@ describe('Part 1 — F4: The Dimensional Checker', () => {
         expect(value.messageLines[0]).toBe('1. This is not the volume of a sphere.');
         expect(value.messageLines[1]).toContain('r^2 has dimension 2 (area). A volume requires dimension 3.');
         expect(value.messageLines[2]).toBe('3. The correct formula is (4/3) * pi * r^3.');
-        expect(value.messageLines[3]).toBe('4. [derivation by shell integration, as steps]');
+        expect(value.messageLines[3]).toContain('Derivation by spherical shell integration');
+        expect(value.messageLines[3]).toContain('Step 1');
+        expect(value.messageLines[3]).toContain('Step 4');
         expect(value.messageLines[4]).toBe("5. What (3/4)*pi*r^2 actually is: a scalar multiple of a circle's area, specifically 3/4 of pi*r^2.");
       }
     });

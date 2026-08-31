@@ -555,8 +555,13 @@ export function checkGeometricQuantity(exprNode: ASTNode, quantityQuery: string)
     // 3. Correct formula
     messageLines.push(`3. The correct formula is ${matchedQuantity.formulaStr}.`);
 
-    // 4. Derivation description
-    messageLines.push(`4. [derivation by shell integration, as steps]`);
+    // 4. Derivation steps
+    if (matchedQuantity.derivationSteps && matchedQuantity.derivationSteps.length > 0) {
+      const stepSummary = matchedQuantity.derivationSteps.map(s => `Step ${s.step} (${s.title}): ${s.math} — ${s.explanation}`).join('\n');
+      messageLines.push(`4. ${matchedQuantity.derivationTitle}:\n${stepSummary}`);
+    } else {
+      messageLines.push('4. Derivation not implemented for this quantity.');
+    }
 
     // 5. What it actually is
     const actualWhat = matchedQuantity.actualInterpretation
