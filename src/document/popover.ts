@@ -125,9 +125,10 @@ export class MathPopover {
     }
     if (left < 16) left = 16;
 
-    // Check bottom boundary clamp
+    // Check top and bottom boundary clamp (never overlap header at y < 48)
+    if (top < 48) top = 48;
     if (top + popoverHeight > window.innerHeight - 16) {
-      top = Math.max(16, window.innerHeight - popoverHeight - 16);
+      top = Math.max(48, window.innerHeight - popoverHeight - 16);
     }
 
     this.el.style.left = `${Math.round(left)}px`;

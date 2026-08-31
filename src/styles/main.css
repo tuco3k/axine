@@ -61,6 +61,8 @@ html, body {
   height: var(--toolbar-height);
   gap: var(--space-md);
   flex-shrink: 0;
+  position: relative;
+  z-index: 50;
 }
 
 .doc-brand {
@@ -1603,6 +1605,44 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 3px;
+}
+
+.vis-segmented-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.vis-segmented-control {
+  display: inline-flex;
+  background-color: var(--color-bg-base);
+  border: var(--border-width-default) solid var(--color-border-subtle);
+  border-radius: var(--border-radius-sm);
+  padding: 1px;
+  gap: 1px;
+}
+
+.vis-seg-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-family-ui);
+  font-size: var(--font-size-2xs);
+  padding: 1px 6px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+
+.vis-seg-btn:hover {
+  color: var(--color-text-secondary);
+}
+
+.vis-seg-btn.active {
+  background-color: var(--color-bg-surface-elevated);
+  color: var(--color-accent);
+  font-weight: var(--font-weight-medium);
 }
 
 .vis-slider-label {

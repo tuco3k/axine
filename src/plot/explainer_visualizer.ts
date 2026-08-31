@@ -37,6 +37,7 @@ export class ExplainerVisualizer {
   private dpr: number = 1;
 
   // State
+  private riemannRule: 'left' | 'midpoint' | 'right' = 'midpoint';
   private riemannN: number = 4;
   private derivativeH: number = 0.5;
   private epsilon: number = 0.6;
@@ -160,6 +161,16 @@ export class ExplainerVisualizer {
   private buildRiemannControls(parent: HTMLElement) {
     parent.innerHTML = `
       <div class="vis-slider-line">
+        <div class="vis-segmented-row">
+          <span class="vis-slider-label">Sampling rule</span>
+          <div class="vis-segmented-control" id="riemann-rule-group">
+            <button type="button" class="vis-seg-btn ${this.riemannRule === 'left' ? 'active' : ''}" data-rule="left">Left</button>
+            <button type="button" class="vis-seg-btn ${this.riemannRule === 'midpoint' ? 'active' : ''}" data-rule="midpoint">Midpoint</button>
+            <button type="button" class="vis-seg-btn ${this.riemannRule === 'right' ? 'active' : ''}" data-rule="right">Right</button>
+          </div>
+        </div>
+      </div>
+      <div class="vis-slider-line">
         <label class="vis-slider-label" for="riemann-n-slider">Partitions <span class="vis-accent-badge" id="vis-n-badge">n = ${this.riemannN}</span></label>
         <input type="range" class="vis-slider" id="riemann-n-slider" min="2" max="40" step="1" value="${this.riemannN}">
       </div>
@@ -170,6 +181,16 @@ export class ExplainerVisualizer {
         <div class="vis-metric"><span class="vis-metric-key">Error</span><span class="vis-metric-val" id="vis-val-error">0.0000</span></div>
       </div>
     `;
+
+    const ruleBtns = parent.querySelectorAll('.vis-seg-btn');
+    ruleBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        ruleBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.riemannRule = (btn as HTMLElement).getAttribute('data-rule') as any;
+        this.render();
+      });
+    });
 
     const slider = parent.querySelector('#riemann-n-slider') as HTMLInputElement;
     slider?.addEventListener('input', () => {
@@ -196,16 +217,19 @@ export class ExplainerVisualizer {
       exactSum += this.fn(mid) * fdx;
     }
 
-    // Riemann sum (Midpoint)
+    // Riemann sum computation with selected rule
     let riemannSum = 0;
-    const rects: { x0: number; x1: number; y: number }[] = [];
+    const rects: { x0: number; x1: number; y: number; sampleX: number }[] = [];
     for (let i = 0; i < n; i++) {
       const x0 = a + i * dx;
       const x1 = a + (i + 1) * dx;
-      const mid = (x0 + x1) / 2;
-      const y = this.fn(mid);
+      let sampleX = (x0 + x1) / 2;
+      if (this.riemannRule === 'left') sampleX = x0;
+      else if (this.riemannRule === 'right') sampleX = x1;
+
+      const y = this.fn(sampleX);
       riemannSum += y * dx;
-      rects.push({ x0, x1, y });
+      rects.push({ x0, x1, y, sampleX });
     }
 
     const err = Math.abs(riemannSum - exactSum);
@@ -256,11 +280,11 @@ export class ExplainerVisualizer {
       this.ctx.lineWidth = 1;
       this.ctx.strokeRect(rx0, Math.min(ry, yBase), rx1 - rx0, Math.abs(yBase - ry));
 
-      // Midpoint dot
-      const mx = mapX((r.x0 + r.x1) / 2);
+      // Sample point dot
+      const sx = mapX(r.sampleX);
       this.ctx.fillStyle = tokens.accent;
       this.ctx.beginPath();
-      this.ctx.arc(mx, ry, 2, 0, Math.PI * 2);
+      this.ctx.arc(sx, ry, 2.5, 0, Math.PI * 2);
       this.ctx.fill();
     }
 
