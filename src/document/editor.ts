@@ -344,6 +344,100 @@ export class DocumentEditor {
         this.updateCaret();
       }
     });
+
+    this.bindSurfaceMouseEvents();
+  }
+
+  private bindSurfaceMouseEvents() {
+    const surface = this.container.querySelector('.doc-editor-surface') as HTMLElement;
+    if (!surface) return;
+    let isDragging = false;
+    let dragStartOffset = 0;
+
+    const getOffsetFromMouseEvent = (e: MouseEvent): number => {
+      const surfaceRect = this.overlayEl.getBoundingClientRect();
+      const clickX = e.clientX - surfaceRect.left + this.overlayEl.scrollLeft;
+      const clickY = e.clientY - surfaceRect.top + this.overlayEl.scrollTop;
+
+      const lines = this.textarea.value.split('\n');
+      const lineHeight = 24.5;
+      const padTop = 10.5;
+
+      let lineIdx = Math.floor((clickY - padTop) / lineHeight);
+      lineIdx = Math.max(0, Math.min(lines.length - 1, lineIdx));
+
+      const lineStr = lines[lineIdx] || '';
+      const lineEls = this.overlayEl.querySelectorAll('.doc-typeset-line');
+      const lineEl = lineEls[lineIdx] as HTMLElement;
+      if (!lineEl) return 0;
+
+      const charBoxes = this.getLineCharacterBoxes(lineEl, lineStr);
+      let colOffset = 0;
+
+      if (charBoxes.length === 0 || clickX <= charBoxes[0].left) {
+        colOffset = 0;
+      } else if (clickX >= charBoxes[charBoxes.length - 1].right) {
+        colOffset = lineStr.length;
+      } else {
+        for (let i = 0; i < charBoxes.length; i++) {
+          const box = charBoxes[i];
+          if (clickX >= box.left && clickX <= box.right) {
+            const mid = (box.left + box.right) / 2;
+            colOffset = clickX < mid ? i : i + 1;
+            break;
+          } else if (i < charBoxes.length - 1 && clickX > box.right && clickX < charBoxes[i + 1].left) {
+            colOffset = i + 1;
+            break;
+          }
+        }
+      }
+
+      let docOffset = 0;
+      for (let l = 0; l < lineIdx; l++) {
+        docOffset += lines[l].length + 1;
+      }
+      docOffset += Math.max(0, Math.min(lineStr.length, colOffset));
+      return docOffset;
+    };
+
+    surface.addEventListener('mousedown', (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      this.textarea.focus();
+
+      dragStartOffset = getOffsetFromMouseEvent(e);
+      this.textarea.setSelectionRange(dragStartOffset, dragStartOffset);
+      this.updateCaret();
+      isDragging = true;
+    });
+
+    window.addEventListener('mousemove', (e: MouseEvent) => {
+      if (!isDragging) return;
+      const currOffset = getOffsetFromMouseEvent(e);
+      const start = Math.min(dragStartOffset, currOffset);
+      const end = Math.max(dragStartOffset, currOffset);
+      const dir = currOffset < dragStartOffset ? 'backward' : 'forward';
+      this.textarea.setSelectionRange(start, end, dir);
+      this.updateCaret();
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+      }
+    });
+
+    surface.addEventListener('dblclick', (e: MouseEvent) => {
+      e.preventDefault();
+      const offset = getOffsetFromMouseEvent(e);
+      const text = this.textarea.value;
+      let start = offset;
+      let end = offset;
+      while (start > 0 && /[a-zA-Z0-9_]/.test(text[start - 1])) start--;
+      while (end < text.length && /[a-zA-Z0-9_]/.test(text[end])) end++;
+      this.textarea.setSelectionRange(start, end);
+      this.updateCaret();
+    });
   }
 
   private getCursorLineIndex(): number {
@@ -693,6 +787,111 @@ export class DocumentEditor {
     return html;
   }
 
+  private getLineCharacterBoxes(lineEl: HTMLElement, lineStr: string): { left: number; right: number; char: string }[] {
+    const surfaceRect = this.overlayEl.getBoundingClientRect();
+    const padLeft = 7.0;
+    const charWidth = 8.429;
+    const boxes: { left: number; right: number; char: string }[] = [];
+
+    for (let c = 0; c < lineEl.childNodes.length; c++) {
+      const child = lineEl.childNodes[c];
+      if (child.nodeType === Node.TEXT_NODE) {
+        const text = child.textContent || '';
+        for (let i = 0; i < text.length; i++) {
+          const range = document.createRange();
+          range.setStart(child, i);
+          range.setEnd(child, i + 1);
+          const rects = range.getClientRects();
+          if (rects.length > 0) {
+            boxes.push({
+              left: rects[0].left - surfaceRect.left + this.overlayEl.scrollLeft,
+              right: rects[0].right - surfaceRect.left + this.overlayEl.scrollLeft,
+              char: text[i],
+            });
+          } else {
+            const l = padLeft + boxes.length * charWidth;
+            boxes.push({ left: l, right: l + charWidth, char: text[i] });
+          }
+        }
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
+        const el = child as HTMLElement;
+        const construct = el.getAttribute('data-construct');
+        const srcLen = parseInt(el.getAttribute('data-src-len') || `${el.textContent?.length || 1}`, 10);
+        const elRect = el.getBoundingClientRect();
+        const elLeft = elRect.left - surfaceRect.left + this.overlayEl.scrollLeft;
+        const elRight = elRect.right - surfaceRect.left + this.overlayEl.scrollLeft;
+
+        if (construct === 'sup' || construct === 'sub') {
+          const innerSpan = el.firstElementChild as HTMLElement;
+          const innerTextNode = innerSpan?.firstChild;
+          const innerText = innerTextNode?.textContent || '';
+          const innerRect = innerSpan ? innerSpan.getBoundingClientRect() : elRect;
+          const innerLeft = innerRect.left - surfaceRect.left + this.overlayEl.scrollLeft;
+          const innerRight = innerRect.right - surfaceRect.left + this.overlayEl.scrollLeft;
+
+          // 1. Operator character (^ or _) is zero-width boundary at innerLeft
+          boxes.push({
+            left: elLeft,
+            right: innerLeft,
+            char: lineStr[boxes.length] || '^',
+          });
+
+          // 2. Characters inside inner span
+          if (innerTextNode && innerTextNode.nodeType === Node.TEXT_NODE) {
+            for (let i = 0; i < innerText.length; i++) {
+              const range = document.createRange();
+              range.setStart(innerTextNode, i);
+              range.setEnd(innerTextNode, i + 1);
+              const rects = range.getClientRects();
+              if (rects.length > 0) {
+                boxes.push({
+                  left: rects[0].left - surfaceRect.left + this.overlayEl.scrollLeft,
+                  right: rects[0].right - surfaceRect.left + this.overlayEl.scrollLeft,
+                  char: innerText[i],
+                });
+              } else {
+                const subCharW = (innerRight - innerLeft) / Math.max(1, innerText.length);
+                const l = innerLeft + i * subCharW;
+                boxes.push({ left: l, right: l + subCharW, char: innerText[i] });
+              }
+            }
+          }
+        } else {
+          // Plain inline construct (e.g. // or d//dx)
+          const text = el.textContent || '';
+          const textNode = el.firstChild;
+          if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+            for (let i = 0; i < text.length; i++) {
+              const range = document.createRange();
+              range.setStart(textNode, i);
+              range.setEnd(textNode, i + 1);
+              const rects = range.getClientRects();
+              if (rects.length > 0) {
+                boxes.push({
+                  left: rects[0].left - surfaceRect.left + this.overlayEl.scrollLeft,
+                  right: rects[0].right - surfaceRect.left + this.overlayEl.scrollLeft,
+                  char: text[i],
+                });
+              } else {
+                const l = elLeft + (i / text.length) * (elRight - elLeft);
+                const r = elLeft + ((i + 1) / text.length) * (elRight - elLeft);
+                boxes.push({ left: l, right: r, char: text[i] });
+              }
+            }
+          } else {
+            for (let i = 0; i < srcLen; i++) {
+              const l = elLeft + (i / srcLen) * (elRight - elLeft);
+              const r = elLeft + ((i + 1) / srcLen) * (elRight - elLeft);
+              boxes.push({ left: l, right: r, char: lineStr[boxes.length] || ' ' });
+            }
+          }
+        }
+      }
+    }
+
+    return boxes;
+  }
+
   private updateCaret() {
     if (!this.caretEl || !this.overlayEl) return;
 
@@ -711,6 +910,9 @@ export class DocumentEditor {
     const lineIdx = lines.length - 1;
     const colIdx = lines[lineIdx].length;
 
+    const allLines = text.split('\n');
+    const lineStr = allLines[lineIdx] || '';
+
     const lineEls = this.overlayEl.querySelectorAll('.doc-typeset-line');
     const lineEl = lineEls[lineIdx] as HTMLElement;
     if (!lineEl) {
@@ -720,50 +922,19 @@ export class DocumentEditor {
 
     const surfaceRect = this.overlayEl.getBoundingClientRect();
     const lineRect = lineEl.getBoundingClientRect();
-
-    // Find DOM text node inside lineEl matching colIdx
-    let targetNode: Node | null = null;
-    let targetOffset = 0;
-    let curr = 0;
-
-    function traverse(node: Node) {
-      if (targetNode) return;
-      if (node.nodeType === Node.TEXT_NODE) {
-        const len = node.textContent?.length || 0;
-        if (curr + len >= colIdx) {
-          targetNode = node;
-          targetOffset = colIdx - curr;
-          return;
-        }
-        curr += len;
-      } else {
-        for (let i = 0; i < node.childNodes.length; i++) {
-          traverse(node.childNodes[i]);
-          if (targetNode) return;
-        }
-      }
-    }
-    traverse(lineEl);
+    const charBoxes = this.getLineCharacterBoxes(lineEl, lineStr);
 
     let caretX = 0;
     let caretY = lineRect.top - surfaceRect.top + this.overlayEl.scrollTop;
     let caretH = 20;
 
-    if (targetNode) {
-      const range = document.createRange();
-      const maxLen = targetNode.textContent?.length || 0;
-      range.setStart(targetNode, Math.min(targetOffset, maxLen));
-      range.setEnd(targetNode, Math.min(targetOffset, maxLen));
-      const rects = range.getClientRects();
-      if (rects.length > 0) {
-        caretX = rects[0].left - surfaceRect.left + this.overlayEl.scrollLeft;
-        caretY = rects[0].top - surfaceRect.top + this.overlayEl.scrollTop;
-        caretH = rects[0].height || 20;
-      } else {
-        caretX = (targetNode.parentElement?.getBoundingClientRect().left || lineRect.left) - surfaceRect.left + this.overlayEl.scrollLeft;
-      }
+    if (colIdx === 0) {
+      caretX = charBoxes.length > 0 ? charBoxes[0].left : (lineRect.left - surfaceRect.left + this.overlayEl.scrollLeft);
+    } else if (colIdx < charBoxes.length) {
+      caretX = charBoxes[colIdx].left;
+    } else if (charBoxes.length > 0) {
+      caretX = charBoxes[charBoxes.length - 1].right;
     } else {
-      // Empty line or end of line
       caretX = lineRect.left - surfaceRect.left + this.overlayEl.scrollLeft + colIdx * 8.429;
     }
 
@@ -815,26 +986,26 @@ export class DocumentEditor {
     return code.replace(tokenRegex, (match, diffOp, fracOp, sup, trailingSup, sub, trailingSub, plain) => {
       if (diffOp) {
         const w = diffOp.length;
-        return `<span class="typeset-box typeset-diff-inline" style="width:${w}ch;" data-construct="diff">${escapeHtml(diffOp)}</span>`;
+        return `<span class="typeset-box typeset-diff-inline" style="width:${w}ch;" data-construct="diff" data-src-len="${w}">${escapeHtml(diffOp)}</span>`;
       }
       if (fracOp) {
-        return `<span class="typeset-box typeset-frac-inline" style="width:2ch;" data-construct="frac">//</span>`;
+        return `<span class="typeset-box typeset-frac-inline" style="width:2ch;" data-construct="frac" data-src-len="2">//</span>`;
       }
       if (sup) {
         const w = sup.length;
         const exp = sup.slice(1);
-        return `<span class="typeset-box typeset-sup-box" style="width:${w}ch;" data-construct="sup"><span class="typeset-sup">${escapeHtml(exp)}</span></span>`;
+        return `<span class="typeset-box typeset-sup-box" style="width:${w}ch;" data-construct="sup" data-src-len="${w}"><span class="typeset-sup">${escapeHtml(exp)}</span></span>`;
       }
       if (trailingSup) {
-        return `<span class="typeset-box typeset-sup-box typeset-incomplete" style="width:1ch;" data-construct="sup"><span class="typeset-sup dimmed">^</span></span>`;
+        return `<span class="typeset-box typeset-sup-box typeset-incomplete" style="width:1ch;" data-construct="sup" data-src-len="1"><span class="typeset-sup dimmed">^</span></span>`;
       }
       if (sub) {
         const w = sub.length;
         const subText = sub.slice(1);
-        return `<span class="typeset-box typeset-sub-box" style="width:${w}ch;" data-construct="sub"><span class="typeset-sub">${escapeHtml(subText)}</span></span>`;
+        return `<span class="typeset-box typeset-sub-box" style="width:${w}ch;" data-construct="sub" data-src-len="${w}"><span class="typeset-sub">${escapeHtml(subText)}</span></span>`;
       }
       if (trailingSub) {
-        return `<span class="typeset-box typeset-sub-box typeset-incomplete" style="width:1ch;" data-construct="sub"><span class="typeset-sub dimmed">_</span></span>`;
+        return `<span class="typeset-box typeset-sub-box typeset-incomplete" style="width:1ch;" data-construct="sub" data-src-len="1"><span class="typeset-sub dimmed">_</span></span>`;
       }
       return escapeHtml(plain || match);
     });
