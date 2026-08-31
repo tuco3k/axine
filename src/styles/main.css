@@ -324,7 +324,7 @@ html, body {
   font-size: var(--font-size-base);
   line-height: var(--gutter-row-height);
   color: transparent;
-  caret-color: var(--color-accent);
+  caret-color: transparent !important;
   resize: none;
   white-space: pre;
   overflow: auto;
@@ -340,13 +340,40 @@ html, body {
   -webkit-text-fill-color: transparent;
 }
 
+/* Custom Typeset Caret */
+.doc-custom-caret {
+  position: absolute;
+  width: 2px;
+  background-color: var(--color-accent);
+  pointer-events: none;
+  z-index: 3;
+  display: none;
+  border-radius: 1px;
+}
+
+.doc-custom-caret.blink {
+  animation: doc-caret-blink 1s step-start infinite;
+}
+
+@keyframes doc-caret-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .doc-custom-caret.blink {
+    animation: none;
+    opacity: 1;
+  }
+}
+
 /* SPEC 5.4 Typeset Mathematical Constructs */
 .typeset-box {
   display: inline-block;
   position: relative;
   overflow: visible;
   vertical-align: baseline;
-  text-align: center;
+  text-align: left;
   box-sizing: border-box;
 }
 
@@ -355,7 +382,7 @@ html, body {
   position: relative;
   overflow: visible;
   vertical-align: baseline;
-  text-align: center;
+  text-align: left;
 }
 
 .typeset-sup {
@@ -377,7 +404,7 @@ html, body {
   position: relative;
   overflow: visible;
   vertical-align: baseline;
-  text-align: center;
+  text-align: left;
 }
 
 .typeset-sub {
@@ -389,8 +416,21 @@ html, body {
   color: var(--color-text-primary);
 }
 
+.typeset-frac-inline {
+  display: inline-block;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.typeset-diff-inline {
+  display: inline-block;
+  color: var(--color-text-primary);
+  font-style: italic;
+}
+
 .typeset-fraction-stack,
-.typeset-diff-stack {
+.typeset-diff-stack,
+.gutter-fraction {
   display: inline-flex !important;
   flex-direction: column;
   justify-content: center;
@@ -402,14 +442,16 @@ html, body {
   padding: 0 1px;
 }
 
-.typeset-frac-num {
+.typeset-frac-num,
+.gutter-frac-num {
   display: block;
   text-align: center;
   padding-bottom: 1px;
   color: var(--color-text-primary);
 }
 
-.typeset-frac-bar {
+.typeset-frac-bar,
+.gutter-frac-bar {
   display: block;
   width: 80%;
   min-width: 8px;
@@ -418,7 +460,8 @@ html, body {
   margin: 1px 0;
 }
 
-.typeset-frac-den {
+.typeset-frac-den,
+.gutter-frac-den {
   display: block;
   text-align: center;
   padding-top: 1px;

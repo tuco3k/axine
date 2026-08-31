@@ -19,6 +19,7 @@ export class DocumentEditor {
   private state: DocumentState;
   private textarea!: HTMLTextAreaElement;
   private overlayEl!: HTMLElement;
+  private caretEl!: HTMLElement;
   private lineNumbersEl!: HTMLElement;
   private gutterEl!: HTMLElement;
   private scopePanelEl!: HTMLElement;
@@ -84,6 +85,7 @@ export class DocumentEditor {
             <div id="doc-line-numbers" class="doc-line-numbers"></div>
             <div class="doc-editor-surface">
               <div id="doc-typeset-overlay" class="doc-typeset-overlay" aria-hidden="true"></div>
+              <div id="doc-caret" class="doc-custom-caret"></div>
               <textarea
                 id="doc-textarea"
                 class="doc-textarea"
@@ -163,6 +165,7 @@ export class DocumentEditor {
 
     this.textarea = this.container.querySelector('#doc-textarea') as HTMLTextAreaElement;
     this.overlayEl = this.container.querySelector('#doc-typeset-overlay') as HTMLElement;
+    this.caretEl = this.container.querySelector('#doc-caret') as HTMLElement;
     this.lineNumbersEl = this.container.querySelector('#doc-line-numbers') as HTMLElement;
     this.gutterEl = this.container.querySelector('#doc-gutter') as HTMLElement;
     this.statusBadge = this.container.querySelector('#doc-status-badge') as HTMLElement;
@@ -178,11 +181,13 @@ export class DocumentEditor {
     }
 
     this.updateTypesetOverlay();
+    this.updateCaret();
   }
 
   private bindEvents() {
     this.textarea.addEventListener('input', () => {
       this.updateTypesetOverlay();
+      this.updateCaret();
       this.state.setText(this.textarea.value);
     });
 
@@ -194,6 +199,7 @@ export class DocumentEditor {
         this.textarea.value = this.textarea.value.substring(0, start) + '  ' + this.textarea.value.substring(end);
         this.textarea.selectionStart = this.textarea.selectionEnd = start + 2;
         this.updateTypesetOverlay();
+        this.updateCaret();
         this.state.setText(this.textarea.value);
       }
     });
@@ -205,7 +211,12 @@ export class DocumentEditor {
       this.gutterEl.scrollTop = scrollTop;
       this.overlayEl.scrollTop = scrollTop;
       this.overlayEl.scrollLeft = scrollLeft;
+      this.updateCaret();
     });
+
+    this.textarea.addEventListener('focus', () => this.updateCaret());
+    this.textarea.addEventListener('blur', () => this.updateCaret());
+    this.textarea.addEventListener('select', () => this.updateCaret());
 
     // Work Panel Tabs Switcher
     const tabButtons = this.container.querySelectorAll('.doc-tab-btn');
@@ -228,6 +239,7 @@ export class DocumentEditor {
       if (doc) {
         this.textarea.value = doc.content;
         this.updateTypesetOverlay();
+        this.updateCaret();
         this.state.setText(doc.content);
       }
     });
@@ -261,6 +273,7 @@ export class DocumentEditor {
     clearBtn.addEventListener('click', () => {
       this.textarea.value = '';
       this.updateTypesetOverlay();
+      this.updateCaret();
       this.state.setText('');
     });
 
@@ -319,12 +332,18 @@ export class DocumentEditor {
 
     // Cursor synchronization
     const syncToCursor = () => {
+      this.updateCaret();
       if (this.isPinned) return;
       const lineIdx = this.getCursorLineIndex();
       this.displayVisualForLine(lineIdx, false);
     };
     this.textarea.addEventListener('keyup', syncToCursor);
     this.textarea.addEventListener('click', syncToCursor);
+    document.addEventListener('selectionchange', () => {
+      if (document.activeElement === this.textarea) {
+        this.updateCaret();
+      }
+    });
   }
 
   private getCursorLineIndex(): number {
@@ -674,6 +693,91 @@ export class DocumentEditor {
     return html;
   }
 
+  private updateCaret() {
+    if (!this.caretEl || !this.overlayEl) return;
+
+    if (document.activeElement !== this.textarea) {
+      this.caretEl.style.display = 'none';
+      return;
+    }
+
+    const pos = this.textarea.selectionDirection === 'backward'
+      ? this.textarea.selectionStart
+      : this.textarea.selectionEnd;
+
+    const text = this.textarea.value;
+    const textBefore = text.substring(0, pos);
+    const lines = textBefore.split('\n');
+    const lineIdx = lines.length - 1;
+    const colIdx = lines[lineIdx].length;
+
+    const lineEls = this.overlayEl.querySelectorAll('.doc-typeset-line');
+    const lineEl = lineEls[lineIdx] as HTMLElement;
+    if (!lineEl) {
+      this.caretEl.style.display = 'none';
+      return;
+    }
+
+    const surfaceRect = this.overlayEl.getBoundingClientRect();
+    const lineRect = lineEl.getBoundingClientRect();
+
+    // Find DOM text node inside lineEl matching colIdx
+    let targetNode: Node | null = null;
+    let targetOffset = 0;
+    let curr = 0;
+
+    function traverse(node: Node) {
+      if (targetNode) return;
+      if (node.nodeType === Node.TEXT_NODE) {
+        const len = node.textContent?.length || 0;
+        if (curr + len >= colIdx) {
+          targetNode = node;
+          targetOffset = colIdx - curr;
+          return;
+        }
+        curr += len;
+      } else {
+        for (let i = 0; i < node.childNodes.length; i++) {
+          traverse(node.childNodes[i]);
+          if (targetNode) return;
+        }
+      }
+    }
+    traverse(lineEl);
+
+    let caretX = 0;
+    let caretY = lineRect.top - surfaceRect.top + this.overlayEl.scrollTop;
+    let caretH = 20;
+
+    if (targetNode) {
+      const range = document.createRange();
+      const maxLen = targetNode.textContent?.length || 0;
+      range.setStart(targetNode, Math.min(targetOffset, maxLen));
+      range.setEnd(targetNode, Math.min(targetOffset, maxLen));
+      const rects = range.getClientRects();
+      if (rects.length > 0) {
+        caretX = rects[0].left - surfaceRect.left + this.overlayEl.scrollLeft;
+        caretY = rects[0].top - surfaceRect.top + this.overlayEl.scrollTop;
+        caretH = rects[0].height || 20;
+      } else {
+        caretX = (targetNode.parentElement?.getBoundingClientRect().left || lineRect.left) - surfaceRect.left + this.overlayEl.scrollLeft;
+      }
+    } else {
+      // Empty line or end of line
+      caretX = lineRect.left - surfaceRect.left + this.overlayEl.scrollLeft + colIdx * 8.429;
+    }
+
+    this.caretEl.style.display = 'block';
+    this.caretEl.style.left = `${caretX}px`;
+    this.caretEl.style.top = `${caretY}px`;
+    this.caretEl.style.height = `${Math.max(16, caretH)}px`;
+
+    // Reset blink animation
+    this.caretEl.classList.remove('blink');
+    void this.caretEl.offsetWidth;
+    this.caretEl.classList.add('blink');
+  }
+
   private updateTypesetOverlay() {
     if (!this.overlayEl) return;
     const lines = this.textarea.value.split('\n');
@@ -702,34 +806,23 @@ export class DocumentEditor {
 
   private typesetCode(code: string): string {
     // Matches ONLY the 4 typeset constructs in SPEC 5.4 plus incomplete tokens:
-    // 1. Reserved differential operators: d//dx, \u2202//\u2202x, d//dth, etc.
-    // 2. Full stacked fractions: (num) // (den) or a // b
-    // 3. Bare fraction operator: //
-    // 4. Superscripts: ^(n+1), ^2, ^n, or trailing ^
-    // 5. Subscripts: _(i+1), _1, _n, or trailing _
-    const tokenRegex = /((?:d|\u2202)\/\/(?:d|\u2202)[a-zA-Z_][a-zA-Z0-9_]*)|((?:\([^\)]+\)|[a-zA-Z0-9_.]+)\s*\/\/\s*(?:\([^\)]+\)|[a-zA-Z0-9_.]+))|(\/\/)|(\^(?:\([^\)]+\)|[a-zA-Z0-9]+))|(\^)|(_(?:\([^\)]+\)|[a-zA-Z0-9]+))|(_)|([^d\u2202\/^_#]+|.)/g;
+    // 1. Reserved differential operators: d//dx, \u2202//\u2202x, d//dth (inline in editor)
+    // 2. Fraction operator: // (inline in editor)
+    // 3. Superscripts: ^(n+1), ^2, ^n, or trailing ^
+    // 4. Subscripts: _(i+1), _1, _n, or trailing _
+    const tokenRegex = /((?:d|\u2202)\/\/(?:d|\u2202)[a-zA-Z_][a-zA-Z0-9_]*)|(\/\/)|(\^(?:\([^\)]+\)|[a-zA-Z0-9]+))|(\^)|(_(?:\([^\)]+\)|[a-zA-Z0-9]+))|(_)|([^d\u2202\/^_#]+|.)/g;
 
-    return code.replace(tokenRegex, (match, diffOp, fullFrac, bareFrac, sup, trailingSup, sub, trailingSub, plain) => {
+    return code.replace(tokenRegex, (match, diffOp, fracOp, sup, trailingSup, sub, trailingSub, plain) => {
       if (diffOp) {
         const w = diffOp.length;
-        const parts = diffOp.split('//');
-        const num = parts[0];
-        const den = parts[1];
-        return `<span class="typeset-box typeset-diff-stack" style="width:${w}ch;" data-construct="diff"><span class="typeset-frac-num">${escapeHtml(num)}</span><span class="typeset-frac-bar"></span><span class="typeset-frac-den">${escapeHtml(den)}</span></span>`;
+        return `<span class="typeset-box typeset-diff-inline" style="width:${w}ch;" data-construct="diff">${escapeHtml(diffOp)}</span>`;
       }
-      if (fullFrac) {
-        const w = fullFrac.length;
-        const slashIdx = fullFrac.indexOf('//');
-        const num = fullFrac.substring(0, slashIdx).trim();
-        const den = fullFrac.substring(slashIdx + 2).trim();
-        return `<span class="typeset-box typeset-fraction-stack" style="width:${w}ch;" data-construct="frac"><span class="typeset-frac-num">${escapeHtml(num)}</span><span class="typeset-frac-bar"></span><span class="typeset-frac-den">${escapeHtml(den)}</span></span>`;
-      }
-      if (bareFrac) {
-        return `<span class="typeset-box typeset-fraction-stack" style="width:2ch;" data-construct="frac"><span class="typeset-frac-num">&nbsp;</span><span class="typeset-frac-bar"></span><span class="typeset-frac-den">&nbsp;</span></span>`;
+      if (fracOp) {
+        return `<span class="typeset-box typeset-frac-inline" style="width:2ch;" data-construct="frac">//</span>`;
       }
       if (sup) {
         const w = sup.length;
-        const exp = sup.startsWith('^(') && sup.endsWith(')') ? sup.slice(2, -1) : sup.slice(1);
+        const exp = sup.slice(1);
         return `<span class="typeset-box typeset-sup-box" style="width:${w}ch;" data-construct="sup"><span class="typeset-sup">${escapeHtml(exp)}</span></span>`;
       }
       if (trailingSup) {
@@ -737,7 +830,7 @@ export class DocumentEditor {
       }
       if (sub) {
         const w = sub.length;
-        const subText = sub.startsWith('_(') && sub.endsWith(')') ? sub.slice(2, -1) : sub.slice(1);
+        const subText = sub.slice(1);
         return `<span class="typeset-box typeset-sub-box" style="width:${w}ch;" data-construct="sub"><span class="typeset-sub">${escapeHtml(subText)}</span></span>`;
       }
       if (trailingSub) {
