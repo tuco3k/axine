@@ -406,7 +406,7 @@ export class DocumentEditor {
           point = 1.5;
         }
         // 4. FunctionCall limit: lim(2*x + 4, x, 3) or limit(2*x + 4, x, 3)
-        else if (ast.type === 'FunctionCall' && (ast.name === 'lim' || ast.name === 'limit')) {
+        else if (ast.type === 'FunctionCall' && ((ast as any).callee === 'lim' || (ast as any).callee === 'limit' || (ast as any).name === 'lim' || (ast as any).name === 'limit')) {
           parentType = 'limit';
           symbol = 'lim';
           integrand = ast.args[0] ? lineText.slice(ast.args[0].span.start, ast.args[0].span.end) : '2*x + 4';
@@ -414,6 +414,13 @@ export class DocumentEditor {
           const p = ast.args[2] && ast.args[2].type === 'NumberLiteral' ? parseFloat(ast.args[2].raw) : 3.0;
           point = isNaN(p) ? 3.0 : p;
           targetLimit = 10.0;
+        }
+        // 5. FunctionCall check: check(3/4 * pi * r^2, is: "sphere volume")
+        else if (ast.type === 'FunctionCall' && ((ast as any).callee === 'check' || (ast as any).name === 'check')) {
+          parentType = 'check';
+          symbol = 'check';
+          varName = 'r';
+          integrand = lineText;
         }
       } catch {
         // Fallback for typeset math notation strings in editor
@@ -462,6 +469,11 @@ export class DocumentEditor {
             integrand = '3*x + 1';
             symbol = 'dx';
           }
+        } else if (lineText.includes('check(') || lineText.startsWith('check')) {
+          parentType = 'check';
+          symbol = 'check';
+          varName = 'r';
+          integrand = lineText;
         }
       }
 
@@ -747,7 +759,7 @@ export class DocumentEditor {
     const derivContent = this.container.querySelector('#visual-derivation-content') as HTMLElement;
     const canvas = this.container.querySelector('#visual-canvas') as HTMLCanvasElement;
 
-    if (!record || !record.result || (record.result.type !== 'graph' && record.result.type !== 'derivation')) {
+    if (!record || !record.result || (record.result.type !== 'graph' && record.result.type !== 'derivation' && record.result.type !== 'check_result')) {
       if (titleEl) titleEl.textContent = 'Visual Output';
       if (metaEl) metaEl.textContent = `Line ${lineIdx + 1}: No visual content`;
       if (emptyStateEl) emptyStateEl.classList.remove('hidden');
@@ -797,7 +809,59 @@ export class DocumentEditor {
       if (derivContent) {
         derivContent.innerHTML = this.renderDerivationFull(derivVal);
       }
+    } else if (record.result.type === 'check_result') {
+      const checkVal = record.result as any;
+      if (titleEl) titleEl.textContent = `Check: ${checkVal.targetQuantity}`;
+      if (metaEl) metaEl.textContent = `Line ${lineIdx + 1}: ${checkVal.isValid ? 'Verified' : 'Dimensional Analysis'}`;
+
+      if (canvasWrapper) canvasWrapper.classList.add('hidden');
+      if (derivWrapper) derivWrapper.classList.remove('hidden');
+      if (this.activePlotter) {
+        this.activePlotter.dispose();
+        this.activePlotter = null;
+      }
+
+      if (derivContent) {
+        derivContent.innerHTML = this.renderCheckResultFull(checkVal);
+      }
     }
+  }
+
+  private renderCheckResultFull(checkVal: any): string {
+    let html = `<div class="visual-derivation-tree">`;
+    html += `<div class="derivation-orig-eq">${this.typesetMathReadOnly(checkVal.actualExprString)}</div>`;
+
+    for (let i = 0; i < checkVal.messageLines.length; i++) {
+      const line = checkVal.messageLines[i];
+      html += `
+        <div class="derivation-step-card">
+          <div class="step-card-header">
+            <span class="step-num">Part ${i + 1}</span>
+            <span class="step-rule-badge">${i === 0 ? 'Verification' : i === 1 ? 'Dimension' : i === 2 ? 'Canonical' : i === 3 ? 'Derivation' : 'Actual'}</span>
+          </div>
+          <div class="step-card-just" style="font-size: 13px; color: var(--color-text-primary);">${escapeHtml(line)}</div>
+        </div>
+      `;
+    }
+
+    if (checkVal.derivationSteps && checkVal.derivationSteps.length > 0) {
+      html += `<div class="check-derivation-header" style="margin-top: 12px; font-weight: 600; color: var(--color-text-primary);">Canonical Derivation Steps:</div>`;
+      for (const s of checkVal.derivationSteps) {
+        html += `
+          <div class="derivation-step-card">
+            <div class="step-card-header">
+              <span class="step-num">Step ${s.step}</span>
+              <span class="step-rule-badge">${escapeHtml(s.title)}</span>
+            </div>
+            <div class="step-card-eq">${this.typesetMathReadOnly(s.math)}</div>
+            <div class="step-card-just">${escapeHtml(s.explanation)}</div>
+          </div>
+        `;
+      }
+    }
+
+    html += `</div>`;
+    return html;
   }
 
   public typesetMathReadOnly(raw: string): string {
@@ -1222,6 +1286,14 @@ export class DocumentEditor {
         return `[Lambda (${val.params.join(', ')})]`;
       case 'expression':
         return val.text;
+      case 'dimension': {
+        const entries = Object.entries(val.degrees).map(([k, v]) => `${k}: ${v}`).join(', ');
+        return entries ? `{ ${entries} } (${val.interpretation})` : `0 (${val.interpretation})`;
+      }
+      case 'check_result': {
+        if (val.isValid) return `Verified: ${val.targetQuantity}`;
+        return `Not ${val.targetQuantity}: ${val.messageLines[1]?.replace(/^\d+\.\s*/, '') || 'Dimension mismatch'}`;
+      }
       default:
         return String((val as any).value ?? val.type);
     }

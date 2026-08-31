@@ -42,6 +42,7 @@ export class ExplainerVisualizer {
   private derivativeH: number = 0.5;
   private epsilon: number = 0.6;
   private delta: number = 0.2;
+  private dimensionRadius: number = 2.0;
 
   constructor(container: HTMLElement, config: VisualizationConfig) {
     this.container = container;
@@ -152,6 +153,8 @@ export class ExplainerVisualizer {
       this.buildDerivativeControls(controlsWrap);
     } else if (this.config.type === 'epsilon_delta') {
       this.buildEpsilonDeltaControls(controlsWrap);
+    } else if (this.config.type === 'dimension_check') {
+      this.buildDimensionCheckControls(controlsWrap);
     }
 
     this.container.appendChild(controlsWrap);
@@ -636,6 +639,129 @@ export class ExplainerVisualizer {
     this.ctx.fillText(`${yMin.toFixed(1)}`, 26, h - 24);
   }
 
+  // --- 4. DIMENSION CHECK CONTROLS & RENDERING ---
+  private buildDimensionCheckControls(parent: HTMLElement) {
+    const isSphereVolume = this.config.expression.includes('r^3') || this.config.expression.includes('4/3');
+    parent.innerHTML = `
+      <div class="vis-slider-line">
+        <span class="vis-slider-label">Radius r</span>
+        <input type="range" class="vis-slider" id="dim-r-slider" min="0.5" max="5.0" step="0.1" value="${this.dimensionRadius}">
+        <span class="vis-slider-val" id="dim-r-val">${this.dimensionRadius.toFixed(1)}</span>
+      </div>
+      <div class="vis-metrics-grid">
+        <div class="vis-metric"><span class="vis-metric-lbl">Radius r:</span><span class="vis-metric-num" id="dim-metric-r">${this.dimensionRadius.toFixed(2)}</span></div>
+        <div class="vis-metric"><span class="vis-metric-lbl">${isSphereVolume ? 'Sphere Volume V:' : 'Computed Area:'}</span><span class="vis-metric-num" id="dim-metric-val">--</span></div>
+        <div class="vis-metric"><span class="vis-metric-lbl">Doubling r &rarr; 2r:</span><span class="vis-metric-num" id="dim-metric-double">${isSphereVolume ? '8\u00d7 Volume (r\u00b3)' : '4\u00d7 Area (r\u00b2)'}</span></div>
+        <div class="vis-metric"><span class="vis-metric-lbl">Spatial Dimension:</span><span class="vis-metric-num" id="dim-metric-dim">${isSphereVolume ? '3 (Volume)' : '2 (Area \u2260 Volume)'}</span></div>
+      </div>
+    `;
+
+    const rSlider = parent.querySelector('#dim-r-slider') as HTMLInputElement;
+    const rVal = parent.querySelector('#dim-r-val') as HTMLElement;
+    if (rSlider) {
+      rSlider.addEventListener('input', () => {
+        this.dimensionRadius = parseFloat(rSlider.value);
+        if (rVal) rVal.textContent = this.dimensionRadius.toFixed(1);
+        this.render();
+      });
+    }
+  }
+
+  private renderDimensionCheck() {
+    const tokens = this.getTokens();
+    const w = this.canvas.width / this.dpr;
+    const h = this.canvas.height / this.dpr;
+    this.ctx.clearRect(0, 0, w, h);
+
+    const r = this.dimensionRadius;
+    const isSphereVolume = this.config.expression.includes('r^3') || this.config.expression.includes('4/3');
+
+    // Update metrics
+    const computedVal = isSphereVolume ? (4 / 3) * Math.PI * Math.pow(r, 3) : 0.75 * Math.PI * Math.pow(r, 2);
+    const metricR = this.container.querySelector('#dim-metric-r');
+    const metricVal = this.container.querySelector('#dim-metric-val');
+    if (metricR) metricR.textContent = r.toFixed(2);
+    if (metricVal) metricVal.textContent = computedVal.toFixed(4);
+
+    this.ctx.save();
+    this.ctx.scale(this.dpr, this.dpr);
+
+    const cx = w / 2;
+    const cy = h / 2;
+    const maxPixelR = Math.min(w, h) * 0.38;
+    const pixelR = (r / 5.0) * maxPixelR;
+
+    if (!isSphereVolume) {
+      // 2D Circle Area representation with 3/4 shaded sector (NOT A SPHERE!)
+      // Background full circle outline
+      this.ctx.strokeStyle = tokens.borderSubtle;
+      this.ctx.lineWidth = 1.5;
+      this.ctx.setLineDash([3, 3]);
+      this.ctx.beginPath();
+      this.ctx.arc(cx, cy, pixelR, 0, Math.PI * 2);
+      this.ctx.stroke();
+      this.ctx.setLineDash([]);
+
+      // 3/4 shaded sector
+      this.ctx.fillStyle = tokens.accentSubtle || 'rgba(0, 180, 216, 0.15)';
+      this.ctx.strokeStyle = tokens.accent || '#00b4d8';
+      this.ctx.lineWidth = 2;
+      this.ctx.beginPath();
+      this.ctx.moveTo(cx, cy);
+      this.ctx.arc(cx, cy, pixelR, 0, Math.PI * 1.5);
+      this.ctx.closePath();
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      // Radius line
+      this.ctx.strokeStyle = tokens.textPrimary;
+      this.ctx.lineWidth = 1.5;
+      this.ctx.beginPath();
+      this.ctx.moveTo(cx, cy);
+      this.ctx.lineTo(cx + pixelR, cy);
+      this.ctx.stroke();
+
+      // Center point
+      this.ctx.fillStyle = tokens.textPrimary;
+      this.ctx.beginPath();
+      this.ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+      this.ctx.fill();
+
+      // Labels
+      this.ctx.fillStyle = tokens.textPrimary;
+      this.ctx.font = '11px -apple-system, BlinkMacSystemFont, "SF Mono", monospace';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(`2D Circle Area (3/4 \u03c0 r\u00b2) \u2014 Not a Sphere`, cx, 16);
+      this.ctx.fillStyle = tokens.textSecondary;
+      this.ctx.font = '10px -apple-system, BlinkMacSystemFont, "SF Mono", monospace';
+      this.ctx.fillText(`r = ${r.toFixed(1)}  |  Area = ${computedVal.toFixed(2)}  (dim: 2)`, cx, h - 8);
+    } else {
+      // Valid sphere volume visualization
+      this.ctx.fillStyle = tokens.accentSubtle || 'rgba(0, 180, 216, 0.15)';
+      this.ctx.strokeStyle = tokens.accent || '#00b4d8';
+      this.ctx.lineWidth = 2;
+      this.ctx.beginPath();
+      this.ctx.arc(cx, cy, pixelR, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      // Equator ellipse
+      this.ctx.beginPath();
+      this.ctx.ellipse(cx, cy, pixelR, pixelR * 0.35, 0, 0, Math.PI * 2);
+      this.ctx.stroke();
+
+      this.ctx.fillStyle = tokens.textPrimary;
+      this.ctx.font = '11px -apple-system, BlinkMacSystemFont, "SF Mono", monospace';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(`3D Sphere Volume ((4/3) \u03c0 r\u00b3)`, cx, 16);
+      this.ctx.fillStyle = tokens.textSecondary;
+      this.ctx.font = '10px -apple-system, BlinkMacSystemFont, "SF Mono", monospace';
+      this.ctx.fillText(`r = ${r.toFixed(1)}  |  V = ${computedVal.toFixed(2)}  (dim: 3)`, cx, h - 8);
+    }
+
+    this.ctx.restore();
+  }
+
   public render() {
     if (this.config.type === 'riemann_sum') {
       this.renderRiemannSum();
@@ -643,6 +769,8 @@ export class ExplainerVisualizer {
       this.renderDerivativeTangent();
     } else if (this.config.type === 'epsilon_delta') {
       this.renderEpsilonDelta();
+    } else if (this.config.type === 'dimension_check') {
+      this.renderDimensionCheck();
     }
   }
 }

@@ -75,6 +75,8 @@ export const BUILTIN_FUNCTIONS = new Set([
   'solve',
   'isolate',
   'simplify',
+  'dimension',
+  'check',
   'filter3d',
   'limit',
   'diff',

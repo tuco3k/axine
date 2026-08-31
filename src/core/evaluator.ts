@@ -43,6 +43,7 @@ import { solveAlgebraic } from './algebra';
 import { AlgebraicSimplifier } from './algebra/simplify';
 import { createError } from './errors';
 import { formatAST } from './formatter';
+import { inferExpressionDimensions, checkGeometricQuantity } from './dimensional';
 
 export function createInitialEnvironment(): Environment {
   const env: Environment = {};
@@ -598,6 +599,12 @@ export class Evaluator {
     }
     if (callee === 'simplify') {
       return this.evalSimplify(node, currentEnv);
+    }
+    if (callee === 'dimension') {
+      return this.evalDimension(node, currentEnv);
+    }
+    if (callee === 'check') {
+      return this.evalCheck(node, currentEnv);
     }
 
     // Check user defined function
@@ -1610,6 +1617,64 @@ export class Evaluator {
     }
 
     return AlgebraicSimplifier.simplify(exprArg, inVar, currentEnv);
+  }
+
+  private evalDimension(node: FunctionCallNode, currentEnv: Environment): Value {
+    if (node.args.length === 0) {
+      throw createError('dimension() expects 1 expression argument', node.span);
+    }
+    const exprNode = node.args[0];
+    try {
+      const res = inferExpressionDimensions(exprNode);
+      return {
+        type: 'dimension',
+        degrees: res.degrees,
+        totalDegree: res.totalDegree,
+        interpretation: res.interpretation,
+        isDimensionless: res.isDimensionless,
+      };
+    } catch (err: any) {
+      return makeUnknown('requires-unavailable-theory', err.message || String(err));
+    }
+  }
+
+  private evalCheck(node: FunctionCallNode, currentEnv: Environment): Value {
+    if (node.args.length === 0) {
+      throw createError('check() expects at least 1 expression argument and an is: "quantity" target', node.span);
+    }
+
+    const exprNode = node.args[0];
+    let quantityName = 'sphere volume';
+
+    for (let i = 1; i < node.args.length; i++) {
+      const arg = node.args[i];
+      if (arg.type === 'NamedArg' && arg.name === 'is') {
+        if (arg.value.type === 'StringLiteral') {
+          quantityName = arg.value.value;
+        } else if (arg.value.type === 'Identifier') {
+          quantityName = arg.value.name;
+        }
+      } else if (arg.type === 'StringLiteral') {
+        quantityName = arg.value;
+      }
+    }
+
+    try {
+      const checkRes = checkGeometricQuantity(exprNode, quantityName);
+      return {
+        type: 'check_result',
+        isValid: checkRes.isValid,
+        targetQuantity: checkRes.targetQuantity.name,
+        actualDimension: checkRes.actualDimension,
+        actualInterpretation: checkRes.actualInterpretation,
+        actualCoeff: checkRes.actualCoeff,
+        messageLines: checkRes.messageLines,
+        derivationSteps: checkRes.derivationSteps,
+        actualExprString: checkRes.actualExprString,
+      };
+    } catch (err: any) {
+      return makeUnknown('requires-unavailable-theory', err.message || String(err));
+    }
   }
 
   private evalGraph(node: FunctionCallNode, currentEnv: Environment): GraphValue {

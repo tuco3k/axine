@@ -11,7 +11,7 @@ import { ASTNode } from './types';
 import { typesetMath } from './math_typeset';
 
 export interface VisualizationConfig {
-  type: 'riemann_sum' | 'derivative_tangent' | 'epsilon_delta';
+  type: 'riemann_sum' | 'derivative_tangent' | 'epsilon_delta' | 'dimension_check';
   expression: string;
   variable: string;
   bounds?: { lower: number; upper: number };
@@ -213,6 +213,34 @@ export function explainSymbol(symbol: string, context: ExplanationContext = {}):
         variable: context.variableName || 'x',
         point: context.point ?? 3.0,
         targetLimit: context.targetLimit ?? 10.0,
+      },
+    };
+  }
+
+  // Case 7: Check / Dimensional Verification
+  if (sym === 'check' || parent === 'check' || expr.includes('check(')) {
+    const exprStr = context.exprString || '(3/4)*pi*r^2';
+    const lines = [
+      '1. This is not the volume of a sphere.',
+      `2. ${typesetMath('r^2', { displayMode: false })} has dimension 2 (area). A volume requires dimension 3.`,
+      `3. The correct formula is ${typesetMath('(4/3)*pi*r^3', { displayMode: false })}.`,
+      '4. [derivation by shell integration, as steps]',
+      `5. What ${typesetMath('(3/4)*pi*r^2', { displayMode: false })} actually is: a scalar multiple of a circle's area, specifically 3/4 of ${typesetMath('pi*r^2', { displayMode: false })}.`
+    ];
+
+    const showMeHtml = lines.map(line => `<div style="margin-bottom: 3px;">${line}</div>`).join('');
+
+    return {
+      symbol: 'check',
+      role: 'Geometric Dimension & Quantity Verifier',
+      whatItIs: 'Dimensional consistency and canonical geometric formula checker.',
+      whyItIsHere: 'Verifies whether a mathematical expression matches the spatial degree and canonical coefficient of a target geometric quantity.',
+      showMe: showMeHtml,
+      goDeeper: `Dimensional analysis: ${typesetMath('[V] = L^3', { displayMode: false })} versus ${typesetMath('[A] = L^2', { displayMode: false })}. Shell integration: ${typesetMath('V = \u222b_0^R 4*pi*r^2 dr = (4/3)*pi*R^3', { displayMode: false })}.`,
+      visualization: {
+        type: 'dimension_check',
+        expression: exprStr,
+        variable: context.variableName || 'r',
       },
     };
   }

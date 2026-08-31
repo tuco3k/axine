@@ -464,7 +464,7 @@ function findTopLevelFrac(str: string): number {
 }
 
 function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
-  const tokenRegex = /(sqrt\((?:[^()]+|\([^()]*\))*\))|(\^(?:\([^)]+\)|[a-zA-Z0-9]+))|(_(?:\([^)]+\)|[a-zA-Z0-9]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b(?:sin|cos|tan|ln|exp|det|sqrt|pi|inf)\b)|(\b[a-zA-Z_][a-zA-Z0-9_]*\b)|([()[\],'])/g;
+  const tokenRegex = /(sqrt\((?:[^()]+|\([^()]*\))*\))|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(_(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b(?:sin|cos|tan|ln|exp|det|sqrt|pi|inf)\b)|(\b[a-zA-Z][a-zA-Z0-9]*\b)|([()[\],'{}:])/g;
 
   let out = '';
   let match: RegExpExecArray | null;
@@ -476,11 +476,11 @@ function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
       out += `<span class="tm-sqrt"><span class="tm-sqrt-surd">&radic;</span><span class="tm-radicand">${typesetStringExpression(inside, options)}</span></span>`;
     } else if (supTok) {
       let exp = supTok.slice(1);
-      if (exp.startsWith('(') && exp.endsWith(')')) exp = exp.slice(1, -1);
+      if ((exp.startsWith('(') && exp.endsWith(')')) || (exp.startsWith('{') && exp.endsWith('}'))) exp = exp.slice(1, -1);
       out += `<sup class="tm-sup">${typesetStringExpression(exp, options)}</sup>`;
     } else if (subTok) {
       let sub = subTok.slice(1);
-      if (sub.startsWith('(') && sub.endsWith(')')) sub = sub.slice(1, -1);
+      if ((sub.startsWith('(') && sub.endsWith(')')) || (sub.startsWith('{') && sub.endsWith('}'))) sub = sub.slice(1, -1);
       out += `<sub class="tm-sub">${typesetStringExpression(sub, options)}</sub>`;
     } else if (deltaTok) {
       out += `<span class="tm-var">${deltaTok}</span>`;
@@ -507,14 +507,11 @@ function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
     } else if (identTok) {
       if (identTok === 'sum' || identTok === '\u03a3') {
         out += `<span class="tm-bigop-symbol tm-clickable" data-symbol="\u03a3" data-parent-type="summation">&sum;</span>`;
-      } else if (identTok.startsWith('d') && identTok.length > 1 && !identTok.includes('_')) {
+      } else if (identTok.startsWith('d') && identTok.length > 1) {
         out += `<span class="tm-diff tm-clickable" data-symbol="${escapeHtml(identTok)}" data-parent-type="differential">${escapeHtml(identTok)}</span>`;
-      } else if (identTok.startsWith('Delta_') || identTok.startsWith('Delta')) {
+      } else if (identTok.startsWith('Delta')) {
         const sub = identTok.replace(/^Delta_?/, '');
         out += `<span class="tm-var">&Delta;${escapeHtml(sub)}</span>`;
-      } else if (identTok.includes('_')) {
-        const [base, sub] = identTok.split('_');
-        out += `<span class="tm-var">${escapeHtml(base)}</span><sub class="tm-sub">${typesetStringExpression(sub, options)}</sub>`;
       } else {
         out += `<span class="tm-var">${escapeHtml(identTok)}</span>`;
       }

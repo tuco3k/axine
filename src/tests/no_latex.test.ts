@@ -52,8 +52,8 @@ describe('Part 9.3: Zero LaTeX Command In String Literals Enforcement', () => {
     expect(violations.length).toBe(0);
   });
 
-  it('asserts zero unrendered bare _ or ^ in rendered explainer outputs', async () => {
-    const { explainSymbol } = await import('../core/explainer');
+  it('asserts zero unrendered bare _, ^, {, or } in rendered explainer outputs', async () => {
+    const { explainSymbol, getRiemannRuleExplanation } = await import('../core/explainer');
     const contexts = [
       explainSymbol('dx', { parentType: 'integral', integrand: 'x^2', variableName: 'x' }),
       explainSymbol('dx', { parentType: 'derivative', variableName: 'x' }),
@@ -63,15 +63,31 @@ describe('Part 9.3: Zero LaTeX Command In String Literals Enforcement', () => {
       explainSymbol('lim', { parentType: 'limit' }),
     ];
 
+    const ruleTexts = [
+      getRiemannRuleExplanation('left', 'x'),
+      getRiemannRuleExplanation('midpoint', 'x'),
+      getRiemannRuleExplanation('right', 'x'),
+    ];
+
     for (const exp of contexts) {
       for (const key of ['whatItIs', 'whyItIsHere', 'showMe', 'goDeeper', 'role'] as const) {
         const html = exp[key];
         // Strip out HTML tags to examine remaining text content
         const text = html.replace(/<[^>]+>/g, '');
-        // Assert no bare _ or ^ in text
+        // Assert no bare _, ^, {, or } in text
         expect(text).not.toContain('_');
         expect(text).not.toContain('^');
+        expect(text).not.toContain('{');
+        expect(text).not.toContain('}');
       }
+    }
+
+    for (const html of ruleTexts) {
+      const text = html.replace(/<[^>]+>/g, '');
+      expect(text).not.toContain('_');
+      expect(text).not.toContain('^');
+      expect(text).not.toContain('{');
+      expect(text).not.toContain('}');
     }
   });
 });

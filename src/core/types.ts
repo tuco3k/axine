@@ -490,10 +490,24 @@ export interface StepValue {
   branches?: DerivationBranch[];
 }
 
-export interface ExpressionValue {
-  type: 'expression';
-  ast: ASTNode;
-  text: string;
+export interface DimensionValue {
+  type: 'dimension';
+  degrees: Record<string, number>;
+  totalDegree: number;
+  interpretation: string;
+  isDimensionless: boolean;
+}
+
+export interface CheckResultValue {
+  type: 'check_result';
+  isValid: boolean;
+  targetQuantity: string;
+  actualDimension: number;
+  actualInterpretation: string;
+  actualCoeff: number;
+  messageLines: string[];
+  derivationSteps: { step: number; title: string; math: string; explanation: string }[];
+  actualExprString: string;
 }
 
 export type Value =
@@ -515,7 +529,9 @@ export type Value =
   | DerivationValue
   | StepValue
   | ExpressionValue
-  | SolveTraceValue;
+  | SolveTraceValue
+  | DimensionValue
+  | CheckResultValue;
 
 export type Environment = Record<string, Value>;
 
