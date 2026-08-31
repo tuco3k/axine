@@ -18,6 +18,7 @@ export class DocumentEditor {
   private container: HTMLElement;
   private state: DocumentState;
   private textarea!: HTMLTextAreaElement;
+  private overlayEl!: HTMLElement;
   private lineNumbersEl!: HTMLElement;
   private gutterEl!: HTMLElement;
   private scopePanelEl!: HTMLElement;
@@ -81,14 +82,17 @@ export class DocumentEditor {
         <main class="doc-editor-main">
           <div class="doc-pane-left">
             <div id="doc-line-numbers" class="doc-line-numbers"></div>
-            <textarea
-              id="doc-textarea"
-              class="doc-textarea"
-              placeholder="Write math expressions, definitions (x := 5), claims, or prose..."
-              spellcheck="false"
-              autocomplete="off"
-              autocapitalize="off"
-            ></textarea>
+            <div class="doc-editor-surface">
+              <div id="doc-typeset-overlay" class="doc-typeset-overlay" aria-hidden="true"></div>
+              <textarea
+                id="doc-textarea"
+                class="doc-textarea"
+                placeholder="Write math expressions, definitions (x := 5), claims, or prose..."
+                spellcheck="false"
+                autocomplete="off"
+                autocapitalize="off"
+              ></textarea>
+            </div>
           </div>
 
           <div id="doc-splitter" class="doc-splitter" title="Drag to resize panel"></div>
@@ -158,6 +162,7 @@ export class DocumentEditor {
     `;
 
     this.textarea = this.container.querySelector('#doc-textarea') as HTMLTextAreaElement;
+    this.overlayEl = this.container.querySelector('#doc-typeset-overlay') as HTMLElement;
     this.lineNumbersEl = this.container.querySelector('#doc-line-numbers') as HTMLElement;
     this.gutterEl = this.container.querySelector('#doc-gutter') as HTMLElement;
     this.statusBadge = this.container.querySelector('#doc-status-badge') as HTMLElement;
@@ -171,10 +176,13 @@ export class DocumentEditor {
       const rightPane = this.container.querySelector('.doc-pane-right') as HTMLElement;
       if (rightPane) rightPane.style.width = savedWidth;
     }
+
+    this.updateTypesetOverlay();
   }
 
   private bindEvents() {
     this.textarea.addEventListener('input', () => {
+      this.updateTypesetOverlay();
       this.state.setText(this.textarea.value);
     });
 
@@ -185,14 +193,18 @@ export class DocumentEditor {
         const end = this.textarea.selectionEnd;
         this.textarea.value = this.textarea.value.substring(0, start) + '  ' + this.textarea.value.substring(end);
         this.textarea.selectionStart = this.textarea.selectionEnd = start + 2;
+        this.updateTypesetOverlay();
         this.state.setText(this.textarea.value);
       }
     });
 
     this.textarea.addEventListener('scroll', () => {
       const scrollTop = this.textarea.scrollTop;
+      const scrollLeft = this.textarea.scrollLeft;
       this.lineNumbersEl.scrollTop = scrollTop;
       this.gutterEl.scrollTop = scrollTop;
+      this.overlayEl.scrollTop = scrollTop;
+      this.overlayEl.scrollLeft = scrollLeft;
     });
 
     // Work Panel Tabs Switcher
@@ -215,6 +227,7 @@ export class DocumentEditor {
       const doc = CORPUS_DOCUMENTS.find(d => d.id === selectEl.value);
       if (doc) {
         this.textarea.value = doc.content;
+        this.updateTypesetOverlay();
         this.state.setText(doc.content);
       }
     });
@@ -247,6 +260,7 @@ export class DocumentEditor {
     const clearBtn = this.container.querySelector('#doc-clear-btn') as HTMLButtonElement;
     clearBtn.addEventListener('click', () => {
       this.textarea.value = '';
+      this.updateTypesetOverlay();
       this.state.setText('');
     });
 
@@ -658,6 +672,50 @@ export class DocumentEditor {
     }
     html += `</tbody></table></div>`;
     return html;
+  }
+
+  private updateTypesetOverlay() {
+    if (!this.overlayEl) return;
+    const lines = this.textarea.value.split('\n');
+    const html = lines.map(line => `<div class="doc-typeset-line">${this.typesetLine(line)}</div>`).join('');
+    this.overlayEl.innerHTML = html;
+  }
+
+  private typesetLine(rawLine: string): string {
+    if (!rawLine) return '<br>';
+
+    // Check for comments
+    const commentIdx = rawLine.indexOf('//');
+    if (commentIdx !== -1) {
+      if (commentIdx === 0 || /\s/.test(rawLine[commentIdx - 1])) {
+        const codePart = rawLine.substring(0, commentIdx);
+        const commentPart = rawLine.substring(commentIdx);
+        return (codePart ? this.typesetCode(codePart) : '') + `<span class="tok-comment">${escapeHtml(commentPart)}</span>`;
+      }
+    }
+
+    return this.typesetCode(rawLine);
+  }
+
+  private typesetCode(code: string): string {
+    const tokenRegex = /("[^"]*")|(:=|:\u2261|:==)|(\/\/)|(\^[a-zA-Z0-9]+)|(isolate|solve|simplify|graph|claim|statement|proved_by|kind|shadow|expect|relevance|for|near|in|step|if|then|else|not|and|or|sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|ln|log|exp|sqrt|sum|prod|int|diff|true|false|none|pi|e|tau|phi)\b|(\d+\.?\d*)|(==|!=|<=|>=|[=<>+\-*\/%])|([\u03C0\u03C4\u03D5\u221A\u2264\u2265\u2260\u222B\u03A3\u2202])|([a-zA-Z_][a-zA-Z0-9_]*)|(\s+)|(.)/g;
+
+    return code.replace(tokenRegex, (match, str, def, frac, sup, kw, num, op, glyph, ident, space, other) => {
+      if (str) return `<span class="tok-string">${escapeHtml(str)}</span>`;
+      if (def) return `<span class="tok-def">${escapeHtml(def)}</span>`;
+      if (frac) return `<span class="tok-fraction-op">${escapeHtml(frac)}</span>`;
+      if (sup) {
+        const exp = sup.substring(1);
+        return `<span class="tok-pow-op">^</span><span class="tok-sup">${escapeHtml(exp)}</span>`;
+      }
+      if (kw) return `<span class="tok-keyword">${escapeHtml(kw)}</span>`;
+      if (num) return `<span class="tok-number">${escapeHtml(num)}</span>`;
+      if (op) return `<span class="tok-operator">${escapeHtml(op)}</span>`;
+      if (glyph) return `<span class="tok-symbol">${escapeHtml(glyph)}</span>`;
+      if (ident) return `<span class="tok-ident">${escapeHtml(ident)}</span>`;
+      if (space) return escapeHtml(space);
+      return escapeHtml(other || match);
+    });
   }
 
   public formatValue(val: Value): string {

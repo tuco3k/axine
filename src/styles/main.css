@@ -278,24 +278,120 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 
-.doc-textarea {
+.doc-editor-surface {
+  position: relative;
   flex: 1;
+  display: flex;
+  overflow: hidden;
+  background-color: var(--color-bg-input);
+}
+
+.doc-typeset-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  white-space: pre;
+  overflow: hidden;
+  font-family: var(--font-family-doc);
+  font-size: var(--font-size-base);
+  line-height: var(--gutter-row-height);
+  padding: var(--space-md) var(--space-sm);
+  margin: 0;
+  border: none;
+  box-sizing: border-box;
+  color: var(--color-text-primary);
+  z-index: 1;
+  tab-size: 2;
+}
+
+.doc-typeset-line {
+  height: var(--gutter-row-height);
+  line-height: var(--gutter-row-height);
+  white-space: pre;
+}
+
+.doc-textarea {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   background: transparent;
   border: none;
   outline: none;
   padding: var(--space-md) var(--space-sm);
+  margin: 0;
   font-family: var(--font-family-doc);
   font-size: var(--font-size-base);
   line-height: var(--gutter-row-height);
-  color: var(--color-text-primary);
+  color: transparent;
+  caret-color: var(--color-accent);
   resize: none;
   white-space: pre;
   overflow: auto;
   tab-size: 2;
+  z-index: 2;
+  box-sizing: border-box;
+  -webkit-text-fill-color: transparent;
 }
 
 .doc-textarea::selection {
   background-color: var(--color-accent-subtle);
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Syntax Tokens & Typesetting */
+.tok-keyword {
+  color: var(--color-accent);
+  font-weight: 500;
+}
+
+.tok-number {
+  color: var(--color-text-primary);
+}
+
+.tok-ident {
+  color: var(--color-text-primary);
+}
+
+.tok-string {
+  color: var(--color-semantic-verified);
+}
+
+.tok-comment {
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+.tok-def {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.tok-operator {
+  color: var(--color-text-secondary);
+}
+
+.tok-pow-op {
+  color: var(--color-text-tertiary);
+}
+
+.tok-sup {
+  display: inline-block;
+  vertical-align: super;
+  font-size: 0.85em;
+  width: 1ch;
+  text-align: center;
+  color: var(--color-accent);
+}
+
+.tok-fraction-op {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.tok-symbol {
+  color: var(--color-accent);
 }
 
 /* Resizable Splitter */

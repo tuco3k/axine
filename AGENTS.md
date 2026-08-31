@@ -70,3 +70,6 @@ dropped.
   dropdown was never read.
 - Completion was reported for orbit/pan/dolly, Stop timing, and ambient
   responsiveness with no browser session and no measurements.
+
+## Phase Specifications
+Detailed requirements and acceptance criteria for Phases 5 through 7 are defined in [`SPEC.md`](./SPEC.md). Read `SPEC.md` directly before starting any phase.
