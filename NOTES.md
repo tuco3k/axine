@@ -69,3 +69,9 @@ These notes capture architectural principles, typographical baselines, and desig
 ### Edward Tufte on Data-Ink Ratio
 - **What We Took**: Ruthless elimination of decorative non-data ink: removing colored button backgrounds, gradients, emoji icons, box shadows, and superfluous container borders. Chrome recedes into low-contrast warm neutrals so mathematical text and visualizations command primary visual prominence.
 - **What We Rejected**: Severe minimalist minimalism that omits vital state information. We retain clear, accessible typography, explicit line numbers, status indicators, and keyboard focus outlines.
+
+---
+
+## 2.6 Numerical Root-Finding Precision & Sensitivity Analysis
+- **Finding on $\mathbf{7 \times 10^{-6}}$ Gap**: During the projectile challenge, symbolic `isolate` produced $t = 7.208012\text{ s}$ while numeric `solve` produced $t = 7.208019\text{ s}$. Analysis confirmed Newton iteration is exact (tolerance $10^{-12}$, achieved residual $1.1 \times 10^{-16}$). The $\Delta t = 6.785 \times 10^{-6}\text{ s}$ arose because the symbolic line hardcoded literal `35.3553` instead of the full float $v_y = 35.35533328235472$. Propagating $\Delta v_y = 0.00003328235$ through $\frac{\partial t}{\partial v_y} = \frac{1}{g} = \frac{1}{4.905}$ yields exactly $\Delta t = 6.7854 \times 10^{-6}\text{ s}$.
+- **Takeaway**: Exact symbolic derivation accurately preserves whatever precision is provided in equation literals. For mathematical consistency across symbolic and numeric verification, expressions should use full-precision literals or exact fractions.

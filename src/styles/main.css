@@ -340,58 +340,68 @@ html, body {
   -webkit-text-fill-color: transparent;
 }
 
-/* Syntax Tokens & Typesetting */
-.tok-keyword {
-  color: var(--color-accent);
+/* SPEC 5.4 Typeset Mathematical Constructs */
+.typeset-box {
+  display: inline-block;
+  position: relative;
+  overflow: visible;
+  vertical-align: baseline;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.typeset-sup-box {
+  display: inline-block;
+  position: relative;
+  overflow: visible;
+  vertical-align: baseline;
+  text-align: center;
+}
+
+.typeset-sup {
+  display: inline-block;
+  font-size: 0.75em;
+  vertical-align: super;
+  line-height: 1;
+  transform: translateY(-0.25em);
+  color: var(--color-text-primary);
+}
+
+.typeset-sub-box {
+  display: inline-block;
+  position: relative;
+  overflow: visible;
+  vertical-align: baseline;
+  text-align: center;
+}
+
+.typeset-sub {
+  display: inline-block;
+  font-size: 0.75em;
+  vertical-align: sub;
+  line-height: 1;
+  transform: translateY(0.15em);
+  color: var(--color-text-primary);
+}
+
+.typeset-frac {
+  display: inline-block;
+  position: relative;
   font-weight: 500;
+  color: var(--color-text-secondary);
+  text-align: center;
 }
 
-.tok-number {
+.typeset-diff {
+  display: inline-block;
+  position: relative;
   color: var(--color-text-primary);
-}
-
-.tok-ident {
-  color: var(--color-text-primary);
-}
-
-.tok-string {
-  color: var(--color-semantic-verified);
+  text-align: center;
 }
 
 .tok-comment {
   color: var(--color-text-tertiary);
   font-style: italic;
-}
-
-.tok-def {
-  color: var(--color-accent);
-  font-weight: 600;
-}
-
-.tok-operator {
-  color: var(--color-text-secondary);
-}
-
-.tok-pow-op {
-  color: var(--color-text-tertiary);
-}
-
-.tok-sup {
-  display: inline-block;
-  vertical-align: super;
-  font-size: 0.85em;
-  width: 1ch;
-  text-align: center;
-  color: var(--color-accent);
-}
-
-.tok-fraction-op {
-  color: var(--color-accent);
-  font-weight: 600;
-}
-
-.tok-symbol {
-  color: var(--color-accent);
 }
 
 /* Resizable Splitter */

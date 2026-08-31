@@ -684,37 +684,44 @@ export class DocumentEditor {
   private typesetLine(rawLine: string): string {
     if (!rawLine) return '<br>';
 
-    // Check for comments
-    const commentIdx = rawLine.indexOf('//');
+    // Check for comment starting with #
+    const commentIdx = rawLine.indexOf('#');
     if (commentIdx !== -1) {
-      if (commentIdx === 0 || /\s/.test(rawLine[commentIdx - 1])) {
-        const codePart = rawLine.substring(0, commentIdx);
-        const commentPart = rawLine.substring(commentIdx);
-        return (codePart ? this.typesetCode(codePart) : '') + `<span class="tok-comment">${escapeHtml(commentPart)}</span>`;
-      }
+      const codePart = rawLine.substring(0, commentIdx);
+      const commentPart = rawLine.substring(commentIdx);
+      return (codePart ? this.typesetCode(codePart) : '') + `<span class="tok-comment">${escapeHtml(commentPart)}</span>`;
     }
 
     return this.typesetCode(rawLine);
   }
 
   private typesetCode(code: string): string {
-    const tokenRegex = /("[^"]*")|(:=|:\u2261|:==)|(\/\/)|(\^[a-zA-Z0-9]+)|(isolate|solve|simplify|graph|claim|statement|proved_by|kind|shadow|expect|relevance|for|near|in|step|if|then|else|not|and|or|sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|ln|log|exp|sqrt|sum|prod|int|diff|true|false|none|pi|e|tau|phi)\b|(\d+\.?\d*)|(==|!=|<=|>=|[=<>+\-*\/%])|([\u03C0\u03C4\u03D5\u221A\u2264\u2265\u2260\u222B\u03A3\u2202])|([a-zA-Z_][a-zA-Z0-9_]*)|(\s+)|(.)/g;
+    // Matches ONLY the 4 typeset constructs in SPEC 5.4:
+    // 1. Reserved differential operators: d//dx, \u2202//\u2202x, d//dth, etc.
+    // 2. Stacked fractions: //
+    // 3. Superscripts: ^2, ^(n+1), ^n
+    // 4. Subscripts: _1, _(i+1), _n
+    const tokenRegex = /((?:d|\u2202)\/\/(?:d|\u2202)[a-zA-Z_][a-zA-Z0-9_]*)|(\/\/)|(\^(?:\([^\)]+\)|[a-zA-Z0-9]+))|(_(?:\([^\)]+\)|[a-zA-Z0-9]+))|([^d\u2202\/^_#]+|.)/g;
 
-    return code.replace(tokenRegex, (match, str, def, frac, sup, kw, num, op, glyph, ident, space, other) => {
-      if (str) return `<span class="tok-string">${escapeHtml(str)}</span>`;
-      if (def) return `<span class="tok-def">${escapeHtml(def)}</span>`;
-      if (frac) return `<span class="tok-fraction-op">${escapeHtml(frac)}</span>`;
-      if (sup) {
-        const exp = sup.substring(1);
-        return `<span class="tok-pow-op">^</span><span class="tok-sup">${escapeHtml(exp)}</span>`;
+    return code.replace(tokenRegex, (match, diffOp, fracOp, sup, sub, plain) => {
+      if (diffOp) {
+        const w = diffOp.length;
+        return `<span class="typeset-box typeset-diff" style="width:${w}ch;" data-construct="diff">${escapeHtml(diffOp)}</span>`;
       }
-      if (kw) return `<span class="tok-keyword">${escapeHtml(kw)}</span>`;
-      if (num) return `<span class="tok-number">${escapeHtml(num)}</span>`;
-      if (op) return `<span class="tok-operator">${escapeHtml(op)}</span>`;
-      if (glyph) return `<span class="tok-symbol">${escapeHtml(glyph)}</span>`;
-      if (ident) return `<span class="tok-ident">${escapeHtml(ident)}</span>`;
-      if (space) return escapeHtml(space);
-      return escapeHtml(other || match);
+      if (fracOp) {
+        return `<span class="typeset-box typeset-frac" style="width:2ch;" data-construct="frac"><span class="typeset-frac-bar">//</span></span>`;
+      }
+      if (sup) {
+        const w = sup.length;
+        const exp = sup.startsWith('^(') && sup.endsWith(')') ? sup.slice(2, -1) : sup.slice(1);
+        return `<span class="typeset-box typeset-sup-box" style="width:${w}ch;" data-construct="sup"><span class="typeset-sup">${escapeHtml(exp)}</span></span>`;
+      }
+      if (sub) {
+        const w = sub.length;
+        const subText = sub.startsWith('_(') && sub.endsWith(')') ? sub.slice(2, -1) : sub.slice(1);
+        return `<span class="typeset-box typeset-sub-box" style="width:${w}ch;" data-construct="sub"><span class="typeset-sub">${escapeHtml(subText)}</span></span>`;
+      }
+      return escapeHtml(plain || match);
     });
   }
 
