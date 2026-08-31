@@ -54,6 +54,9 @@ dropped.
   measuring it.
 - Never report a phase complete based on code inspection. Only after tests
   pass AND you have watched it run.
+- A test that would pass on an unimplemented feature is not a test. Two
+  values compared for agreement must be obtained by independent means —
+  if both derive from the same formula, the test proves nothing.
 
 ## Mistakes made in prior sessions — do not repeat
 - A y-axis tick bug was introduced by rewriting canvas2d.ts wholesale.

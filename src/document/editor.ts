@@ -684,42 +684,64 @@ export class DocumentEditor {
   private typesetLine(rawLine: string): string {
     if (!rawLine) return '<br>';
 
-    // Check for comment starting with #
-    const commentIdx = rawLine.indexOf('#');
-    if (commentIdx !== -1) {
-      const codePart = rawLine.substring(0, commentIdx);
-      const commentPart = rawLine.substring(commentIdx);
-      return (codePart ? this.typesetCode(codePart) : '') + `<span class="tok-comment">${escapeHtml(commentPart)}</span>`;
-    }
+    try {
+      // Check for comment starting with #
+      const commentIdx = rawLine.indexOf('#');
+      if (commentIdx !== -1) {
+        const codePart = rawLine.substring(0, commentIdx);
+        const commentPart = rawLine.substring(commentIdx);
+        return (codePart ? this.typesetCode(codePart) : '') + `<span class="tok-comment">${escapeHtml(commentPart)}</span>`;
+      }
 
-    return this.typesetCode(rawLine);
+      return this.typesetCode(rawLine);
+    } catch (_err) {
+      // Per-line fallback to plain monospace on error
+      return `<span class="typeset-fallback">${escapeHtml(rawLine)}</span>`;
+    }
   }
 
   private typesetCode(code: string): string {
-    // Matches ONLY the 4 typeset constructs in SPEC 5.4:
+    // Matches ONLY the 4 typeset constructs in SPEC 5.4 plus incomplete tokens:
     // 1. Reserved differential operators: d//dx, \u2202//\u2202x, d//dth, etc.
-    // 2. Stacked fractions: //
-    // 3. Superscripts: ^2, ^(n+1), ^n
-    // 4. Subscripts: _1, _(i+1), _n
-    const tokenRegex = /((?:d|\u2202)\/\/(?:d|\u2202)[a-zA-Z_][a-zA-Z0-9_]*)|(\/\/)|(\^(?:\([^\)]+\)|[a-zA-Z0-9]+))|(_(?:\([^\)]+\)|[a-zA-Z0-9]+))|([^d\u2202\/^_#]+|.)/g;
+    // 2. Full stacked fractions: (num) // (den) or a // b
+    // 3. Bare fraction operator: //
+    // 4. Superscripts: ^(n+1), ^2, ^n, or trailing ^
+    // 5. Subscripts: _(i+1), _1, _n, or trailing _
+    const tokenRegex = /((?:d|\u2202)\/\/(?:d|\u2202)[a-zA-Z_][a-zA-Z0-9_]*)|((?:\([^\)]+\)|[a-zA-Z0-9_.]+)\s*\/\/\s*(?:\([^\)]+\)|[a-zA-Z0-9_.]+))|(\/\/)|(\^(?:\([^\)]+\)|[a-zA-Z0-9]+))|(\^)|(_(?:\([^\)]+\)|[a-zA-Z0-9]+))|(_)|([^d\u2202\/^_#]+|.)/g;
 
-    return code.replace(tokenRegex, (match, diffOp, fracOp, sup, sub, plain) => {
+    return code.replace(tokenRegex, (match, diffOp, fullFrac, bareFrac, sup, trailingSup, sub, trailingSub, plain) => {
       if (diffOp) {
         const w = diffOp.length;
-        return `<span class="typeset-box typeset-diff" style="width:${w}ch;" data-construct="diff">${escapeHtml(diffOp)}</span>`;
+        const parts = diffOp.split('//');
+        const num = parts[0];
+        const den = parts[1];
+        return `<span class="typeset-box typeset-diff-stack" style="width:${w}ch;" data-construct="diff"><span class="typeset-frac-num">${escapeHtml(num)}</span><span class="typeset-frac-bar"></span><span class="typeset-frac-den">${escapeHtml(den)}</span></span>`;
       }
-      if (fracOp) {
-        return `<span class="typeset-box typeset-frac" style="width:2ch;" data-construct="frac"><span class="typeset-frac-bar">//</span></span>`;
+      if (fullFrac) {
+        const w = fullFrac.length;
+        const slashIdx = fullFrac.indexOf('//');
+        const num = fullFrac.substring(0, slashIdx).trim();
+        const den = fullFrac.substring(slashIdx + 2).trim();
+        return `<span class="typeset-box typeset-fraction-stack" style="width:${w}ch;" data-construct="frac"><span class="typeset-frac-num">${escapeHtml(num)}</span><span class="typeset-frac-bar"></span><span class="typeset-frac-den">${escapeHtml(den)}</span></span>`;
+      }
+      if (bareFrac) {
+        return `<span class="typeset-box typeset-fraction-stack" style="width:2ch;" data-construct="frac"><span class="typeset-frac-num">&nbsp;</span><span class="typeset-frac-bar"></span><span class="typeset-frac-den">&nbsp;</span></span>`;
       }
       if (sup) {
         const w = sup.length;
         const exp = sup.startsWith('^(') && sup.endsWith(')') ? sup.slice(2, -1) : sup.slice(1);
         return `<span class="typeset-box typeset-sup-box" style="width:${w}ch;" data-construct="sup"><span class="typeset-sup">${escapeHtml(exp)}</span></span>`;
       }
+      if (trailingSup) {
+        return `<span class="typeset-box typeset-sup-box typeset-incomplete" style="width:1ch;" data-construct="sup"><span class="typeset-sup dimmed">^</span></span>`;
+      }
       if (sub) {
         const w = sub.length;
         const subText = sub.startsWith('_(') && sub.endsWith(')') ? sub.slice(2, -1) : sub.slice(1);
         return `<span class="typeset-box typeset-sub-box" style="width:${w}ch;" data-construct="sub"><span class="typeset-sub">${escapeHtml(subText)}</span></span>`;
+      }
+      if (trailingSub) {
+        return `<span class="typeset-box typeset-sub-box typeset-incomplete" style="width:1ch;" data-construct="sub"><span class="typeset-sub dimmed">_</span></span>`;
       }
       return escapeHtml(plain || match);
     });

@@ -363,8 +363,13 @@ html, body {
   font-size: 0.75em;
   vertical-align: super;
   line-height: 1;
-  transform: translateY(-0.25em);
+  transform: translateY(-0.3em);
   color: var(--color-text-primary);
+}
+
+.typeset-sup.dimmed,
+.typeset-sub.dimmed {
+  opacity: 0.4;
 }
 
 .typeset-sub-box {
@@ -380,23 +385,49 @@ html, body {
   font-size: 0.75em;
   vertical-align: sub;
   line-height: 1;
-  transform: translateY(0.15em);
+  transform: translateY(0.25em);
   color: var(--color-text-primary);
 }
 
-.typeset-frac {
-  display: inline-block;
-  position: relative;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  text-align: center;
+.typeset-fraction-stack,
+.typeset-diff-stack {
+  display: inline-flex !important;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  vertical-align: middle;
+  height: 100%;
+  font-size: 0.75em;
+  line-height: 1.1;
+  padding: 0 1px;
 }
 
-.typeset-diff {
-  display: inline-block;
-  position: relative;
-  color: var(--color-text-primary);
+.typeset-frac-num {
+  display: block;
   text-align: center;
+  padding-bottom: 1px;
+  color: var(--color-text-primary);
+}
+
+.typeset-frac-bar {
+  display: block;
+  width: 80%;
+  min-width: 8px;
+  height: 1px;
+  background-color: var(--color-border-strong);
+  margin: 1px 0;
+}
+
+.typeset-frac-den {
+  display: block;
+  text-align: center;
+  padding-top: 1px;
+  color: var(--color-text-primary);
+}
+
+.typeset-fallback {
+  font-family: var(--font-family-doc);
+  color: var(--color-text-primary);
 }
 
 .tok-comment {
