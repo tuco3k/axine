@@ -464,7 +464,7 @@ function findTopLevelFrac(str: string): number {
 }
 
 function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
-  const tokenRegex = /(sqrt\((?:[^()]+|\([^()]*\))*\))|(\^(?:\([^)]+\)|[a-zA-Z0-9]+))|(_(?:\([^)]+\)|[a-zA-Z0-9]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b(?:sin|cos|tan|ln|exp|det|sqrt|pi|inf)\b)|(\b[a-zA-Z_][a-zA-Z0-9_]*\b)|([()[\],])/g;
+  const tokenRegex = /(sqrt\((?:[^()]+|\([^()]*\))*\))|(\^(?:\([^)]+\)|[a-zA-Z0-9]+))|(_(?:\([^)]+\)|[a-zA-Z0-9]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b(?:sin|cos|tan|ln|exp|det|sqrt|pi|inf)\b)|(\b[a-zA-Z_][a-zA-Z0-9_]*\b)|([()[\],'])/g;
 
   let out = '';
   let match: RegExpExecArray | null;
@@ -516,7 +516,8 @@ function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
         out += `<span class="tm-var">${escapeHtml(identTok)}</span>`;
       }
     } else if (puncTok) {
-      if (puncTok === '(' || puncTok === ')') out += `<span class="tm-paren">${escapeHtml(puncTok)}</span>`;
+      if (puncTok === "'") out += `<span class="tm-prime">&prime;</span>`;
+      else if (puncTok === '(' || puncTok === ')') out += `<span class="tm-paren">${escapeHtml(puncTok)}</span>`;
       else if (puncTok === '[' || puncTok === ']') out += `<span class="tm-bracket">${escapeHtml(puncTok)}</span>`;
       else out += escapeHtml(puncTok);
     }

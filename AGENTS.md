@@ -57,6 +57,9 @@ dropped.
 - A test that would pass on an unimplemented feature is not a test. Two
   values compared for agreement must be obtained by independent means —
   if both derive from the same formula, the test proves nothing.
+- When asked to verify rendered output, extract it from the running
+  DOM. Never transcribe from source or from memory. A transcript you
+  wrote rather than read is not evidence.
 
 ## Mistakes made in prior sessions — do not repeat
 - A y-axis tick bug was introduced by rewriting canvas2d.ts wholesale.
