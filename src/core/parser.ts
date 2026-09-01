@@ -209,6 +209,35 @@ export class Parser {
     return expr;
   }
 
+  public parseProgram(): ASTNode {
+    const statements: ASTNode[] = [];
+    while (this.peek().type !== 'EOF') {
+      const def = this.tryParseDefinition();
+      if (def) {
+        statements.push(def);
+      } else {
+        const expr = this.parseExpression(PREC_NONE);
+        statements.push(expr);
+      }
+      if (this.peek().type === 'SEMICOLON') {
+        this.advance();
+      }
+    }
+    if (statements.length === 1) {
+      return statements[0];
+    }
+    return {
+      type: 'Block',
+      statements,
+      span: {
+        start: 0,
+        end: this.source.length,
+        line: 1,
+        col: 1,
+      },
+    };
+  }
+
   private tryParseDefinition(): ASTNode | null {
     const startPos = this.pos;
 
@@ -753,7 +782,7 @@ export class Parser {
       }
 
       // Check for implicit multiplication before other infix ops
-      if (this.canBeginImplicitMultiplication()) {
+      if (this.canBeginImplicitMultiplication(left)) {
         const nextPrec = PREC_IMPLICIT_MUL;
         if (precedence < nextPrec) {
           const right = this.parseExpression(nextPrec);
@@ -2496,10 +2525,33 @@ export class Parser {
     };
   }
 
-  private canBeginImplicitMultiplication(): boolean {
+  private canBeginImplicitMultiplication(left?: ASTNode): boolean {
     const token = this.peek();
     if (this.parsingIntegrand && this.isBinderToken(token)) {
       return false;
+    }
+    if (left && token.span.line > left.span.line) {
+      // Check if token on next line begins a new statement or assignment
+      if ([
+        'MODULE', 'EXPORT', 'IMPORT', 'FROM', 'DIMENSION', 'UNIT',
+        'OPERATOR', 'KIND', 'RULE', 'CLAIM', 'IF'
+      ].includes(token.type)) {
+        return false;
+      }
+      if (token.type === 'IDENTIFIER') {
+        if (this.peek(1).type === 'ASSIGN' || this.peek(1).type === 'GLOBAL_ASSIGN') {
+          return false;
+        }
+        if (this.peek(1).type === 'LPAREN') {
+          let q = 2;
+          while (this.peek(q).type !== 'RPAREN' && this.peek(q).type !== 'EOF') {
+            q++;
+          }
+          if (this.peek(q).type === 'RPAREN' && (this.peek(q + 1).type === 'ASSIGN' || this.peek(q + 1).type === 'GLOBAL_ASSIGN')) {
+            return false;
+          }
+        }
+      }
     }
     return this.canBeginExpression(token.type);
   }
@@ -2640,4 +2692,17 @@ export function parse(source: string, options?: ParserOptions): ASTNode {
   const tokens = tokenize(source);
   const parser = new Parser(tokens, { ...options, source });
   return parser.parse();
+}
+
+export function parseProgram(source: string, options?: ParserOptions): ASTNode {
+  let cleanSource = source;
+  if (cleanSource.startsWith('---')) {
+    const endIdx = cleanSource.indexOf('---', 3);
+    if (endIdx !== -1) {
+      cleanSource = cleanSource.slice(endIdx + 3);
+    }
+  }
+  const tokens = tokenize(cleanSource);
+  const parser = new Parser(tokens, { ...options, source: cleanSource });
+  return parser.parseProgram();
 }

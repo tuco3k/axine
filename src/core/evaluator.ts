@@ -28,6 +28,7 @@ import {
   BinaryOpNode,
   UnaryOpNode,
   PostfixOpNode,
+  ImportNode,
 } from './types';
 import { BigFraction } from './numeric/rational';
 import {
@@ -48,7 +49,7 @@ import {
   valueToNumber,
 } from './numeric/tower';
 import { FLOAT_CONSTANTS } from './numeric/float';
-import { BUILTIN_FUNCTIONS, CONSTANTS, parse } from './parser';
+import { BUILTIN_FUNCTIONS, CONSTANTS, parse, parseProgram } from './parser';
 import { analyzeAST } from './analyzer';
 import { solveAlgebraic } from './algebra';
 import { AlgebraicSimplifier } from './algebra/simplify';
@@ -155,6 +156,7 @@ export class BudgetTracker {
 }
 
 export class Evaluator {
+  public static virtualFiles: Map<string, string> = new Map();
   private env: Environment;
   private source: string;
   private budget: BudgetTracker;
@@ -693,13 +695,31 @@ export class Evaluator {
         return { type: 'none' };
       }
       case 'ModuleDecl': {
+        (currentEnv as any).__moduleName__ = node.name;
+        if (currentEnv !== this.env) {
+          (this.env as any).__moduleName__ = node.name;
+        }
         return { type: 'none' };
       }
       case 'Export': {
+        if (!(currentEnv as any).__exports__) {
+          (currentEnv as any).__exports__ = new Set<string>();
+        }
+        for (const sym of node.symbols) {
+          (currentEnv as any).__exports__.add(sym);
+        }
+        if (currentEnv !== this.env) {
+          if (!(this.env as any).__exports__) {
+            (this.env as any).__exports__ = new Set<string>();
+          }
+          for (const sym of node.symbols) {
+            (this.env as any).__exports__.add(sym);
+          }
+        }
         return { type: 'none' };
       }
       case 'Import': {
-        return { type: 'none' };
+        return this.evalImport(node, currentEnv);
       }
       case 'Index': {
         const targetVal = this.evalNode(node.target, currentEnv);
@@ -2554,6 +2574,150 @@ export class Evaluator {
       }
     }
     return null;
+  }
+
+  private evalImport(node: ImportNode, currentEnv: Environment): Value {
+    const importPath = node.path;
+    if (/^https?:\/\//i.test(importPath)) {
+      throw createError(`Network imports are not allowed: '${importPath}'`, node.span, {
+        expected: 'a relative filesystem path',
+        suggestion: 'Import local .math files using relative paths only',
+        source: this.source,
+      });
+    }
+
+    const importStack: string[] = (currentEnv as any).__importStack__ || [];
+    const normalizedPath = importPath.replace(/\\/g, '/');
+
+    if (importStack.includes(normalizedPath)) {
+      const cycleStr = [...importStack, normalizedPath].join(' -> ');
+      throw createError(`Cyclic module import detected: ${cycleStr}`, node.span, {
+        expected: 'acyclic dependency graph',
+        suggestion: 'Refactor mutual imports or extract shared definitions into a base module',
+        source: this.source,
+      });
+    }
+
+    let code: string | null = null;
+    if (Evaluator.virtualFiles.has(normalizedPath)) {
+      code = Evaluator.virtualFiles.get(normalizedPath)!;
+    } else {
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const candidatePaths = [
+          normalizedPath,
+          path.resolve(process.cwd(), normalizedPath),
+          path.resolve(process.cwd(), 'documents', normalizedPath),
+          path.resolve(process.cwd(), 'src', normalizedPath),
+        ];
+        for (const cp of candidatePaths) {
+          if (fs.existsSync(cp)) {
+            code = fs.readFileSync(cp, 'utf-8');
+            break;
+          }
+        }
+      } catch {}
+    }
+
+    if (code === null) {
+      throw createError(`Cannot find module '${importPath}'`, node.span, {
+        expected: 'an existing .math file',
+        suggestion: `Ensure '${importPath}' exists in the current directory or documents folder`,
+        source: this.source,
+      });
+    }
+
+    const modEnv = createInitialEnvironment();
+    (modEnv as any).__importStack__ = [...importStack, normalizedPath];
+
+    // Evaluate module statements
+    const parsedAST = parseProgram(code);
+    if (parsedAST.type === 'Block') {
+      for (const stmt of parsedAST.statements) {
+        this.evalNode(stmt, modEnv);
+      }
+    } else {
+      this.evalNode(parsedAST, modEnv);
+    }
+
+    // Collect exported symbols
+    const exportedSymbols: Set<string> | undefined = (modEnv as any).__exports__;
+    const exports: Record<string, Value> = {};
+
+    for (const [k, v] of Object.entries(modEnv)) {
+      if (k.startsWith('__')) continue;
+      if (exportedSymbols) {
+        if (exportedSymbols.has(k)) {
+          exports[k] = v;
+        }
+      } else {
+        exports[k] = v;
+      }
+    }
+
+    // Propagate units, operators, kinds, rules
+    if ((modEnv as any).__units__) {
+      for (const [k, v] of (modEnv as any).__units__.entries()) {
+        this.declaredUnits.set(k, v);
+        if (!(currentEnv as any).__units__) (currentEnv as any).__units__ = new Map();
+        (currentEnv as any).__units__.set(k, v);
+      }
+    }
+    if ((modEnv as any).__operators__) {
+      for (const [k, v] of (modEnv as any).__operators__.entries()) {
+        this.userOperators.set(k, v);
+        if (!(currentEnv as any).__operators__) (currentEnv as any).__operators__ = new Map();
+        (currentEnv as any).__operators__.set(k, v);
+      }
+    }
+    if ((modEnv as any).__kinds__) {
+      for (const [k, v] of (modEnv as any).__kinds__.entries()) {
+        this.declaredKinds.set(k, v);
+        if (!(currentEnv as any).__kinds__) (currentEnv as any).__kinds__ = new Map();
+        (currentEnv as any).__kinds__.set(k, v);
+      }
+    }
+    if ((modEnv as any).__rules__) {
+      for (const r of (modEnv as any).__rules__) {
+        this.userRules.push(r);
+        if (!(currentEnv as any).__rules__) (currentEnv as any).__rules__ = [];
+        (currentEnv as any).__rules__.push(r);
+      }
+    }
+
+    const modName = (modEnv as any).__moduleName__ || normalizedPath.replace(/^.*[\\/]/, '').replace(/\.math$/, '');
+
+    if (node.importedSymbols && node.importedSymbols.length > 0) {
+      for (const sym of node.importedSymbols) {
+        if (sym in exports) {
+          currentEnv[sym] = exports[sym];
+        } else {
+          throw createError(`Symbol '${sym}' is not exported by module '${importPath}'`, node.span, {
+            expected: `one of the exported symbols: ${Object.keys(exports).join(', ') || '(none)'}`,
+            suggestion: `Check the exports in '${importPath}'`,
+            source: this.source,
+          });
+        }
+      }
+    } else if (node.asName) {
+      currentEnv[node.asName] = {
+        type: 'module',
+        name: modName,
+        exports,
+      };
+    } else {
+      currentEnv[modName] = {
+        type: 'module',
+        name: modName,
+        exports,
+      };
+      for (const [k, v] of Object.entries(exports)) {
+        currentEnv[k] = v;
+      }
+    }
+
+    return { type: 'none' };
   }
 
   private evalDiff(node: DiffNode, currentEnv: Environment): Value {
