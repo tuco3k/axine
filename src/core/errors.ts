@@ -23,13 +23,22 @@ export class MathError extends Error {
   get span(): Span {
     return this.diagnostic.span;
   }
+  set span(val: Span) {
+    this.diagnostic.span = val;
+  }
 
   get expected(): string | undefined {
     return this.diagnostic.expected;
   }
+  set expected(val: string | undefined) {
+    this.diagnostic.expected = val;
+  }
 
   get suggestion(): string | undefined {
     return this.diagnostic.suggestion;
+  }
+  set suggestion(val: string | undefined) {
+    this.diagnostic.suggestion = val;
   }
 
   public format(source?: string): string {

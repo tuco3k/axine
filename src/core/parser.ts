@@ -106,6 +106,7 @@ export const BUILTIN_FUNCTIONS = new Set([
   'kindof',
   'admits',
   'coerce',
+  'convert',
   'norm',
   'inner',
   'card',
@@ -1273,8 +1274,19 @@ export class Parser {
       return this.parseLimit();
     }
 
-    // Differential operator d//dx expr or \u2202//\u2202x expr
-    if ((token.value === 'd' || token.value === '\u2202') && (this.peek(1).type === 'DOUBLE_SLASH' || this.peek(1).type === 'SLASH')) {
+    // Differential operator d//dx expr or \u2202//\u2202x expr or d/dx expr
+    if (
+      (token.value === 'd' || token.value === '\u2202') &&
+      (this.peek(1).type === 'DOUBLE_SLASH' ||
+        (this.peek(1).type === 'SLASH' &&
+          this.peek(2).type === 'IDENTIFIER' &&
+          (this.peek(2).value.startsWith('d') || this.peek(2).value.startsWith('\u2202')) &&
+          this.peek(3).type !== 'EOF' &&
+          this.peek(3).type !== 'COMMA' &&
+          this.peek(3).type !== 'RPAREN' &&
+          this.peek(3).type !== 'RBRACKET' &&
+          this.peek(3).type !== 'RBRACE'))
+    ) {
       return this.parseDiff();
     }
 

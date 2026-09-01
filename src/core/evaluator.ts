@@ -24,6 +24,7 @@ import {
   ObstructionReason,
   RecordDefNode,
   RecordConstructorValue,
+  QuantityValue,
 } from './types';
 import { BigFraction } from './numeric/rational';
 import {
@@ -32,6 +33,9 @@ import {
   compareValues,
   divValues,
   factorialValue,
+  formatDimensions,
+  formatQuantityString,
+  makeFloat,
   makeNone,
   makeUnknown,
   modValues,
@@ -166,6 +170,11 @@ export class Evaluator {
     this.env = env;
     this.source = source;
     this.budget = budget;
+    if ((env as any).__units__) {
+      for (const [k, v] of (env as any).__units__.entries()) {
+        this.declaredUnits.set(k, v);
+      }
+    }
   }
 
   public evaluate(ast: ASTNode): Value {
@@ -501,24 +510,42 @@ export class Evaluator {
         return { type: 'none' };
       }
       case 'UnitDecl': {
+        let factor = 1.0;
+        let dims: Record<string, number> = {};
         if (node.dimension) {
-          this.declaredUnits.set(node.name, {
-            name: node.name,
-            dimension: node.dimension,
-            factor: 1.0,
-            dimensions: { [node.dimension]: 1 },
-          });
+          factor = 1.0;
+          dims = { [node.dimension]: 1 };
         } else if (node.definition) {
           const defVal = this.evalNode(node.definition, currentEnv);
           if (defVal.type === 'quantity') {
-            const mag = valueToNumber(defVal.magnitude, node.span);
-            this.declaredUnits.set(node.name, {
-              name: node.name,
-              dimension: Object.keys(defVal.dimensions)[0] || 'derived',
-              factor: mag,
-              dimensions: defVal.dimensions,
-            });
+            factor = valueToNumber(defVal.magnitude, node.span);
+            dims = defVal.dimensions;
           }
+        }
+        const unitRecord = {
+          name: node.name,
+          dimension: Object.keys(dims)[0] || 'derived',
+          factor,
+          dimensions: dims,
+        };
+        this.declaredUnits.set(node.name, unitRecord);
+        if (!(currentEnv as any).__units__) {
+          (currentEnv as any).__units__ = (this.env as any).__units__ || new Map();
+        }
+        (currentEnv as any).__units__.set(node.name, unitRecord);
+        if (currentEnv !== this.env) {
+          if (!(this.env as any).__units__) (this.env as any).__units__ = new Map();
+          (this.env as any).__units__.set(node.name, unitRecord);
+        }
+        const unitVal: QuantityValue = {
+          type: 'quantity',
+          magnitude: { type: 'rational', n: 1n, d: 1n },
+          unit: node.name,
+          dimensions: dims,
+        };
+        currentEnv[node.name] = unitVal;
+        if (currentEnv === this.env) {
+          this.env[node.name] = unitVal;
         }
         return { type: 'none' };
       }
@@ -1103,6 +1130,81 @@ export class Evaluator {
         throw createError(check.reason || `Cannot coerce ${formatKind(fromKind)} to ${formatKind(targetKind)}`, node.span);
       }
       return val;
+    }
+
+    if (callee === 'convert') {
+      if (node.args.length < 2) {
+        throw createError(`convert(quantity, to: unit) requires 2 arguments`, node.span);
+      }
+      const qtyVal = this.evalNode(node.args[0], currentEnv);
+      if (qtyVal.type !== 'quantity') {
+        throw createError(`First argument to convert() must be a quantity with units`, node.args[0].span);
+      }
+      let targetUnitName = '';
+      const toArg = node.args[1];
+      if (toArg.type === 'NamedArg' && toArg.name === 'to') {
+        targetUnitName = toArg.value.type === 'Identifier' ? toArg.value.name : '';
+      } else if (toArg.type === 'Identifier') {
+        targetUnitName = toArg.name;
+      }
+      if (!targetUnitName) {
+        throw createError(`Expected target unit in convert(..., to: <unit>)`, node.span);
+      }
+      let targetUnit = this.declaredUnits.get(targetUnitName);
+      if (!targetUnit && (currentEnv as any).__units__) {
+        targetUnit = (currentEnv as any).__units__.get(targetUnitName);
+      }
+      if (!targetUnit && (this.env as any).__units__) {
+        targetUnit = (this.env as any).__units__.get(targetUnitName);
+      }
+      if (!targetUnit) {
+        const tVal = currentEnv[targetUnitName] ?? this.env[targetUnitName];
+        if (tVal && tVal.type === 'quantity') {
+          targetUnit = {
+            name: targetUnitName,
+            dimension: Object.keys(tVal.dimensions)[0] || 'derived',
+            factor: 1.0,
+            dimensions: tVal.dimensions,
+          };
+        }
+      }
+      if (!targetUnit) {
+        throw createError(`Unit '${targetUnitName}' is not defined`, toArg.span);
+      }
+      // Check dimension match
+      const keysQty = Object.keys(qtyVal.dimensions).filter(k => qtyVal.dimensions[k] !== 0);
+      const keysTarget = Object.keys(targetUnit.dimensions).filter(k => targetUnit.dimensions[k] !== 0);
+      let match = keysQty.length === keysTarget.length;
+      if (match) {
+        for (const k of keysQty) {
+          if (qtyVal.dimensions[k] !== targetUnit.dimensions[k]) {
+            match = false;
+            break;
+          }
+        }
+      }
+      if (!match) {
+        throw createError(
+          `Dimension mismatch: cannot convert ${formatDimensions(qtyVal.dimensions)} (${formatQuantityString(qtyVal)}) to unit '${targetUnitName}' of dimension ${formatDimensions(targetUnit.dimensions)}`,
+          node.span
+        );
+      }
+      let sourceUnit = this.declaredUnits.get(qtyVal.unit);
+      if (!sourceUnit && (currentEnv as any).__units__) {
+        sourceUnit = (currentEnv as any).__units__.get(qtyVal.unit);
+      }
+      if (!sourceUnit && (this.env as any).__units__) {
+        sourceUnit = (this.env as any).__units__.get(qtyVal.unit);
+      }
+      const sourceFactor = sourceUnit ? sourceUnit.factor : 1.0;
+      const targetFactor = targetUnit.factor;
+      const convertedMag = mulValues(qtyVal.magnitude, makeFloat(sourceFactor / targetFactor), node.span);
+      return {
+        type: 'quantity',
+        magnitude: convertedMag,
+        unit: targetUnitName,
+        dimensions: targetUnit.dimensions,
+      };
     }
 
     // Check custom builtins that take ranges or lambdas:

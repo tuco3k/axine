@@ -1,4 +1,4 @@
-import { BooleanValue, FloatValue, ListValue, MatrixValue, NoneValue, RationalValue, Span, UnknownReason, UnknownValue, Value } from '../types';
+import { BooleanValue, FloatValue, ListValue, MatrixValue, NoneValue, RationalValue, Span, UnknownReason, UnknownValue, Value, QuantityValue } from '../types';
 import { BigFraction } from './rational';
 import { createError } from '../errors';
 import { inferKindOfValue, formatKind } from '../kinds';
@@ -80,11 +80,86 @@ export function valueToNumber(val: Value, span?: Span): number {
   });
 }
 
+export function formatDimensions(dimensions: Record<string, number>): string {
+  const pos: string[] = [];
+  const neg: string[] = [];
+  for (const [k, v] of Object.entries(dimensions)) {
+    if (v === 1) pos.push(k);
+    else if (v > 1) pos.push(`${k}^${v}`);
+    else if (v === -1) neg.push(k);
+    else if (v < -1) neg.push(`${k}^${-v}`);
+  }
+  if (pos.length === 0 && neg.length === 0) return 'dimensionless';
+  if (neg.length === 0) return pos.join(' * ');
+  if (pos.length === 0) return `1 / (${neg.join(' * ')})`;
+  return `${pos.join(' * ')} / ${neg.join(' * ')}`;
+}
+
+export function formatQuantityString(q: QuantityValue): string {
+  const magStr = q.magnitude.type === 'rational'
+    ? (q.magnitude.d === 1n ? q.magnitude.n.toString() : `${q.magnitude.n}/${q.magnitude.d}`)
+    : (q.magnitude.type === 'float' ? (Number.isInteger(q.magnitude.value) ? q.magnitude.value.toString() : q.magnitude.value.toFixed(6).replace(/\.?0+$/, '')) : String((q.magnitude as any).value ?? ''));
+  return `${magStr} ${q.unit}`;
+}
+
+export function computeMulUnit(u1: string, u2: string): string {
+  if (!u1) return u2;
+  if (!u2) return u1;
+  return `${u1} * ${u2}`;
+}
+
+export function computeDivUnit(u1: string, u2: string): string {
+  if (!u2) return u1;
+  if (u1 === u2) return '';
+  return `${u1} / ${u2}`;
+}
+
 export function addValues(a: Value, b: Value, span?: Span): Value {
   if (a.type === 'unknown') return a;
   if (b.type === 'unknown') return b;
   if (a.type === 'none' || b.type === 'none') {
     throw createError(`Cannot perform arithmetic on 'none'`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+  }
+  if (a.type === 'quantity' || b.type === 'quantity') {
+    if (a.type === 'quantity' && b.type === 'quantity') {
+      const keysA = Object.keys(a.dimensions).filter(k => a.dimensions[k] !== 0);
+      const keysB = Object.keys(b.dimensions).filter(k => b.dimensions[k] !== 0);
+      let match = keysA.length === keysB.length;
+      if (match) {
+        for (const k of keysA) {
+          if (a.dimensions[k] !== b.dimensions[k]) {
+            match = false;
+            break;
+          }
+        }
+      }
+      if (!match) {
+        const dimAStr = formatDimensions(a.dimensions);
+        const dimBStr = formatDimensions(b.dimensions);
+        const valAStr = formatQuantityString(a);
+        const valBStr = formatQuantityString(b);
+        throw createError(
+          `Dimension mismatch: cannot add ${dimAStr} (${valAStr}) and ${dimBStr} (${valBStr})`,
+          span ?? { start: 0, end: 0, line: 1, col: 1 },
+          {
+            expected: `matching dimensions (both ${dimAStr})`,
+            suggestion: `Check units in addition`,
+          }
+        );
+      }
+      const mag = addValues(a.magnitude, b.magnitude, span);
+      return { type: 'quantity', magnitude: mag, unit: a.unit, dimensions: a.dimensions };
+    }
+    const q = a.type === 'quantity' ? a : (b as QuantityValue);
+    const nonZeroDims = Object.keys(q.dimensions).filter(k => q.dimensions[k] !== 0);
+    if (nonZeroDims.length > 0) {
+      const dimStr = formatDimensions(q.dimensions);
+      const valStr = formatQuantityString(q);
+      throw createError(
+        `Dimension mismatch: cannot add dimensioned quantity ${dimStr} (${valStr}) and dimensionless scalar`,
+        span ?? { start: 0, end: 0, line: 1, col: 1 }
+      );
+    }
   }
   if (a.type === 'matrix' && b.type === 'matrix') {
     return matrixAdd(a, b, span);
@@ -130,6 +205,47 @@ export function subValues(a: Value, b: Value, span?: Span): Value {
   if (a.type === 'none' || b.type === 'none') {
     throw createError(`Cannot perform arithmetic on 'none'`, span ?? { start: 0, end: 0, line: 1, col: 1 });
   }
+  if (a.type === 'quantity' || b.type === 'quantity') {
+    if (a.type === 'quantity' && b.type === 'quantity') {
+      const keysA = Object.keys(a.dimensions).filter(k => a.dimensions[k] !== 0);
+      const keysB = Object.keys(b.dimensions).filter(k => b.dimensions[k] !== 0);
+      let match = keysA.length === keysB.length;
+      if (match) {
+        for (const k of keysA) {
+          if (a.dimensions[k] !== b.dimensions[k]) {
+            match = false;
+            break;
+          }
+        }
+      }
+      if (!match) {
+        const dimAStr = formatDimensions(a.dimensions);
+        const dimBStr = formatDimensions(b.dimensions);
+        const valAStr = formatQuantityString(a);
+        const valBStr = formatQuantityString(b);
+        throw createError(
+          `Dimension mismatch: cannot subtract ${dimBStr} (${valBStr}) from ${dimAStr} (${valAStr})`,
+          span ?? { start: 0, end: 0, line: 1, col: 1 },
+          {
+            expected: `matching dimensions (both ${dimAStr})`,
+            suggestion: `Check units in subtraction`,
+          }
+        );
+      }
+      const mag = subValues(a.magnitude, b.magnitude, span);
+      return { type: 'quantity', magnitude: mag, unit: a.unit, dimensions: a.dimensions };
+    }
+    const q = a.type === 'quantity' ? a : (b as QuantityValue);
+    const nonZeroDims = Object.keys(q.dimensions).filter(k => q.dimensions[k] !== 0);
+    if (nonZeroDims.length > 0) {
+      const dimStr = formatDimensions(q.dimensions);
+      const valStr = formatQuantityString(q);
+      throw createError(
+        `Dimension mismatch: cannot subtract dimensioned quantity ${dimStr} (${valStr}) and dimensionless scalar`,
+        span ?? { start: 0, end: 0, line: 1, col: 1 }
+      );
+    }
+  }
   if (a.type === 'matrix' && b.type === 'matrix') {
     return matrixSub(a, b, span);
   }
@@ -168,6 +284,26 @@ export function mulValues(a: Value, b: Value, span?: Span): Value {
   if (a.type === 'none' || b.type === 'none') {
     throw createError(`Cannot perform arithmetic on 'none'`, span ?? { start: 0, end: 0, line: 1, col: 1 });
   }
+  if (a.type === 'quantity' || b.type === 'quantity') {
+    if (a.type === 'quantity' && b.type === 'quantity') {
+      const mag = mulValues(a.magnitude, b.magnitude, span);
+      const dims: Record<string, number> = { ...a.dimensions };
+      for (const [k, v] of Object.entries(b.dimensions)) {
+        dims[k] = (dims[k] || 0) + v;
+        if (dims[k] === 0) delete dims[k];
+      }
+      if (Object.keys(dims).length === 0) return mag;
+      return { type: 'quantity', magnitude: mag, unit: computeMulUnit(a.unit, b.unit), dimensions: dims };
+    }
+    if (a.type === 'quantity') {
+      const mag = mulValues(a.magnitude, b, span);
+      return { type: 'quantity', magnitude: mag, unit: a.unit, dimensions: a.dimensions };
+    }
+    if (b.type === 'quantity') {
+      const mag = mulValues(a, b.magnitude, span);
+      return { type: 'quantity', magnitude: mag, unit: b.unit, dimensions: b.dimensions };
+    }
+  }
   if (a.type === 'matrix' && b.type === 'matrix') {
     return matrixMul(a, b, span);
   }
@@ -201,6 +337,30 @@ export function divValues(a: Value, b: Value, span?: Span): Value {
   if (b.type === 'unknown') return b;
   if (a.type === 'none' || b.type === 'none') {
     throw createError(`Cannot perform arithmetic on 'none'`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+  }
+  if (a.type === 'quantity' || b.type === 'quantity') {
+    if (a.type === 'quantity' && b.type === 'quantity') {
+      const mag = divValues(a.magnitude, b.magnitude, span);
+      const dims: Record<string, number> = { ...a.dimensions };
+      for (const [k, v] of Object.entries(b.dimensions)) {
+        dims[k] = (dims[k] || 0) - v;
+        if (dims[k] === 0) delete dims[k];
+      }
+      if (Object.keys(dims).length === 0) return mag;
+      return { type: 'quantity', magnitude: mag, unit: computeDivUnit(a.unit, b.unit), dimensions: dims };
+    }
+    if (a.type === 'quantity') {
+      const mag = divValues(a.magnitude, b, span);
+      return { type: 'quantity', magnitude: mag, unit: a.unit, dimensions: a.dimensions };
+    }
+    if (b.type === 'quantity') {
+      const mag = divValues(a, b.magnitude, span);
+      const dims: Record<string, number> = {};
+      for (const [k, v] of Object.entries(b.dimensions)) {
+        if (v !== 0) dims[k] = -v;
+      }
+      return { type: 'quantity', magnitude: mag, unit: `1 / ${b.unit}`, dimensions: dims };
+    }
   }
   if (a.type === 'rational' && b.type === 'rational') {
     const fA = new BigFraction(a.n, a.d, span);
@@ -263,6 +423,21 @@ export function powValues(a: Value, b: Value, span?: Span): Value {
   if (b.type === 'unknown') return b;
   if (a.type === 'none' || b.type === 'none') {
     throw createError(`Cannot perform arithmetic on 'none'`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+  }
+  if (a.type === 'quantity' || b.type === 'quantity') {
+    if (b.type === 'quantity') {
+      throw createError(`Exponent must be dimensionless scalar`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+    }
+    if (a.type === 'quantity') {
+      const expNum = valueToNumber(b, span);
+      const mag = powValues(a.magnitude, b, span);
+      const dims: Record<string, number> = {};
+      for (const [k, v] of Object.entries(a.dimensions)) {
+        const d = v * expNum;
+        if (d !== 0) dims[k] = d;
+      }
+      return { type: 'quantity', magnitude: mag, unit: `${a.unit}^${expNum}`, dimensions: dims };
+    }
   }
   if (a.type === 'rational' && b.type === 'rational') {
     const fA = new BigFraction(a.n, a.d, span);
@@ -558,6 +733,24 @@ export function applyBuiltin(name: string, args: Value[], span?: Span): Value {
     case 'exp':
     case 'sqrt': {
       const a = args[0];
+      if (name !== 'sqrt' && a && a.type === 'quantity') {
+        const hasDims = Object.values(a.dimensions).some(d => d !== 0);
+        if (hasDims) {
+          const dimStr = formatDimensions(a.dimensions);
+          const valStr = formatQuantityString(a);
+          throw createError(
+            `Transcendental function '${name}' requires dimensionless argument, but received argument with dimension ${dimStr} (${valStr})`,
+            span ?? { start: 0, end: 0, line: 1, col: 1 },
+            {
+              expected: 'a dimensionless scalar argument',
+              suggestion: `Divide by unit to make argument dimensionless`,
+            }
+          );
+        }
+      }
+      if (name === 'sqrt' && a && a.type === 'quantity') {
+        return powValues(a, { type: 'rational', n: 1n, d: 2n }, span);
+      }
       if (a && (a.type === 'list' || a.type === 'tuple')) {
         const k = inferKindOfValue(a);
         throw createError(`Cannot apply ${name} to ${formatKind(k)}: ${name} has domain Scalar`, span ?? { start: 0, end: 0, line: 1, col: 1 });
