@@ -444,5 +444,28 @@ density_at_1sd
 test_result
 null_hypothesis_value
 observed_z
+`,
+
+  'thrown_ball.ax': `# Getting started: a thrown ball
+# Simulates a ball launched at an angle under standard gravity
+import "physics.ax"
+
+g := 9.8
+m := 1.0
+ball0 := Body(mass: m, position: (0.0, 0.0), velocity: (10.0, 15.0))
+
+# 2D gravity force vector: (0, -m * g)
+weight(b) := gravity_force(b, g)
+
+# Simulate projectile motion over 3 seconds using Verlet integration
+traj := simulate(b -> verlet_step(b, weight, 0.05), ball0, t in 0..3, dt: 0.05)
+
+# Trajectory height over time
+y_pos := map(b -> b.position[1], traj)
+graph(y_pos)
+
+# State of the ball at t = 2.0s
+ball_at_2 := traj[2.0]
+KE := kinetic_energy(ball_at_2)
 `
 };

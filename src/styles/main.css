@@ -848,8 +848,8 @@ html, body {
 .doc-gutter-content {
   flex: 1;
   display: flex;
-  align-items: center;
-  overflow: hidden;
+  align-items: flex-start;
+  min-width: 0;
 }
 
 .doc-gutter-row:hover,
@@ -966,19 +966,27 @@ html, body {
 
 .doc-gutter-error {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-xs);
   font-size: var(--font-size-xs);
   color: var(--color-semantic-error);
   background-color: var(--color-semantic-error-bg);
-  padding: 0 var(--space-xs);
+  padding: 4px var(--space-xs);
   border-radius: var(--border-radius-xs);
   border: var(--border-width-default) solid var(--color-semantic-error-border);
-  height: var(--control-height-sm);
-  line-height: var(--control-height-sm);
+  min-height: var(--control-height-sm);
+  line-height: var(--line-height-ui);
+  width: 100%;
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-word;
+  white-space: normal;
+  box-sizing: border-box;
+}
+
+.doc-gutter-error svg,
+.doc-gutter-error .doc-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
 }
 
 .doc-error-tag {

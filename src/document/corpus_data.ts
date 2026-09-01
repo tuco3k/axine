@@ -9,6 +9,12 @@ export interface CorpusDocument {
 
 export const CORPUS_DOCUMENTS: CorpusDocument[] = [
   {
+    id: 'thrown_ball',
+    title: 'Getting started: a thrown ball',
+    category: 'Physics',
+    content: BUNDLED_DOCUMENTS['thrown_ball.ax']
+  },
+  {
     id: 'collatz',
     title: '1. Collatz Sequence Explorer',
     category: 'Arithmetic',

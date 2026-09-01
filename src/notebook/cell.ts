@@ -309,8 +309,11 @@ export class CellView {
         return `record ${val.name} { ${val.fieldNames.join(', ')} }`;
       case 'quantity':
         return `${this.formatValue(val.magnitude)} ${val.unit}`;
-      case 'module':
-        return `module ${val.name}`;
+      case 'module': {
+        const keys = Object.keys(val.exports);
+        if (keys.length === 0) return `module ${val.name}`;
+        return `module ${val.name} { ${keys.join(', ')} }`;
+      }
       default:
         return String((val as any).value ?? (val as any).type);
     }

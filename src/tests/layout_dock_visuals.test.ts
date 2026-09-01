@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { DocumentEditor } from '../document/editor';
+import { CORPUS_DOCUMENTS } from '../document/corpus_data';
 
 // Robust recursive/stack-based DOM Mock for Node Vitest runner
 class MockClassList {
@@ -517,14 +518,15 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
     // Mount editor with no initialText (simulating page launch)
     editor = new DocumentEditor(container as any);
 
+    const expectedLineCount = CORPUS_DOCUMENTS[0].content.split('\n').length;
     const lineNumElements = container.querySelectorAll('.doc-line-num');
-    expect(lineNumElements.length).toBe(7);
+    expect(lineNumElements.length).toBe(expectedLineCount);
 
     const statsBadge = container.querySelector('#doc-stats-badge');
-    expect(statsBadge?.textContent).toContain('7 lines');
+    expect(statsBadge?.textContent).toContain(`${expectedLineCount} lines`);
 
     const textarea = container.querySelector('#doc-textarea') as any;
-    expect(textarea?.value.split('\n').length).toBe(7);
+    expect(textarea?.value.split('\n').length).toBe(expectedLineCount);
   });
 
   it('asserts dock menu dropdown toggles and selects dock edges', () => {

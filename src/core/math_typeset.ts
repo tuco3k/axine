@@ -590,12 +590,12 @@ function findTopLevelFrac(str: string): number {
 }
 
 function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
-  const tokenRegex = /(-?\b\d+\s*\/\s*\d+\b)|(sqrt\((?:[^()]+|\([^()]*\))*\))|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(_(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b(?:sin|cos|tan|ln|exp|det|sqrt|pi|inf)\b)|(\b[a-zA-Z][a-zA-Z0-9]*\b)|([()[\],'{}:])/g;
+  const tokenRegex = /(-?\b\d+\s*\/\s*\d+\b)|(\b[a-zA-Z]{2,}(?:_[a-zA-Z0-9]+)+\b)|(sqrt\((?:[^()]+|\([^()]*\))*\))|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(_(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b(?:sin|cos|tan|ln|exp|det|sqrt|pi|inf)\b)|(\b[a-zA-Z][a-zA-Z0-9]*\b)|([()[\],'{}:])/g;
 
   let out = '';
   let match: RegExpExecArray | null;
   while ((match = tokenRegex.exec(str)) !== null) {
-    const [, fracTok, sqrtTok, supTok, subTok, deltaTok, entityTok, relTok, binTok, numTok, fnTok, identTok, puncTok] = match;
+    const [, fracTok, multiIdentTok, sqrtTok, supTok, subTok, deltaTok, entityTok, relTok, binTok, numTok, fnTok, identTok, puncTok] = match;
 
     if (fracTok) {
       const [numRaw, denRaw] = fracTok.split('/').map(s => s.trim());
@@ -607,6 +607,13 @@ function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
         }
       } else {
         out += escapeHtml(fracTok);
+      }
+    } else if (multiIdentTok) {
+      if (multiIdentTok.startsWith('Delta_') || multiIdentTok.startsWith('Delta')) {
+        const sub = multiIdentTok.replace(/^Delta_?/, '');
+        out += `<span class="tm-var">&Delta;${escapeHtml(sub)}</span>`;
+      } else {
+        out += `<span class="tm-var">${escapeHtml(multiIdentTok)}</span>`;
       }
     } else if (sqrtTok) {
       const inside = sqrtTok.replace(/^sqrt\(/, '').replace(/\)$/, '');
@@ -620,7 +627,8 @@ function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
       if ((sub.startsWith('(') && sub.endsWith(')')) || (sub.startsWith('{') && sub.endsWith('}'))) sub = sub.slice(1, -1);
       out += `<sub class="tm-sub">${typesetStringExpression(sub, options)}</sub>`;
     } else if (deltaTok) {
-      out += `<span class="tm-var">${deltaTok}</span>`;
+      const sub = deltaTok.replace(/^&?Delta_?/, '');
+      out += `<span class="tm-var">&Delta;${escapeHtml(sub)}</span>`;
     } else if (entityTok) {
       out += `<span class="tm-const">${entityTok}</span>`;
     } else if (relTok) {

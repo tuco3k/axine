@@ -29,6 +29,7 @@ import {
   UnaryOpNode,
   PostfixOpNode,
   ImportNode,
+  ModuleValue,
   TrajectoryValue,
   TrajectorySample,
 } from './types';
@@ -3340,10 +3341,18 @@ export class Evaluator {
 
     const modName = (modEnv as any).__moduleName__ || canonicalPath.replace(/^.*[\\/]/, '').replace(/\.(ax|axine|math)$/, '');
 
+    const modValue: ModuleValue = {
+      type: 'module',
+      name: modName,
+      exports,
+    };
+
     if (node.importedSymbols && node.importedSymbols.length > 0) {
+      const selectiveExports: Record<string, Value> = {};
       for (const sym of node.importedSymbols) {
         if (sym in exports) {
           currentEnv[sym] = exports[sym];
+          selectiveExports[sym] = exports[sym];
         } else {
           throw createError(`Symbol '${sym}' is not exported by module '${importPath}'`, node.span, {
             expected: `one of the exported symbols: ${Object.keys(exports).join(', ') || '(none)'}`,
@@ -3352,24 +3361,21 @@ export class Evaluator {
           });
         }
       }
+      return {
+        type: 'module',
+        name: modName,
+        exports: selectiveExports,
+      };
     } else if (node.asName) {
-      currentEnv[node.asName] = {
-        type: 'module',
-        name: modName,
-        exports,
-      };
+      currentEnv[node.asName] = modValue;
     } else {
-      currentEnv[modName] = {
-        type: 'module',
-        name: modName,
-        exports,
-      };
+      currentEnv[modName] = modValue;
       for (const [k, v] of Object.entries(exports)) {
         currentEnv[k] = v;
       }
     }
 
-    return { type: 'none' };
+    return modValue;
   }
 
   private evalDiff(node: DiffNode, currentEnv: Environment): Value {
