@@ -36,10 +36,13 @@ export class Canvas2DPlotter {
   }
 
   public render(): void {
-    const width = this.canvas.clientWidth || 640;
-    const height = this.canvas.clientHeight || 360;
-    this.canvas.width = width * this.dpr;
-    this.canvas.height = height * this.dpr;
+    const rect = this.canvas.getBoundingClientRect();
+    const width = Math.floor(rect.width) || this.canvas.clientWidth || 600;
+    const height = Math.floor(rect.height) || this.canvas.clientHeight || 280;
+    this.dpr = window.devicePixelRatio || 1;
+
+    this.canvas.width = Math.round(width * this.dpr);
+    this.canvas.height = Math.round(height * this.dpr);
 
     this.ctx.save();
     this.ctx.scale(this.dpr, this.dpr);
@@ -72,13 +75,16 @@ export class Canvas2DPlotter {
     for (let sIdx = 0; sIdx < this.spec.series.length; sIdx++) {
       const s = this.spec.series[sIdx];
       const color = SERIES_COLORS[sIdx % SERIES_COLORS.length];
-      const points = this.adaptiveSampleCurve(s.expr, s.variable, xMin, xMax);
+      const points = s.explicitPoints ?? this.adaptiveSampleCurve(s.expr, s.variable, xMin, xMax);
       seriesSamples.push({ points, label: s.label, color });
 
       for (const p of points) {
         if (p.valid && isFinite(p.y)) {
-          if (p.y < yMin) yMin = p.y;
-          if (p.y > yMax) yMax = p.y;
+          // Clamp extreme asymptotic outliers (e.g. tan(x)) when computing default y bounds
+          if (p.y > -50 && p.y < 50) {
+            if (p.y < yMin) yMin = p.y;
+            if (p.y > yMax) yMax = p.y;
+          }
         }
       }
     }
@@ -88,12 +94,30 @@ export class Canvas2DPlotter {
       yMin = -10;
       yMax = 10;
     } else {
-      const pad = (yMax - yMin) * 0.1 || 1;
-      yMin = Math.max(-1000, yMin - pad);
-      yMax = Math.min(1000, yMax + pad);
+      if (yMin < -8 && yMax > 8) {
+        // Asymptotic or large trigonometric swing: clamp window to [-6, 6] for clear S-curves
+        yMin = -6;
+        yMax = 6;
+      } else {
+        const pad = (yMax - yMin) * 0.08 || 1;
+        yMin = yMin - pad;
+        yMax = yMax + pad;
+      }
     }
 
-    const padding = { top: 48, right: 30, bottom: 40, left: 60 };
+    // Measure dynamic left padding
+    const numTicksY = 5;
+    this.ctx.font = '11px ui-monospace, monospace';
+    let maxLabelW = 0;
+    for (let i = 0; i <= numTicksY; i++) {
+      const yVal = yMin + (i / numTicksY) * (yMax - yMin);
+      const str = this.formatTickValue(yVal);
+      const w = this.ctx.measureText(str).width;
+      if (w > maxLabelW) maxLabelW = w;
+    }
+    const leftPad = Math.max(50, Math.ceil(maxLabelW + 16));
+
+    const padding = { top: 40, right: 25, bottom: 35, left: leftPad };
     const plotW = width - padding.left - padding.right;
     const plotH = height - padding.top - padding.bottom;
 
@@ -127,7 +151,7 @@ export class Canvas2DPlotter {
         const sy = toScreenY(pt.y);
 
         // Discontinuity check: large jump between consecutive samples (e.g. tan(x) asymptote)
-        if (inPath && Math.abs(pt.y - prevY) > (yMax - yMin) * 0.8) {
+        if (inPath && Math.abs(pt.y - prevY) > (yMax - yMin) * 0.6) {
           inPath = false;
         }
 
@@ -143,8 +167,19 @@ export class Canvas2DPlotter {
     }
     this.ctx.restore();
 
-    // Draw Header info (Domain default note, shared axis note, legend)
+    // Draw Header info
     this.drawHeaderAndLegend(seriesSamples);
+  }
+
+  private formatTickValue(val: number): string {
+    if (Math.abs(val) < 1e-9) return '0';
+    if (Math.abs(val) >= 1000) {
+      return Math.round(val).toString();
+    }
+    if (Math.abs(val) >= 10) {
+      return Number(val.toFixed(1)).toString();
+    }
+    return Number(val.toFixed(2)).toString();
   }
 
   private renderParametric(width: number, height: number): void {
@@ -168,12 +203,23 @@ export class Canvas2DPlotter {
     if (!isFinite(xMin) || !isFinite(xMax) || xMin === xMax) { xMin = -5; xMax = 5; }
     if (!isFinite(yMin) || !isFinite(yMax) || yMin === yMax) { yMin = -5; yMax = 5; }
 
-    const xPad = (xMax - xMin) * 0.1 || 1;
-    const yPad = (yMax - yMin) * 0.1 || 1;
+    const xPad = (xMax - xMin) * 0.08 || 1;
+    const yPad = (yMax - yMin) * 0.08 || 1;
     xMin -= xPad; xMax += xPad;
     yMin -= yPad; yMax += yPad;
 
-    const padding = { top: 48, right: 30, bottom: 40, left: 60 };
+    const numTicksY = 5;
+    this.ctx.font = '11px ui-monospace, monospace';
+    let maxLabelW = 0;
+    for (let i = 0; i <= numTicksY; i++) {
+      const yVal = yMin + (i / numTicksY) * (yMax - yMin);
+      const str = this.formatTickValue(yVal);
+      const w = this.ctx.measureText(str).width;
+      if (w > maxLabelW) maxLabelW = w;
+    }
+    const leftPad = Math.max(50, Math.ceil(maxLabelW + 16));
+
+    const padding = { top: 40, right: 25, bottom: 35, left: leftPad };
     const plotW = width - padding.left - padding.right;
     const plotH = height - padding.top - padding.bottom;
 
@@ -213,7 +259,7 @@ export class Canvas2DPlotter {
     this.ctx.textAlign = 'left';
     this.ctx.textBaseline = 'middle';
     this.ctx.fillStyle = '#38bdf8';
-    this.ctx.fillText(`Parametric Curve: (${this.spec.parametric.param}) in [${min.toFixed(2)}, ${max.toFixed(2)}]`, 15, 20);
+    this.ctx.fillText(`Parametric Curve: (${this.spec.parametric.param}) in [${min.toFixed(2)}, ${max.toFixed(2)}]`, 15, 16);
   }
 
   private renderOrbit(width: number, height: number): void {
@@ -236,12 +282,26 @@ export class Canvas2DPlotter {
       yMin = 0;
       yMax = 10;
     } else {
-      const pad = (yMax - yMin) * 0.1 || 1;
-      yMin = yMin - pad;
-      yMax = yMax + pad;
+      if (yMin >= 0) {
+        yMin = 0;
+      } else {
+        const pad = (yMax - yMin) * 0.05 || 1;
+        yMin = yMin - pad;
+      }
     }
 
-    const padding = { top: 48, right: 30, bottom: 40, left: 60 };
+    const numTicksY = 4;
+    this.ctx.font = '11px ui-monospace, monospace';
+    let maxLabelW = 0;
+    for (let i = 0; i <= numTicksY; i++) {
+      const yVal = yMin + (i / numTicksY) * (yMax - yMin);
+      const str = this.formatTickValue(yVal);
+      const w = this.ctx.measureText(str).width;
+      if (w > maxLabelW) maxLabelW = w;
+    }
+    const leftPad = Math.max(50, Math.ceil(maxLabelW + 16));
+
+    const padding = { top: 40, right: 25, bottom: 35, left: leftPad };
     const plotW = width - padding.left - padding.right;
     const plotH = height - padding.top - padding.bottom;
 
@@ -275,7 +335,7 @@ export class Canvas2DPlotter {
       const sx = toScreenX(i);
       const sy = toScreenY(orbit[i]);
       this.ctx.beginPath();
-      this.ctx.arc(sx, sy, 3, 0, Math.PI * 2);
+      this.ctx.arc(sx, sy, 2.5, 0, Math.PI * 2);
       this.ctx.fill();
     }
 
@@ -285,7 +345,7 @@ export class Canvas2DPlotter {
     this.ctx.textAlign = 'left';
     this.ctx.textBaseline = 'middle';
     this.ctx.fillStyle = '#38bdf8';
-    this.ctx.fillText(`Orbit Sequence: ${orbit.length} steps`, 15, 20);
+    this.ctx.fillText(`Orbit Sequence: ${orbit.length} steps`, 15, 16);
   }
 
   private adaptiveSampleCurve(expr: ASTNode, variable: string, xMin: number, xMax: number): Point2D[] {
@@ -406,7 +466,7 @@ export class Canvas2DPlotter {
       this.ctx.lineTo(sx, padding.top + plotH);
       this.ctx.stroke();
 
-      this.ctx.fillText(xVal.toFixed(1), sx, padding.top + plotH + 6);
+      this.ctx.fillText(this.formatTickValue(xVal), sx, padding.top + plotH + 6);
     }
 
     this.ctx.textAlign = 'right';
@@ -421,7 +481,7 @@ export class Canvas2DPlotter {
       this.ctx.lineTo(padding.left + plotW, sy);
       this.ctx.stroke();
 
-      this.ctx.fillText(yVal.toFixed(1), padding.left - 8, sy);
+      this.ctx.fillText(this.formatTickValue(yVal), padding.left - 8, sy);
     }
 
     // Zero axes if within range

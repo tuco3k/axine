@@ -3816,6 +3816,46 @@ export class Evaluator {
       }
     }
 
+    // Trajectory plots: graph(traj1, traj2, ...)
+    const evaluatedArgs = exprArgs.map(expr => {
+      try {
+        return this.evalNode(expr, currentEnv);
+      } catch {
+        return null;
+      }
+    });
+
+    if (evaluatedArgs.length > 0 && evaluatedArgs.every(v => v && v.type === 'trajectory')) {
+      const trajs = evaluatedArgs as TrajectoryValue[];
+      let tMin = Infinity;
+      let tMax = -Infinity;
+      const seriesList: CurveSeries[] = [];
+
+      for (let i = 0; i < trajs.length; i++) {
+        const traj = trajs[i];
+        if (traj.tStart < tMin) tMin = traj.tStart;
+        if (traj.tEnd > tMax) tMax = traj.tEnd;
+        const pts = traj.samples.map(s => {
+          const y = valueToNumber(s.state);
+          return { x: s.t, y, valid: isFinite(y) };
+        });
+        seriesList.push({
+          expr: exprArgs[i],
+          variable: 't',
+          label: formatAST(exprArgs[i]),
+          explicitPoints: pts,
+        });
+      }
+
+      const spec: GraphSpec = {
+        dimensionality: 1,
+        kind: seriesList.length > 1 ? 'multi_curve' : 'curve',
+        series: seriesList,
+        domain: { var: 't', min: isFinite(tMin) ? tMin : 0, max: isFinite(tMax) ? tMax : 10, isDefault: false },
+      };
+      return { type: 'graph', spec };
+    }
+
     // Parametric plot: graph((cos t, sin t), t in 0..tau) or graph((x(u,v), y(u,v), z(u,v)), u in 0..tau, v in 0..tau)
     if (exprArgs.length === 1 && exprArgs[0].type === 'Tuple') {
       const tuple = exprArgs[0];

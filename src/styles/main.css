@@ -572,71 +572,139 @@ html, body {
   font-weight: var(--font-weight-semibold);
 }
 
-.doc-dock-subbar {
+/* Dock Menu in Work Panel Header */
+.doc-dock-menu-wrapper {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: var(--space-xs);
-  padding: 3px var(--space-sm);
-  background-color: var(--color-bg-base);
-  border-bottom: var(--border-width-default) solid var(--color-border-subtle);
-  flex-shrink: 0;
 }
 
-.doc-dock-label {
-  font-family: var(--font-family-ui);
-  font-size: var(--font-size-2xs);
-  color: var(--color-text-tertiary);
-  font-weight: var(--font-weight-medium);
-  user-select: none;
-}
-
-.doc-dock-controls {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.doc-dock-btn {
+.doc-dock-menu-btn {
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--border-radius-xs);
-  color: var(--color-text-tertiary);
+  color: var(--color-text-secondary);
   font-family: var(--font-family-ui);
-  font-size: var(--font-size-2xs);
-  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-xs);
   padding: 2px 6px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   transition: all var(--duration-fast);
 }
 
-.doc-dock-btn:hover {
+.doc-dock-menu-btn:hover {
   color: var(--color-text-primary);
   background-color: var(--color-bg-surface-hover);
+  border-color: var(--color-border-subtle);
 }
 
-.doc-dock-btn.active {
-  color: var(--color-accent);
-  background-color: var(--color-accent-subtle);
-  border-color: var(--color-accent-border);
-  font-weight: var(--font-weight-semibold);
+.doc-dock-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  background-color: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-sm);
+  padding: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
 }
 
-.doc-dock-collapse-btn {
+.doc-dock-dropdown.hidden {
+  display: none !important;
+}
+
+.doc-dock-dropdown .doc-dock-btn {
   background: transparent;
-  border: 1px solid var(--color-border-subtle);
+  border: none;
   border-radius: var(--border-radius-xs);
   color: var(--color-text-secondary);
   font-family: var(--font-family-ui);
-  font-size: var(--font-size-2xs);
-  padding: 2px 6px;
+  font-size: var(--font-size-xs);
+  padding: 5px 8px;
+  text-align: left;
   cursor: pointer;
-  margin-left: var(--space-2xs);
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all var(--duration-fast);
 }
 
-.doc-dock-collapse-btn:hover {
-  color: var(--color-text-primary);
-  border-color: var(--color-border-default);
+.doc-dock-dropdown .doc-dock-btn:hover {
   background-color: var(--color-bg-surface-hover);
+  color: var(--color-text-primary);
+}
+
+.doc-dock-dropdown .doc-dock-btn.active {
+  color: var(--color-accent);
+  background-color: var(--color-accent-subtle);
+  font-weight: var(--font-weight-semibold);
+  position: relative;
+}
+
+.doc-dock-dropdown .doc-dock-btn.active::after {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 8px;
+  border: solid var(--color-accent);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  margin-right: 4px;
+}
+
+.doc-dock-menu-divider {
+  height: 1px;
+  background-color: var(--color-border-subtle);
+  margin: 4px 0;
+}
+
+.doc-dock-dropdown .doc-dock-collapse-btn {
+  background: transparent;
+  border: none;
+  border-radius: var(--border-radius-xs);
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-ui);
+  font-size: var(--font-size-xs);
+  padding: 5px 8px;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  transition: all var(--duration-fast);
+}
+
+.doc-dock-dropdown .doc-dock-collapse-btn:hover {
+  background-color: var(--color-bg-surface-hover);
+  color: var(--color-danger, #ef4444);
+}
+
+/* Inline Gutter Plot Containers */
+.doc-inline-plot-container {
+  width: 100%;
+  height: 280px;
+  position: relative;
+  background: #0a0f1d;
+  border-radius: var(--border-radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--color-border-subtle);
+  margin-top: var(--space-xs);
+}
+
+.doc-inline-plot-container:has(.doc-inline-canvas.expanded) {
+  height: 480px;
+}
+
+.doc-inline-canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
 }
 
 .doc-tab-content {

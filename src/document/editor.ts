@@ -299,15 +299,19 @@ export class DocumentEditor {
                 <button class="doc-tab-btn" data-tab="trace">Trace & Fuel</button>
                 <button class="doc-tab-btn" data-tab="frames">Frames</button>
               </div>
-            </div>
-            <div class="doc-dock-subbar">
-              <span class="doc-dock-label">Dock:</span>
-              <div class="doc-dock-controls">
-                <button class="doc-dock-btn" data-edge="left" title="Dock Left">Left</button>
-                <button class="doc-dock-btn" data-edge="bottom" title="Dock Bottom">Bottom</button>
-                <button class="doc-dock-btn" data-edge="top" title="Dock Top">Top</button>
-                <button class="doc-dock-btn active" data-edge="right" title="Dock Right">Right</button>
-                <button class="doc-dock-collapse-btn" title="Toggle panel collapse (Cmd+B)">Hide</button>
+              <div class="doc-dock-menu-wrapper">
+                <button id="doc-dock-menu-btn" class="doc-dock-menu-btn" title="Dock & Layout Options (Cmd+Shift+D)">
+                  <span class="doc-dock-menu-icon">&#9647;</span>
+                  <span class="doc-dock-menu-caret">&#9662;</span>
+                </button>
+                <div id="doc-dock-dropdown" class="doc-dock-dropdown hidden">
+                  <button class="doc-dock-btn" data-edge="left" title="Dock Left">&#9703; Dock Left</button>
+                  <button class="doc-dock-btn" data-edge="bottom" title="Dock Bottom">&#11026; Dock Bottom</button>
+                  <button class="doc-dock-btn" data-edge="top" title="Dock Top">&#11027; Dock Top</button>
+                  <button class="doc-dock-btn active" data-edge="right" title="Dock Right">&#9704; Dock Right</button>
+                  <div class="doc-dock-menu-divider"></div>
+                  <button class="doc-dock-collapse-btn" title="Toggle panel collapse (Cmd+B)">Hide Panel</button>
+                </div>
               </div>
             </div>
 
@@ -414,20 +418,39 @@ export class DocumentEditor {
       });
     });
 
-    // Dock Buttons in panel header
+    // Dock Menu dropdown toggle
+    const dockMenuBtn = this.container.querySelector('#doc-dock-menu-btn');
+    const dockDropdown = this.container.querySelector('#doc-dock-dropdown');
+    if (dockMenuBtn && dockDropdown) {
+      dockMenuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dockDropdown.classList.toggle('hidden');
+      });
+      document.addEventListener('click', (e) => {
+        if (!dockDropdown.contains(e.target as Node) && e.target !== dockMenuBtn) {
+          dockDropdown.classList.add('hidden');
+        }
+      });
+    }
+
+    // Dock Buttons in panel header dropdown
     const dockBtns = this.container.querySelectorAll('.doc-dock-btn');
     dockBtns.forEach(btn => {
       btn.addEventListener('click', () => {
         const edge = (btn as HTMLElement).getAttribute('data-edge') as DockEdge;
-        if (edge) this.setDockEdge(edge);
+        if (edge) {
+          this.setDockEdge(edge);
+          dockDropdown?.classList.add('hidden');
+        }
       });
     });
 
-    // Collapse button in panel header
+    // Collapse button in panel header dropdown
     const collapseBtn = this.container.querySelector('.doc-dock-collapse-btn');
     if (collapseBtn) {
       collapseBtn.addEventListener('click', () => {
         this.togglePanelCollapse();
+        dockDropdown?.classList.add('hidden');
       });
     }
 

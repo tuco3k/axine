@@ -701,6 +701,7 @@ export interface CurveSeries {
   variable: string;
   label: string;
   color?: string;
+  explicitPoints?: { x: number; y: number; valid: boolean }[];
 }
 
 export interface GraphSpec {

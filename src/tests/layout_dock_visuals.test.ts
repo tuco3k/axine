@@ -526,4 +526,27 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
     const textarea = container.querySelector('#doc-textarea') as any;
     expect(textarea?.value.split('\n').length).toBe(7);
   });
+
+  it('asserts dock menu dropdown toggles and selects dock edges', () => {
+    editor = new DocumentEditor(container as any, 'graph(2x)');
+
+    const dockMenuBtn = container.querySelector('#doc-dock-menu-btn');
+    const dockDropdown = container.querySelector('#doc-dock-dropdown');
+    expect(dockMenuBtn).toBeTruthy();
+    expect(dockDropdown).toBeTruthy();
+    expect(dockDropdown?.classList.contains('hidden')).toBe(true);
+
+    // Click to open dropdown
+    dockMenuBtn?.click();
+    expect(dockDropdown?.classList.contains('hidden')).toBe(false);
+
+    // Select dock left
+    const leftBtn = dockDropdown?.querySelector('.doc-dock-btn[data-edge="left"]');
+    leftBtn?.click();
+
+    const workspace = container.querySelector('#doc-workspace');
+    expect(workspace?.getAttribute('data-dock')).toBe('left');
+    expect(dockDropdown?.classList.contains('hidden')).toBe(true);
+  });
 });
+
