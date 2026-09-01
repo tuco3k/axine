@@ -7,7 +7,7 @@ date: 2026-09-01
 
 # Statistics worked problem: Evaluating hypothesis test z-statistic and distribution densities
 
-import "statistics.axine"
+import "statistics.ax"
 
 # Standard normal distribution and shifted distribution
 std_norm := NormalDist(mean: 0, variance: 1)

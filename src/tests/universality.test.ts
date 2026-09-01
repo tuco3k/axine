@@ -7,7 +7,7 @@ function evalVal(source: string, env: Environment = createInitialEnvironment(), 
 }
 
 describe('Phase 4: Total Turing Completeness & Universality', () => {
-  describe('Turing Machine Simulation & Busy Beaver (turing.axine)', () => {
+  describe('Turing Machine Simulation & Busy Beaver (turing.ax)', () => {
     it('simulates 3-state 2-symbol Busy Beaver BB(3) in 21 steps producing 6 ones', () => {
       const env = createInitialEnvironment();
       const code = `
@@ -101,7 +101,7 @@ describe('Phase 4: Total Turing Completeness & Universality', () => {
     });
   });
 
-  describe('Pure Untyped Lambda Calculus & Combinators (lambda.axine)', () => {
+  describe('Pure Untyped Lambda Calculus & Combinators (lambda.ax)', () => {
     it('evaluates Church numeral multiplication: 3 * 4 = 12', () => {
       const env = createInitialEnvironment();
       const code = `

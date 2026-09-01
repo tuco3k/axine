@@ -2,8 +2,8 @@ import * as fs from 'fs';
 import { DocumentState } from '../src/document/document_state.js';
 
 async function run() {
-  const content = fs.readFileSync('documents/projectile.axine', 'utf-8');
-  console.log('=== Running projectile.axine through DocumentState ===\n');
+  const content = fs.readFileSync('documents/projectile.ax', 'utf-8');
+  console.log('=== Running projectile.ax through DocumentState ===\n');
 
   const docState = new DocumentState(content);
   // Give evaluation worker / cycle a moment

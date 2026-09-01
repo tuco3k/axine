@@ -1,5 +1,6 @@
 # Axine
 A programming language for mathematics.
+Files use the .ax extension.
 
 ## Attribution
 Designed and directed by Noah Slayton (tuco3k).

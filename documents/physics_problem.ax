@@ -7,7 +7,7 @@ date: 2026-09-01
 
 # Physics worked problem: Collision of two particles and energy accounting
 
-import "physics.axine"
+import "physics.ax"
 
 # Define two colliding particles
 p1 := Particle(mass: 2, position: (0, 0, 0), velocity: (10, 0, 0))

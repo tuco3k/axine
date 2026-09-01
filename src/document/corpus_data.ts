@@ -97,7 +97,7 @@ e^(i*pi) + 1`
   },
   {
     id: 'turing',
-    title: '9. Turing Universality & Cellular Automata (turing.axine)',
+    title: '9. Turing Universality & Cellular Automata (turing.ax)',
     category: 'Universality',
     content: `# Turing Universality & Cellular Automata
 # 1. 3-state 2-symbol Busy Beaver BB(3) in finite steps producing 6 ones
@@ -153,7 +153,7 @@ e^(i*pi) + 1`
   },
   {
     id: 'lambda',
-    title: '10. Untyped Lambda Calculus & Combinators (lambda.axine)',
+    title: '10. Untyped Lambda Calculus & Combinators (lambda.ax)',
     category: 'Universality',
     content: `# Pure Untyped Lambda Calculus
 # Church Numeral Arithmetic: 3 * 4 = 12

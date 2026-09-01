@@ -7,7 +7,7 @@ date: 2026-09-01
 
 # Linear algebra worked problem: Constructing an orthogonal basis using Gram-Schmidt
 
-import "linear.axine"
+import "linear.ax"
 
 # Initial non-orthogonal basis vectors in R^3
 v1 := (1, 1, 0)

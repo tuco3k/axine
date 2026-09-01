@@ -91,7 +91,7 @@ export class NotebookApp {
 
     const importInput = document.createElement('input');
     importInput.type = 'file';
-    importInput.accept = '.json';
+    importInput.accept = '.ax, .json';
     importInput.style.display = 'none';
     importInput.onchange = async () => {
       if (importInput.files && importInput.files[0]) {

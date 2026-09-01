@@ -2581,7 +2581,7 @@ export class Evaluator {
     if (/^https?:\/\//i.test(importPath)) {
       throw createError(`Network imports are not allowed: '${importPath}'`, node.span, {
         expected: 'a relative filesystem path',
-        suggestion: 'Import local .axine files using relative paths only',
+        suggestion: 'Import local .ax files using relative paths only',
         source: this.source,
       });
     }
@@ -2622,7 +2622,7 @@ export class Evaluator {
 
     if (code === null) {
       throw createError(`Cannot find module '${importPath}'`, node.span, {
-        expected: 'an existing .axine file',
+        expected: 'an existing .ax file',
         suggestion: `Ensure '${importPath}' exists in the current directory or documents folder`,
         source: this.source,
       });
@@ -2686,7 +2686,7 @@ export class Evaluator {
       }
     }
 
-    const modName = (modEnv as any).__moduleName__ || normalizedPath.replace(/^.*[\\/]/, '').replace(/\.(axine|math)$/, '');
+    const modName = (modEnv as any).__moduleName__ || normalizedPath.replace(/^.*[\\/]/, '').replace(/\.(ax|axine|math)$/, '');
 
     if (node.importedSymbols && node.importedSymbols.length > 0) {
       for (const sym of node.importedSymbols) {
