@@ -354,6 +354,13 @@ export class Parser {
         patTokens.push(this.advance());
       }
       this.expect('FAT_ARROW', '=>');
+      const lastPatSpan = patTokens.length > 0 ? patTokens[patTokens.length - 1].span : ruleToken.span;
+      patTokens.push({
+        type: 'EOF',
+        value: '',
+        span: lastPatSpan,
+        leadingWhitespace: false,
+      });
       const patternParser = new Parser(patTokens, { source: this.source });
       const patternAST = patternParser.parseExpression(PREC_NONE);
 
@@ -361,6 +368,13 @@ export class Parser {
       while (this.peek().type !== 'REQUIRES' && this.peek().type !== 'EOF') {
         replTokens.push(this.advance());
       }
+      const lastReplSpan = replTokens.length > 0 ? replTokens[replTokens.length - 1].span : ruleToken.span;
+      replTokens.push({
+        type: 'EOF',
+        value: '',
+        span: lastReplSpan,
+        leadingWhitespace: false,
+      });
       const replParser = new Parser(replTokens, { source: this.source });
       const replacementAST = replParser.parseExpression(PREC_NONE);
 
@@ -1321,7 +1335,8 @@ export class Parser {
       token.type === 'AXIOMS' ||
       token.type === 'MODULE' ||
       token.type === 'EXPORT' ||
-      token.type === 'IMPORT'
+      token.type === 'IMPORT' ||
+      token.type === 'IS'
     ) {
       const name = token.value;
 
@@ -1366,16 +1381,19 @@ export class Parser {
         return { type: 'DecoratedIdentifier', decoration: 'ddot', name: baseName, span: token.span };
       }
 
-      const isKnownFunc = this.knownFunctions.has(name) || /^[A-Z]/.test(name);
+      const isKnownFunc =
+        this.knownFunctions.has(name) ||
+        BUILTIN_FUNCTIONS.has(name) ||
+        /^[A-Z]/.test(name);
 
       // Check if followed immediately by '(' with standard call syntax
       if (this.peek(1).type === 'LPAREN') {
-        if (isKnownFunc) {
-          // It is a defined function / builtin call: f(...)
+        if (isKnownFunc || (name.length > 1 && !this.peek(1).leadingWhitespace)) {
+          // It is a defined function / builtin call / user function call: f(...) or myfunc(...)
           this.advance(); // consume func name
           return this.parseFunctionCallArgs(name, token.span);
         } else {
-          // Not a defined function: implicit multiplication f · (x+1)
+          // Single-letter undefined function: implicit multiplication f · (x+1)
           this.advance();
           return {
             type: 'Identifier',
@@ -2534,6 +2552,7 @@ export class Parser {
       case 'SET_NOTIN':
       case 'SET_SUBSET':
       case 'SET_SUBSETEQ':
+      case 'IS':
         return PREC_COMPARE;
       case 'PLUS':
       case 'MINUS':
@@ -2578,6 +2597,7 @@ export class Parser {
       case 'IN': return 'in';
       case 'AND': return 'and';
       case 'OR': return 'or';
+      case 'IS': return 'is';
       default:
         throw createError(`Invalid binary operator '${token.value}'`, token.span, {
           expected: '+, -, *, /, %, ^, and, or, or comparison operators',

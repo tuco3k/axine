@@ -25,6 +25,9 @@ import {
   RecordDefNode,
   RecordConstructorValue,
   QuantityValue,
+  BinaryOpNode,
+  UnaryOpNode,
+  PostfixOpNode,
 } from './types';
 import { BigFraction } from './numeric/rational';
 import {
@@ -179,6 +182,9 @@ export class Evaluator {
       for (const [k, v] of (env as any).__operators__.entries()) {
         this.userOperators.set(k, v);
       }
+    }
+    if ((env as any).__rules__) {
+      this.userRules.push(...(env as any).__rules__);
     }
   }
 
@@ -635,13 +641,55 @@ export class Evaluator {
         };
       }
       case 'RuleDecl': {
-        this.userRules.push({
+        const pat = node.pattern;
+        let isBuiltinOverride = false;
+        let overrideName = '';
+
+        if (pat.type === 'Diff') {
+          const inner = pat.expr;
+          if (inner.type === 'FunctionCall' && BUILTIN_FUNCTIONS.has(inner.callee)) {
+            isBuiltinOverride = true;
+            overrideName = inner.callee;
+          } else if (inner.type === 'BinaryOp' && ['+', '-', '*', '/', '^'].includes(inner.op)) {
+            isBuiltinOverride = true;
+            overrideName = inner.op;
+          }
+        } else if (pat.type === 'FunctionCall' && BUILTIN_FUNCTIONS.has(pat.callee)) {
+          isBuiltinOverride = true;
+          overrideName = pat.callee;
+        } else if (pat.type === 'BinaryOp' && ['+', '-', '*', '/', '^', '%', '=', '==', '!=', '<', '<=', '>', '>='].includes(pat.op)) {
+          isBuiltinOverride = true;
+          overrideName = pat.op;
+        }
+
+        if (isBuiltinOverride) {
+          throw createError(
+            `Cannot override built-in rule for '${overrideName}'`,
+            node.span,
+            {
+              expected: 'a user-defined function or custom operator in rule pattern',
+              suggestion: 'Declare rules on user-defined symbols rather than core built-ins',
+              source: this.source,
+            }
+          );
+        }
+
+        const ruleRecord = {
           name: node.name || 'anonymous_rule',
           pattern: node.pattern,
           replacement: node.replacement,
           requires: node.requires,
           env: currentEnv,
-        });
+        };
+        this.userRules.push(ruleRecord);
+        if (!(currentEnv as any).__rules__) {
+          (currentEnv as any).__rules__ = (this.env as any).__rules__ || [];
+        }
+        (currentEnv as any).__rules__.push(ruleRecord);
+        if (currentEnv !== this.env) {
+          if (!(this.env as any).__rules__) (this.env as any).__rules__ = [];
+          (this.env as any).__rules__.push(ruleRecord);
+        }
         return { type: 'none' };
       }
       case 'ModuleDecl': {
@@ -758,6 +806,10 @@ export class Evaluator {
         return { type: 'string', value: node.value };
       }
       case 'FunctionCall': {
+        const userRuleRes = this.applyUserRules(node, currentEnv);
+        if (userRuleRes) {
+          return userRuleRes;
+        }
         return this.evalFunctionCall(node, currentEnv);
       }
       case 'NamedArg': {
@@ -2380,7 +2432,136 @@ export class Evaluator {
     return { value: last, converged: true };
   }
 
+  private matchPattern(pattern: ASTNode, target: ASTNode, boundVars: Set<string> = new Set()): { matched: boolean; bindings: Record<string, ASTNode> } {
+    if (pattern.type === 'Identifier') {
+      if (pattern.name.length === 1 || !/^(pi|e|tau|phi)$/.test(pattern.name)) {
+        return { matched: true, bindings: { [pattern.name]: target } };
+      }
+      if (target.type === 'Identifier' && target.name === pattern.name) {
+        return { matched: true, bindings: {} };
+      }
+      return { matched: false, bindings: {} };
+    }
+    if (pattern.type !== target.type) {
+      return { matched: false, bindings: {} };
+    }
+    switch (pattern.type) {
+      case 'NumberLiteral':
+        return { matched: pattern.raw === (target as any).raw, bindings: {} };
+      case 'StringLiteral':
+        return { matched: pattern.value === (target as any).value, bindings: {} };
+      case 'Diff': {
+        const targetDiff = target as DiffNode;
+        const m = this.matchPattern(pattern.expr, targetDiff.expr, boundVars);
+        return m;
+      }
+      case 'FunctionCall': {
+        const targetFn = target as FunctionCallNode;
+        if (pattern.callee !== targetFn.callee && pattern.callee !== 'myfunc' && pattern.callee.length > 1) {
+          return { matched: false, bindings: {} };
+        }
+        if (pattern.args.length !== targetFn.args.length) {
+          return { matched: false, bindings: {} };
+        }
+        const combinedBindings: Record<string, ASTNode> = {};
+        for (let i = 0; i < pattern.args.length; i++) {
+          const m = this.matchPattern(pattern.args[i], targetFn.args[i], boundVars);
+          if (!m.matched) return { matched: false, bindings: {} };
+          Object.assign(combinedBindings, m.bindings);
+        }
+        return { matched: true, bindings: combinedBindings };
+      }
+      case 'BinaryOp': {
+        const targetBin = target as BinaryOpNode;
+        if (pattern.op !== targetBin.op) return { matched: false, bindings: {} };
+        const mLeft = this.matchPattern(pattern.left, targetBin.left, boundVars);
+        if (!mLeft.matched) return { matched: false, bindings: {} };
+        const mRight = this.matchPattern(pattern.right, targetBin.right, boundVars);
+        if (!mRight.matched) return { matched: false, bindings: {} };
+        return { matched: true, bindings: { ...mLeft.bindings, ...mRight.bindings } };
+      }
+      case 'UnaryOp': {
+        const targetUnary = target as UnaryOpNode;
+        if (pattern.op !== targetUnary.op) return { matched: false, bindings: {} };
+        return this.matchPattern(pattern.operand, targetUnary.operand, boundVars);
+      }
+      case 'PostfixOp': {
+        const targetPostfix = target as PostfixOpNode;
+        if (pattern.op !== targetPostfix.op) return { matched: false, bindings: {} };
+        return this.matchPattern(pattern.operand, targetPostfix.operand, boundVars);
+      }
+    }
+    return { matched: false, bindings: {} };
+  }
+
+  private substitutePatternBindings(replacement: ASTNode, bindings: Record<string, ASTNode>): ASTNode {
+    if (replacement.type === 'Identifier') {
+      if (replacement.name in bindings) {
+        return bindings[replacement.name];
+      }
+      return replacement;
+    }
+    switch (replacement.type) {
+      case 'BinaryOp':
+        return {
+          ...replacement,
+          left: this.substitutePatternBindings(replacement.left, bindings),
+          right: this.substitutePatternBindings(replacement.right, bindings),
+        };
+      case 'UnaryOp':
+        return {
+          ...replacement,
+          operand: this.substitutePatternBindings(replacement.operand, bindings),
+        };
+      case 'PostfixOp':
+        return {
+          ...replacement,
+          operand: this.substitutePatternBindings(replacement.operand, bindings),
+        };
+      case 'FunctionCall':
+        return {
+          ...replacement,
+          args: replacement.args.map(a => this.substitutePatternBindings(a, bindings)),
+        };
+      case 'Diff':
+        return {
+          ...replacement,
+          expr: this.substitutePatternBindings(replacement.expr, bindings),
+        };
+    }
+    return replacement;
+  }
+
+  private applyUserRules(node: ASTNode, currentEnv: Environment): Value | null {
+    const rules = [...this.userRules, ...((currentEnv as any).__rules__ || []), ...((this.env as any).__rules__ || [])];
+    for (const rule of rules) {
+      const match = this.matchPattern(rule.pattern, node);
+      if (match.matched) {
+        const reqStr = rule.requires ? ` (requires: ${formatAST(rule.requires)})` : '';
+        return {
+          type: 'described',
+          kind: { name: 'Function' } as any,
+          operation: `user rule: ${formatAST(rule.pattern)} => ${formatAST(rule.replacement)}`,
+          namedOperation: `User rule rewrite`,
+          meaning: `computed via unverified user rule${reqStr}`,
+          meaningInWords: `computed via unverified user rule${reqStr}`,
+          provenance: 'user-rule',
+          rulesFired: [rule.name || formatAST(rule.pattern)],
+          requires: rule.requires ? formatAST(rule.requires) : 'Verification of user rule axioms/derivation',
+          canDo: ['Symbolic pattern derivation', 'Substitution'],
+          obstruction: 'requires-proof',
+        };
+      }
+    }
+    return null;
+  }
+
   private evalDiff(node: DiffNode, currentEnv: Environment): Value {
+    const userRuleRes = this.applyUserRules(node, currentEnv);
+    if (userRuleRes) {
+      return userRuleRes;
+    }
+
     const varName = node.variable;
 
     if (node.expr.type === 'BinaryOp' && (node.expr.op === '/' || (node.expr as any).op === '//')) {

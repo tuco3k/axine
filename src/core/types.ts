@@ -105,6 +105,7 @@ export type TokenType =
   | 'IMPORT'
   | 'FROM'
   | 'AS'
+  | 'IS'
   | 'CUSTOM_OP'
   | 'EOF';
 
@@ -624,6 +625,8 @@ export interface DescribedValue {
   canDo: string | string[];
   related?: string | string[];
   ast?: ASTNode;
+  provenance?: 'user-rule' | 'builtin' | string;
+  rulesFired?: string[];
 }
 
 export interface MatrixValue {

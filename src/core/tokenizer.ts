@@ -702,6 +702,8 @@ export class Tokenizer {
         return this.makeToken('FROM', name, startPos, startLine, startCol, leadingWhitespace);
       case 'as':
         return this.makeToken('AS', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'is':
+        return this.makeToken('IS', name, startPos, startLine, startCol, leadingWhitespace);
       default:
         return this.makeToken('IDENTIFIER', name, startPos, startLine, startCol, leadingWhitespace);
     }
@@ -792,7 +794,9 @@ export class Tokenizer {
       char === '\u2102' ||
       char === '\u2124' ||
       char === '\u211a' ||
-      char === '\u2115'
+      char === '\u2115' ||
+      char === "'" ||
+      char === '\u2032'
     );
   }
 

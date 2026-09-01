@@ -23,12 +23,24 @@ export function analyzeAST(
   let isFuncDef = false;
 
   function isKnown(name: string): boolean {
-    return (
+    if (
       boundParams.has(name) ||
       name in env ||
       CONSTANTS.has(name) ||
       BUILTIN_FUNCTIONS.has(name)
-    );
+    ) {
+      return true;
+    }
+    if (env.__operators__?.has?.(name) || env.__units__?.has?.(name)) {
+      return true;
+    }
+    if (env.__rules__) {
+      for (const r of env.__rules__) {
+        if (r.pattern?.type === 'Diff' && r.pattern.expr?.type === 'FunctionCall' && r.pattern.expr.callee === name) return true;
+        if (r.pattern?.type === 'FunctionCall' && r.pattern.callee === name) return true;
+      }
+    }
+    return false;
   }
 
   function checkIdentifier(name: string, span: Span) {
