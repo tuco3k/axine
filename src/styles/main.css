@@ -1487,6 +1487,19 @@ html, body {
   height: var(--math-bar-thickness, 0.06em);
   background-color: currentColor;
   margin: 0;
+  position: relative;
+}
+
+.tm-frac-slash {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .tm-den-box {
@@ -1495,6 +1508,45 @@ html, body {
   font-size: 0.9em;
   line-height: 1.1;
   text-align: center;
+}
+
+/* Large Exact Rationals */
+.tm-large-rational {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.tm-approx-val {
+  display: inline-block;
+  font-family: inherit;
+}
+
+.tm-exact-badge {
+  display: inline-block;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: var(--border-radius-xs);
+  background-color: var(--color-bg-surface-hover);
+  color: var(--color-accent);
+  border: 1px solid var(--color-border-subtle);
+  cursor: pointer;
+  user-select: none;
+  font-family: var(--font-family-mono);
+  vertical-align: middle;
+  transition: all var(--duration-fast);
+}
+
+.tm-exact-badge:hover {
+  background-color: var(--color-accent-subtle);
+  border-color: var(--color-accent);
+  color: var(--color-accent-hover);
+}
+
+.tm-exact-expanded {
+  display: inline-flex;
+  align-items: center;
 }
 
 /* Square Roots & Radicals */

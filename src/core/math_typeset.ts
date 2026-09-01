@@ -7,6 +7,7 @@
 
 import { ASTNode } from './types';
 import { formatAST } from './formatter';
+import { BigFraction } from './numeric/rational';
 
 export interface TypesetOptions {
   displayMode?: boolean; // display (large limits, stacked fractions) vs inline
@@ -19,6 +20,23 @@ export function escapeHtml(str: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+export function rationalToApproxString(n: bigint, d: bigint, maxDecimals: number = 6): string {
+  if (d === 0n) return 'NaN';
+  const frac = new BigFraction(n, d);
+  const v = frac.toNumber();
+  if (Math.abs(v) < 1e-12) return '0';
+  if (Number.isInteger(v)) return v.toString();
+  return v.toFixed(maxDecimals).replace(/\.?0+$/, '');
+}
+
+export function renderLargeRationalHtml(n: bigint, d: bigint, _options?: TypesetOptions): string {
+  const approxStr = rationalToApproxString(n, d, 6);
+  const nStr = n.toString();
+  const dStr = d.toString();
+
+  return `<span class="tm-large-rational" data-exact-n="${nStr}" data-exact-d="${dStr}"><span class="tm-approx-val">${approxStr}</span><span class="tm-exact-badge" title="Exact: ${nStr}/${dStr}" role="button" tabindex="0" data-n="${nStr}" data-d="${dStr}">[exact]</span><span class="tm-exact-expanded hidden"><span class="tm-frac" role="math" aria-label="${nStr} / ${dStr}"><span class="tm-num-box"><span class="tm-num">${nStr}</span></span><span class="tm-frac-bar"><span class="tm-frac-slash">/</span></span><span class="tm-den-box"><span class="tm-num">${dStr}</span></span></span></span></span>`;
 }
 
 /**
@@ -62,10 +80,20 @@ function typesetASTNode(node: ASTNode, options: TypesetOptions): string {
       const rightHtml = typesetASTNode(node.right, options);
 
       if (op === '/' || (op as any) === '//') {
+        if (node.left.type === 'NumberLiteral' && node.right.type === 'NumberLiteral') {
+          const numRaw = node.left.raw.replace(/_/g, '');
+          const denRaw = node.right.raw.replace(/_/g, '');
+          if (/^-?\d+$/.test(numRaw) && /^\d+$/.test(denRaw)) {
+            if (numRaw.replace('-', '').length > 12 || denRaw.length > 12) {
+              return renderLargeRationalHtml(BigInt(numRaw), BigInt(denRaw), options);
+            }
+          }
+        }
+
         return `
-          <span class="tm-frac">
+          <span class="tm-frac" role="math" aria-label="${escapeHtml(formatAST(node.left))} / ${escapeHtml(formatAST(node.right))}">
             <span class="tm-num-box">${leftHtml}</span>
-            <span class="tm-frac-bar"></span>
+            <span class="tm-frac-bar"><span class="tm-frac-slash">/</span></span>
             <span class="tm-den-box">${rightHtml}</span>
           </span>
         `;
@@ -336,6 +364,23 @@ export function typesetStringExpression(expr: string, options: TypesetOptions = 
     return typesetProseWithMath(trimmed, options);
   }
 
+  // 0.5 Pure Rational: A/B or A//B
+  const pureFracMatch = trimmed.match(/^(-?\d+)\s*(?:\/\/|\/)\s*(\d+)$/);
+  if (pureFracMatch) {
+    const num = pureFracMatch[1];
+    const den = pureFracMatch[2];
+    if (num.replace('-', '').length > 12 || den.length > 12) {
+      return renderLargeRationalHtml(BigInt(num), BigInt(den), options);
+    }
+    return `
+      <span class="tm-frac" role="math" aria-label="${escapeHtml(num)} / ${escapeHtml(den)}">
+        <span class="tm-num-box"><span class="tm-num">${escapeHtml(num)}</span></span>
+        <span class="tm-frac-bar"><span class="tm-frac-slash">/</span></span>
+        <span class="tm-den-box"><span class="tm-num">${escapeHtml(den)}</span></span>
+      </span>
+    `;
+  }
+
   // Strip matching outer parentheses if whole expression is wrapped: ( A ) -> A
   while (isWrappedInMatchingParens(trimmed)) {
     trimmed = trimmed.slice(1, -1).trim();
@@ -445,7 +490,7 @@ export function typesetStringExpression(expr: string, options: TypesetOptions = 
     const opHtml = `
       <span class="tm-frac tm-diff-frac">
         <span class="tm-num-box"><span class="tm-diff-d tm-clickable" data-symbol="${opSym}" data-parent-type="derivative">${sym}</span></span>
-        <span class="tm-frac-bar"></span>
+        <span class="tm-frac-bar"><span class="tm-frac-slash">/</span></span>
         <span class="tm-den-box"><span class="tm-diff tm-clickable" data-symbol="${opSym}${escapeHtml(varName)}" data-parent-type="derivative" data-var="${escapeHtml(varName)}"><span class="tm-diff-d">${sym}</span><span class="tm-var">${escapeHtml(varName)}</span></span></span>
       </span>
     `;
@@ -470,10 +515,14 @@ export function typesetStringExpression(expr: string, options: TypesetOptions = 
     if (num.startsWith('(') && num.endsWith(')')) num = num.slice(1, -1).trim();
     if (den.startsWith('(') && den.endsWith(')')) den = den.slice(1, -1).trim();
 
+    if (/^-?\d+$/.test(num) && /^\d+$/.test(den) && (num.replace('-', '').length > 12 || den.length > 12)) {
+      return renderLargeRationalHtml(BigInt(num), BigInt(den), options);
+    }
+
     return `
-      <span class="tm-frac">
+      <span class="tm-frac" role="math" aria-label="${escapeHtml(num)} / ${escapeHtml(den)}">
         <span class="tm-num-box">${typesetStringExpression(num, options)}</span>
-        <span class="tm-frac-bar"></span>
+        <span class="tm-frac-bar"><span class="tm-frac-slash">/</span></span>
         <span class="tm-den-box">${typesetStringExpression(den, options)}</span>
       </span>
     `;
@@ -541,14 +590,25 @@ function findTopLevelFrac(str: string): number {
 }
 
 function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
-  const tokenRegex = /(sqrt\((?:[^()]+|\([^()]*\))*\))|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(_(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b(?:sin|cos|tan|ln|exp|det|sqrt|pi|inf)\b)|(\b[a-zA-Z][a-zA-Z0-9]*\b)|([()[\],'{}:])/g;
+  const tokenRegex = /(-?\b\d+\s*\/\s*\d+\b)|(sqrt\((?:[^()]+|\([^()]*\))*\))|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(_(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b(?:sin|cos|tan|ln|exp|det|sqrt|pi|inf)\b)|(\b[a-zA-Z][a-zA-Z0-9]*\b)|([()[\],'{}:])/g;
 
   let out = '';
   let match: RegExpExecArray | null;
   while ((match = tokenRegex.exec(str)) !== null) {
-    const [, sqrtTok, supTok, subTok, deltaTok, entityTok, relTok, binTok, numTok, fnTok, identTok, puncTok] = match;
+    const [, fracTok, sqrtTok, supTok, subTok, deltaTok, entityTok, relTok, binTok, numTok, fnTok, identTok, puncTok] = match;
 
-    if (sqrtTok) {
+    if (fracTok) {
+      const [numRaw, denRaw] = fracTok.split('/').map(s => s.trim());
+      if (/^-?\d+$/.test(numRaw) && /^\d+$/.test(denRaw)) {
+        if (numRaw.replace('-', '').length > 12 || denRaw.length > 12) {
+          out += renderLargeRationalHtml(BigInt(numRaw), BigInt(denRaw), options);
+        } else {
+          out += `<span class="tm-frac" role="math" aria-label="${escapeHtml(numRaw)} / ${escapeHtml(denRaw)}"><span class="tm-num-box"><span class="tm-num">${escapeHtml(numRaw)}</span></span><span class="tm-frac-bar"><span class="tm-frac-slash">/</span></span><span class="tm-den-box"><span class="tm-num">${escapeHtml(denRaw)}</span></span></span>`;
+        }
+      } else {
+        out += escapeHtml(fracTok);
+      }
+    } else if (sqrtTok) {
       const inside = sqrtTok.replace(/^sqrt\(/, '').replace(/\)$/, '');
       out += `<span class="tm-sqrt"><span class="tm-sqrt-surd">&radic;</span><span class="tm-radicand">${typesetStringExpression(inside, options)}</span></span>`;
     } else if (supTok) {

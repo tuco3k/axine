@@ -108,6 +108,15 @@ async function main() {
   await page.screenshot({ path: path.join(ARTIFACT_DIR, 'integrator_energy_curves.png') });
   console.log('Saved integrator_energy_curves.png');
 
+  // Scroll to bottom drift lines (line 32-39)
+  await page.evaluate(() => {
+    const driftRow = document.querySelector('.doc-gutter-row[data-line="36"]');
+    driftRow?.scrollIntoView({ behavior: 'instant', block: 'center' });
+  });
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: path.join(ARTIFACT_DIR, 'integrator_drift_values.png') });
+  console.log('Saved integrator_drift_values.png');
+
   await browser.close();
   console.log('\n=== All Graph Screenshots & Dock Verifications Completed ===');
 }

@@ -301,14 +301,31 @@ export class DocumentEditor {
               </div>
               <div class="doc-dock-menu-wrapper">
                 <button id="doc-dock-menu-btn" class="doc-dock-menu-btn" title="Dock & Layout Options (Cmd+Shift+D)">
-                  <span class="doc-dock-menu-icon">&#9647;</span>
-                  <span class="doc-dock-menu-caret">&#9662;</span>
+                  <svg class="doc-dock-menu-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <rect x="2" y="2" width="12" height="12" rx="1.5" />
+                    <line x1="9" y1="2" x2="9" y2="14" />
+                  </svg>
+                  <svg class="doc-dock-menu-caret" width="9" height="9" viewBox="0 0 12 12" fill="currentColor">
+                    <path d="M2 4L6 8L10 4Z" />
+                  </svg>
                 </button>
                 <div id="doc-dock-dropdown" class="doc-dock-dropdown hidden">
-                  <button class="doc-dock-btn" data-edge="left" title="Dock Left">&#9703; Dock Left</button>
-                  <button class="doc-dock-btn" data-edge="bottom" title="Dock Bottom">&#11026; Dock Bottom</button>
-                  <button class="doc-dock-btn" data-edge="top" title="Dock Top">&#11027; Dock Top</button>
-                  <button class="doc-dock-btn active" data-edge="right" title="Dock Right">&#9704; Dock Right</button>
+                  <button class="doc-dock-btn" data-edge="left" title="Dock Left">
+                    <svg class="doc-dock-btn-icon" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="1" /><rect x="2" y="2" width="5" height="12" fill="currentColor" opacity="0.6" /></svg>
+                    Dock Left
+                  </button>
+                  <button class="doc-dock-btn" data-edge="bottom" title="Dock Bottom">
+                    <svg class="doc-dock-btn-icon" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="1" /><rect x="2" y="9" width="12" height="5" fill="currentColor" opacity="0.6" /></svg>
+                    Dock Bottom
+                  </button>
+                  <button class="doc-dock-btn" data-edge="top" title="Dock Top">
+                    <svg class="doc-dock-btn-icon" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="1" /><rect x="2" y="2" width="12" height="5" fill="currentColor" opacity="0.6" /></svg>
+                    Dock Top
+                  </button>
+                  <button class="doc-dock-btn active" data-edge="right" title="Dock Right">
+                    <svg class="doc-dock-btn-icon" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="1" /><rect x="9" y="2" width="5" height="12" fill="currentColor" opacity="0.6" /></svg>
+                    Dock Right
+                  </button>
                   <div class="doc-dock-menu-divider"></div>
                   <button class="doc-dock-collapse-btn" title="Toggle panel collapse (Cmd+B)">Hide Panel</button>
                 </div>
@@ -1014,6 +1031,29 @@ export class DocumentEditor {
           this.expandedPlots.add(lineIdx);
         }
         this.renderWorkPanel(this.state.getRecords(), false);
+      });
+    });
+
+    // Wire Exact rational toggle badges
+    this.gutterEl.querySelectorAll('.tm-exact-badge').forEach(badge => {
+      badge.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const container = badge.closest('.tm-large-rational');
+        if (!container) return;
+        const approx = container.querySelector('.tm-approx-val');
+        const expanded = container.querySelector('.tm-exact-expanded');
+        if (approx && expanded) {
+          const isExpanded = !expanded.classList.contains('hidden');
+          if (isExpanded) {
+            expanded.classList.add('hidden');
+            approx.classList.remove('hidden');
+            badge.textContent = '[exact]';
+          } else {
+            expanded.classList.remove('hidden');
+            approx.classList.add('hidden');
+            badge.textContent = '[approx]';
+          }
+        }
       });
     });
 

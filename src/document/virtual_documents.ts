@@ -256,9 +256,9 @@ traj_verlet := simulate(b -> verlet_step(b, harmonic_force, 0.1), b0, t in 0..10
 traj_rk4 := simulate(b -> rk4_step(b, harmonic_force, 0.1), b0, t in 0..10, dt: 0.1)
 
 # Energy trajectory mapping over time
-E_euler_t := map(b -> float(0.5 * b.velocity[0]^2 + 0.5 * k * b.position[0]^2), traj_euler)
-E_verlet_t := map(b -> float(0.5 * b.velocity[0]^2 + 0.5 * k * b.position[0]^2), traj_verlet)
-E_rk4_t := map(b -> float(0.5 * b.velocity[0]^2 + 0.5 * k * b.position[0]^2), traj_rk4)
+E_euler_t := map(b -> 0.5 * b.velocity[0]^2 + 0.5 * k * b.position[0]^2, traj_euler)
+E_verlet_t := map(b -> 0.5 * b.velocity[0]^2 + 0.5 * k * b.position[0]^2, traj_verlet)
+E_rk4_t := map(b -> 0.5 * b.velocity[0]^2 + 0.5 * k * b.position[0]^2, traj_rk4)
 
 # Plot all three energy curves together
 graph(E_euler_t, E_verlet_t, E_rk4_t)
@@ -268,14 +268,14 @@ b_e10 := traj_euler[10.0]
 b_v10 := traj_verlet[10.0]
 b_r10 := traj_rk4[10.0]
 
-E_euler_10 := float(0.5 * b_e10.velocity[0]^2 + 0.5 * k * b_e10.position[0]^2)
-E_verlet_10 := float(0.5 * b_v10.velocity[0]^2 + 0.5 * k * b_v10.position[0]^2)
-E_rk4_10 := float(0.5 * b_r10.velocity[0]^2 + 0.5 * k * b_r10.position[0]^2)
+E_euler_10 := 0.5 * b_e10.velocity[0]^2 + 0.5 * k * b_e10.position[0]^2
+E_verlet_10 := 0.5 * b_v10.velocity[0]^2 + 0.5 * k * b_v10.position[0]^2
+E_rk4_10 := 0.5 * b_r10.velocity[0]^2 + 0.5 * k * b_r10.position[0]^2
 
-# Energy drift from exact E = 0.5
-drift_euler := float(abs(E_euler_10 - 0.5))
-drift_verlet := float(abs(E_verlet_10 - 0.5))
-drift_rk4 := float(abs(E_rk4_10 - 0.5))
+# Difference from exact E = 0.5
+drift_euler := abs(E_euler_10 - 0.5)
+drift_verlet := abs(E_verlet_10 - 0.5)
+drift_rk4 := abs(E_rk4_10 - 0.5)
 `,
 
   'optics.ax': `# optics.ax — Geometric optics with zero built-in physics
