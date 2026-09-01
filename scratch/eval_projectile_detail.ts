@@ -2,10 +2,10 @@ import * as fs from 'fs';
 import { parse } from '../src/core/parser';
 import { Evaluator, createInitialEnvironment } from '../src/core/evaluator';
 
-const content = fs.readFileSync('documents/projectile.mathdoc', 'utf-8');
+const content = fs.readFileSync('documents/projectile.axine', 'utf-8');
 const env = createInitialEnvironment();
 
-console.log('=== Step-by-Step Evaluator Output for projectile.mathdoc ===\n');
+console.log('=== Step-by-Step Evaluator Output for projectile.axine ===\n');
 
 // Parse the whole document as a sequence of statements or line-by-line
 // Note: handle the multi-line claim block as a single statement

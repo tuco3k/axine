@@ -5,8 +5,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 describe('Part G: Three Domain Libraries and Worked Problems (Gate G)', () => {
-  it('loads and runs physics.math with physics_problem.math', () => {
-    const filePath = path.resolve(process.cwd(), 'documents', 'physics_problem.math');
+  it('loads and runs physics.axine with physics_problem.axine', () => {
+    const filePath = path.resolve(process.cwd(), 'documents', 'physics_problem.axine');
     const source = fs.readFileSync(filePath, 'utf-8');
 
     const env = createInitialEnvironment();
@@ -26,8 +26,8 @@ describe('Part G: Three Domain Libraries and Worked Problems (Gate G)', () => {
     expect(env.ke_lost).toEqual({ type: 'rational', n: 135n, d: 1n }); // initial KE (100+37.5=137.5) - final KE (2.5) = 135
   });
 
-  it('loads and runs statistics.math with statistics_problem.math', () => {
-    const filePath = path.resolve(process.cwd(), 'documents', 'statistics_problem.math');
+  it('loads and runs statistics.axine with statistics_problem.axine', () => {
+    const filePath = path.resolve(process.cwd(), 'documents', 'statistics_problem.axine');
     const source = fs.readFileSync(filePath, 'utf-8');
 
     const env = createInitialEnvironment();
@@ -47,8 +47,8 @@ describe('Part G: Three Domain Libraries and Worked Problems (Gate G)', () => {
     expect(env.null_hypothesis_value).toEqual({ type: 'rational', n: 100n, d: 1n });
   });
 
-  it('loads and runs linear.math with linear_problem.math', () => {
-    const filePath = path.resolve(process.cwd(), 'documents', 'linear_problem.math');
+  it('loads and runs linear.axine with linear_problem.axine', () => {
+    const filePath = path.resolve(process.cwd(), 'documents', 'linear_problem.axine');
     const source = fs.readFileSync(filePath, 'utf-8');
 
     const env = createInitialEnvironment();

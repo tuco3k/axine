@@ -229,7 +229,7 @@ export class DocumentEditor {
         <header class="doc-header">
           <div class="doc-brand">
             <span class="doc-logo">&int;dx</span>
-            <span class="doc-app-title">Live Document Editor</span>
+            <span class="doc-app-title">Axine</span>
           </div>
 
           <div class="doc-corpus-select-wrapper">

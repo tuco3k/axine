@@ -9,7 +9,7 @@ describe('Part F: Modules', () => {
   it('Gate F: two files, one importing the other', () => {
     // Module file A
     Evaluator.virtualFiles.set(
-      'kinematics.math',
+      'kinematics.axine',
       `
 module kinematics
 export position, velocity, acceleration
@@ -23,7 +23,7 @@ private_data := 42
 
     // Importing file B
     const env = createInitialEnvironment();
-    evaluate('import "kinematics.math" as kin', env);
+    evaluate('import "kinematics.axine" as kin', env);
 
     const { value: vVal } = evaluate('kin.velocity', env);
     expect(vVal.type).toBe('tuple');
@@ -37,32 +37,32 @@ private_data := 42
 
   it('Gate F: rejects cyclic module imports naming both files', () => {
     Evaluator.virtualFiles.set(
-      'module_a.math',
+      'module_a.axine',
       `
 module module_a
-import "module_b.math"
+import "module_b.axine"
 export a_val
 a_val := 1
 `
     );
 
     Evaluator.virtualFiles.set(
-      'module_b.math',
+      'module_b.axine',
       `
 module module_b
-import "module_a.math"
+import "module_a.axine"
 export b_val
 b_val := 2
 `
     );
 
     const env = createInitialEnvironment();
-    expect(() => evaluate('import "module_a.math"', env)).toThrowError(/Cyclic module import detected.*module_a\.math.*module_b\.math/);
+    expect(() => evaluate('import "module_a.axine"', env)).toThrowError(/Cyclic module import detected.*module_a\.axine.*module_b\.axine/);
   });
 
   it('supports selective from-import syntax', () => {
     Evaluator.virtualFiles.set(
-      'physics_helpers.math',
+      'physics_helpers.axine',
       `
 module physics_helpers
 export speed_of_light
@@ -71,7 +71,7 @@ speed_of_light := 299792458
     );
 
     const env = createInitialEnvironment();
-    evaluate('from "physics_helpers.math" import speed_of_light', env);
+    evaluate('from "physics_helpers.axine" import speed_of_light', env);
 
     const { value: cVal } = evaluate('speed_of_light', env);
     expect(cVal).toEqual({ type: 'rational', n: 299792458n, d: 1n });
@@ -79,6 +79,6 @@ speed_of_light := 299792458
 
   it('rejects network imports explicitly', () => {
     const env = createInitialEnvironment();
-    expect(() => evaluate('import "https://cdn.example.com/math.math"', env)).toThrowError(/Network imports are not allowed/);
+    expect(() => evaluate('import "https://cdn.example.com/math.axine"', env)).toThrowError(/Network imports are not allowed/);
   });
 });

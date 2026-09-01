@@ -1,6 +1,6 @@
-# Mathematical Notebook — Phase Specifications (Phases 5 – 7)
+# Axine — Phase Specifications (Phases 5 – 7)
 
-This document contains the specifications for the remaining frontend and interaction phases of the Mathematical Turing-Complete Notebook.
+This document contains the specifications for the frontend and interaction phases of Axine.
 
 ---
 

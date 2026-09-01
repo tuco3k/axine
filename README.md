@@ -1,4 +1,12 @@
-# Math-Notation Programming Language & Live Document Editor
+# Axine
+A programming language for mathematics.
+
+## Attribution
+Designed and directed by Noah Slayton (tuco3k).
+Implementation written by Google Gemini (via Antigravity).
+Architecture and code review with Anthropic's Claude.
+
+---
 
 A mathematical Turing-complete notation language where you write math the way you'd write it on paper, and it executes numerically. The core language has **zero external runtime dependencies** (no math.js, nerdamer, decimal.js, Monaco/CodeMirror, or parser generators) and includes a handwritten tokenizer, Pratt precedence-climbing parser, exact rational tower backed by `BigInt`, AST normalizer/formatter, scope analyzer, Kleene 3-valued logic engine, 3D Canvas graphing engine, live 4-region Work Panel, and a 100-theorem witness corpus.
 

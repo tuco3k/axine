@@ -1,4 +1,4 @@
-# Mathematical Turing-Complete Notation Language — Formal Grammar & Semantics
+# Axine — Formal Grammar & Semantics
 
 ## 1. Lexical Grammar
 
