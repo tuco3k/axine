@@ -41,6 +41,13 @@ async function main() {
   const overlayLines = await page.$$('.doc-typeset-line');
   console.log('Overlay lines count:', overlayLines.length);
 
+  // Take focused screenshot of editor pane (Bug 4a verification)
+  const editorPaneEl = await page.$('.doc-pane-left');
+  if (editorPaneEl) {
+    await editorPaneEl.screenshot({ path: path.join(ARTIFACT_DIR, 'editor_pane_initial.png') });
+    console.log('Saved editor_pane_initial.png');
+  }
+
   // 4c: Test document containing BOTH graph(2x) and graph(sin x cos y, x in -3..3, y in -3..3)
   console.log('Testing combined document with both graphs...');
   const combinedDoc = 'graph(2x)\ngraph(sin x cos y, x in -3..3, y in -3..3)';

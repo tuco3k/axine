@@ -355,6 +355,11 @@ html, body {
   white-space: pre;
 }
 
+.tok-comment {
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
 .doc-textarea {
   position: absolute;
   inset: 0;

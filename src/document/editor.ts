@@ -269,8 +269,8 @@ export class DocumentEditor {
 
         <main id="doc-workspace" class="doc-workspace" data-dock="right">
           <div class="doc-pane-left">
+            <div id="doc-line-numbers" class="doc-line-numbers"></div>
             <div class="doc-editor-surface">
-              <div id="doc-line-numbers" class="doc-line-numbers"></div>
               <div id="doc-typeset-overlay" class="doc-typeset-overlay"></div>
               <div id="doc-caret" class="doc-caret"></div>
               <textarea

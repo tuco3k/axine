@@ -512,4 +512,18 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
     const textarea = container.querySelector('#doc-textarea') as any;
     expect(textarea?.value.split('\n').length).toBe(7);
   });
+
+  it('asserts default startup without args initializes line count to CORPUS_DOCUMENTS[0] line count', () => {
+    // Mount editor with no initialText (simulating page launch)
+    editor = new DocumentEditor(container as any);
+
+    const lineNumElements = container.querySelectorAll('.doc-line-num');
+    expect(lineNumElements.length).toBe(7);
+
+    const statsBadge = container.querySelector('#doc-stats-badge');
+    expect(statsBadge?.textContent).toContain('7 lines');
+
+    const textarea = container.querySelector('#doc-textarea') as any;
+    expect(textarea?.value.split('\n').length).toBe(7);
+  });
 });
