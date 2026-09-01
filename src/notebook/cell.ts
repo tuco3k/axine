@@ -299,6 +299,18 @@ export class CellView {
         return `[Described: ${val.namedOperation || val.operation || 'unevaluable'}]`;
       case 'set_value':
         return val.standardName || `Set(${val.isInfinite ? 'infinite' : (val.elements ?? []).length})`;
+      case 'record': {
+        const fieldsStr = Object.entries(val.fields)
+          .map(([k, v]) => `${k}: ${this.formatValue(v)}`)
+          .join(', ');
+        return `${val.typeName}(${fieldsStr})`;
+      }
+      case 'record_constructor':
+        return `record ${val.name} { ${val.fieldNames.join(', ')} }`;
+      case 'quantity':
+        return `${this.formatValue(val.magnitude)} ${val.unit}`;
+      case 'module':
+        return `module ${val.name}`;
       default:
         return String((val as any).value ?? (val as any).type);
     }

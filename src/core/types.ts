@@ -83,6 +83,28 @@ export type TokenType =
   | 'EQUIV'
   | 'DAGGER'
   | 'BAR_SEP'
+  | 'FAT_ARROW' // =>
+  | 'RECORD'
+  | 'WITH'
+  | 'DIMENSION'
+  | 'UNIT'
+  | 'OPERATOR'
+  | 'PREFIX'
+  | 'POSTFIX'
+  | 'INFIX'
+  | 'PRECEDENCE'
+  | 'ASSOCIATIVITY'
+  | 'KIND'
+  | 'EXTENDS'
+  | 'OPERATIONS'
+  | 'AXIOMS'
+  | 'RULE'
+  | 'REQUIRES'
+  | 'MODULE'
+  | 'EXPORT'
+  | 'IMPORT'
+  | 'FROM'
+  | 'AS'
   | 'EOF';
 
 export interface Token {
@@ -127,7 +149,95 @@ export type ASTNode =
   | EquivalenceNode
   | DecoratedIdentifierNode
   | MatrixPostfixNode
-  | ProbabilityNode;
+  | ProbabilityNode
+  | RecordDefNode
+  | RecordWithNode
+  | DimensionDeclNode
+  | UnitDeclNode
+  | OperatorDeclNode
+  | KindDeclNode
+  | RuleDeclNode
+  | ModuleDeclNode
+  | ImportNode
+  | ExportNode;
+
+export interface RecordDefNode {
+  type: 'RecordDef';
+  name?: string;
+  fields: string[];
+  span: Span;
+}
+
+export interface RecordWithNode {
+  type: 'RecordWith';
+  target: ASTNode;
+  updates: { name: string; value: ASTNode }[];
+  span: Span;
+}
+
+export interface DimensionDeclNode {
+  type: 'DimensionDecl';
+  dimensions: string[];
+  span: Span;
+}
+
+export interface UnitDeclNode {
+  type: 'UnitDecl';
+  name: string;
+  dimension?: string;
+  definition?: ASTNode;
+  span: Span;
+}
+
+export interface OperatorDeclNode {
+  type: 'OperatorDecl';
+  op: string;
+  fixity: 'infix' | 'prefix' | 'postfix';
+  params: string[];
+  body: ASTNode;
+  precedence?: number;
+  associativity?: 'left' | 'right';
+  span: Span;
+}
+
+export interface KindDeclNode {
+  type: 'KindDecl';
+  name: string;
+  params: string[];
+  extendsKind?: { name: string; args: string[] };
+  operations: string[];
+  axioms: string[];
+  span: Span;
+}
+
+export interface RuleDeclNode {
+  type: 'RuleDecl';
+  name?: string;
+  pattern: ASTNode;
+  replacement: ASTNode;
+  requires?: ASTNode;
+  span: Span;
+}
+
+export interface ModuleDeclNode {
+  type: 'ModuleDecl';
+  name: string;
+  span: Span;
+}
+
+export interface ImportNode {
+  type: 'Import';
+  path: string;
+  asName?: string;
+  importedSymbols?: string[];
+  span: Span;
+}
+
+export interface ExportNode {
+  type: 'Export';
+  symbols: string[];
+  span: Span;
+}
 
 export interface MemberAccessNode {
   type: 'MemberAccess';
@@ -771,6 +881,31 @@ export interface StringValue {
   value: string;
 }
 
+export interface RecordValue {
+  type: 'record';
+  typeName: string;
+  fields: Record<string, Value>;
+}
+
+export interface RecordConstructorValue {
+  type: 'record_constructor';
+  name: string;
+  fieldNames: string[];
+}
+
+export interface QuantityValue {
+  type: 'quantity';
+  magnitude: Value;
+  unit: string;
+  dimensions: Record<string, number>; // e.g. { length: 1, time: -1 }
+}
+
+export interface ModuleValue {
+  type: 'module';
+  name: string;
+  exports: Record<string, Value>;
+}
+
 export type Value =
   | RationalValue
   | FloatValue
@@ -800,7 +935,11 @@ export type Value =
   | VectorFieldValue
   | DistributionValue
   | AlgebraicStructureValue
-  | DescribedValue;
+  | DescribedValue
+  | RecordValue
+  | RecordConstructorValue
+  | QuantityValue
+  | ModuleValue;
 
 export type Environment = Record<string, Value>;
 

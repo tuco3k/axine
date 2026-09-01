@@ -22,6 +22,8 @@ import {
   Value,
   StepValue,
   ObstructionReason,
+  RecordDefNode,
+  RecordConstructorValue,
 } from './types';
 import { BigFraction } from './numeric/rational';
 import {
@@ -150,6 +152,11 @@ export class Evaluator {
   private source: string;
   private budget: BudgetTracker;
   private memo: Map<string, Value> = new Map();
+  public declaredDimensions: Set<string> = new Set();
+  public declaredUnits: Map<string, { name: string; dimension: string; factor: number; dimensions: Record<string, number> }> = new Map();
+  public userOperators: Map<string, any> = new Map();
+  public declaredKinds: Map<string, any> = new Map();
+  public userRules: any[] = [];
 
   constructor(
     env: Environment = createInitialEnvironment(),
@@ -386,6 +393,19 @@ export class Evaluator {
         };
       }
       case 'Assignment': {
+        if (node.value.type === 'RecordDef') {
+          const recDef = node.value as RecordDefNode;
+          const val: RecordConstructorValue = {
+            type: 'record_constructor',
+            name: node.target,
+            fieldNames: recDef.fields,
+          };
+          currentEnv[node.target] = val;
+          if (currentEnv === this.env) {
+            this.env[node.target] = val;
+          }
+          return val;
+        }
         const val = this.evalNode(node.value, currentEnv);
         currentEnv[node.target] = val;
         if (currentEnv === this.env) {
@@ -394,6 +414,17 @@ export class Evaluator {
         return val;
       }
       case 'GlobalAssignment': {
+        if (node.value.type === 'RecordDef') {
+          const recDef = node.value as RecordDefNode;
+          const val: RecordConstructorValue = {
+            type: 'record_constructor',
+            name: node.target,
+            fieldNames: recDef.fields,
+          };
+          this.env[node.target] = val;
+          currentEnv[node.target] = val;
+          return val;
+        }
         const val = this.evalNode(node.value, currentEnv);
         this.env[node.target] = val;
         currentEnv[node.target] = val;
@@ -433,6 +464,121 @@ export class Evaluator {
       }
       case 'Claim': {
         return this.evalClaim(node, currentEnv);
+      }
+      case 'RecordDef': {
+        return {
+          type: 'record_constructor',
+          name: node.name || 'Record',
+          fieldNames: node.fields,
+        };
+      }
+      case 'RecordWith': {
+        const targetVal = this.evalNode(node.target, currentEnv);
+        if (targetVal.type !== 'record') {
+          throw createError(`Cannot use 'with' update on non-record type '${targetVal.type}'`, node.span);
+        }
+        const updatedFields = { ...targetVal.fields };
+        for (const update of node.updates) {
+          if (!(update.name in updatedFields)) {
+            const avail = Object.keys(targetVal.fields).join(', ');
+            throw createError(
+              `Field '${update.name}' does not exist on record '${targetVal.typeName}'. Available fields: ${avail || '(none)'}`,
+              update.value.span
+            );
+          }
+          updatedFields[update.name] = this.evalNode(update.value, currentEnv);
+        }
+        return {
+          type: 'record',
+          typeName: targetVal.typeName,
+          fields: updatedFields,
+        };
+      }
+      case 'DimensionDecl': {
+        for (const d of node.dimensions) {
+          this.declaredDimensions.add(d);
+        }
+        return { type: 'none' };
+      }
+      case 'UnitDecl': {
+        if (node.dimension) {
+          this.declaredUnits.set(node.name, {
+            name: node.name,
+            dimension: node.dimension,
+            factor: 1.0,
+            dimensions: { [node.dimension]: 1 },
+          });
+        } else if (node.definition) {
+          const defVal = this.evalNode(node.definition, currentEnv);
+          if (defVal.type === 'quantity') {
+            const mag = valueToNumber(defVal.magnitude, node.span);
+            this.declaredUnits.set(node.name, {
+              name: node.name,
+              dimension: Object.keys(defVal.dimensions)[0] || 'derived',
+              factor: mag,
+              dimensions: defVal.dimensions,
+            });
+          }
+        }
+        return { type: 'none' };
+      }
+      case 'OperatorDecl': {
+        this.userOperators.set(node.op, {
+          op: node.op,
+          fixity: node.fixity,
+          params: node.params,
+          body: node.body,
+          precedence: node.precedence ?? 45,
+          associativity: node.associativity ?? 'left',
+          env: currentEnv,
+        });
+        return { type: 'none' };
+      }
+      case 'KindDecl': {
+        this.declaredKinds.set(node.name, {
+          name: node.name,
+          params: node.params,
+          extendsKind: node.extendsKind?.name,
+          operations: node.operations,
+          axioms: node.axioms,
+        });
+        return {
+          type: 'described',
+          kind: {
+            name: 'UserDefined',
+            kindName: node.name,
+            params: node.params,
+            extendsKind: node.extendsKind?.name,
+            operations: node.operations,
+            axioms: node.axioms,
+            axiomsVerified: false,
+          },
+          operation: `kind declaration: ${node.name}`,
+          meaning: `User-defined mathematical kind ${node.name} (axioms declared but not checked)`,
+          meaningInWords: `User-defined mathematical kind ${node.name} (axioms declared but not checked)`,
+          requires: 'Axiom consistency check in formal proof assistant',
+          canDo: node.operations.length > 0 ? node.operations : ['inspect'],
+          obstruction: 'undecidable',
+        };
+      }
+      case 'RuleDecl': {
+        this.userRules.push({
+          name: node.name || 'anonymous_rule',
+          pattern: node.pattern,
+          replacement: node.replacement,
+          requires: node.requires,
+          env: currentEnv,
+        });
+        return { type: 'none' };
+      }
+      case 'ModuleDecl': {
+        return { type: 'none' };
+      }
+      case 'Export': {
+        return { type: 'none' };
+      }
+      case 'Import': {
+        return { type: 'none' };
       }
       case 'Index': {
         const targetVal = this.evalNode(node.target, currentEnv);
@@ -476,6 +622,27 @@ export class Evaluator {
       case 'MemberAccess': {
         const targetVal = this.evalNode(node.target, currentEnv);
         const prop = node.property;
+        if (targetVal.type === 'record') {
+          if (prop in targetVal.fields) {
+            return targetVal.fields[prop];
+          }
+          const availableFields = Object.keys(targetVal.fields).join(', ');
+          throw createError(
+            `Field '${prop}' does not exist on record '${targetVal.typeName}'. Available fields: ${availableFields || '(none)'}`,
+            node.span,
+            {
+              expected: `one of [${availableFields}]`,
+              suggestion: `Check the field name on record '${targetVal.typeName}'`,
+              source: this.source,
+            }
+          );
+        }
+        if (targetVal.type === 'module') {
+          if (prop in targetVal.exports) {
+            return targetVal.exports[prop];
+          }
+          throw createError(`Symbol '${prop}' is not exported by module '${targetVal.name}'`, node.span);
+        }
         if (targetVal.type === 'derivation') {
           if (prop === 'steps') {
             return {
@@ -1067,9 +1234,47 @@ export class Evaluator {
       );
     }
 
-    // Check user defined function
+    // Check user defined function or record constructor
     const calleeVal = currentEnv[callee] ?? this.env[callee];
     if (calleeVal) {
+      if (calleeVal.type === 'record_constructor') {
+        const fields: Record<string, Value> = {};
+        for (let i = 0; i < node.args.length; i++) {
+          const arg = node.args[i];
+          if (arg.type === 'NamedArg') {
+            if (!calleeVal.fieldNames.includes(arg.name)) {
+              const avail = calleeVal.fieldNames.join(', ');
+              throw createError(
+                `Field '${arg.name}' does not exist on record '${calleeVal.name}'. Available fields: ${avail || '(none)'}`,
+                arg.span
+              );
+            }
+            fields[arg.name] = this.evalNode(arg.value, currentEnv);
+          } else {
+            const fieldName = calleeVal.fieldNames[i];
+            if (!fieldName) {
+              throw createError(
+                `Too many positional arguments for record '${calleeVal.name}'. Expected ${calleeVal.fieldNames.length} fields: ${calleeVal.fieldNames.join(', ')}`,
+                arg.span
+              );
+            }
+            fields[fieldName] = this.evalNode(arg, currentEnv);
+          }
+        }
+        for (const reqField of calleeVal.fieldNames) {
+          if (!(reqField in fields)) {
+            throw createError(
+              `Missing field '${reqField}' for record '${calleeVal.name}'. Required fields: ${calleeVal.fieldNames.join(', ')}`,
+              node.span
+            );
+          }
+        }
+        return {
+          type: 'record',
+          typeName: calleeVal.name,
+          fields,
+        };
+      }
       if (calleeVal.type === 'function') {
         return this.invokeUserFunction(calleeVal, node.args, currentEnv, node.span);
       }
@@ -2751,7 +2956,7 @@ export function analyzeAndParse(source: string, env: Environment): ASTNode {
   const knownVars = new Set<string>();
 
   for (const [key, val] of Object.entries(env)) {
-    if (val.type === 'function' || val.type === 'builtin' || val.type === 'lambda') {
+    if (val.type === 'function' || val.type === 'builtin' || val.type === 'lambda' || val.type === 'record_constructor') {
       knownFuncs.add(key);
     } else {
       knownVars.add(key);

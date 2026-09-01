@@ -100,6 +100,28 @@ export interface DistributionKind {
   family?: string;
 }
 
+export interface RecordKind {
+  name: 'Record';
+  typeName: string;
+  fields: Record<string, MathKind>;
+}
+
+export interface UserDefinedKind {
+  name: 'UserDefined';
+  kindName: string;
+  params: string[];
+  extendsKind?: string;
+  operations: string[];
+  axioms: string[];
+  axiomsVerified: boolean;
+}
+
+export interface QuantityKind {
+  name: 'Quantity';
+  dimensions: Record<string, number>;
+  unit: string;
+}
+
 export interface UnknownKind {
   name: 'UnknownKind';
   description?: string;
@@ -121,6 +143,9 @@ export type MathKind =
   | ManifoldKind
   | MeasureKind
   | DistributionKind
+  | RecordKind
+  | UserDefinedKind
+  | QuantityKind
   | UnknownKind;
 
 /**
@@ -161,6 +186,20 @@ export function formatKind(kind: MathKind): string {
       return `Measure(on=${kind.space})`;
     case 'Distribution':
       return `Distribution(support=${kind.support}${kind.family ? `, family=${kind.family}` : ''})`;
+    case 'Record': {
+      const fieldEntries = Object.entries(kind.fields)
+        .map(([k, v]) => `${k}: ${formatKind(v)}`)
+        .join(', ');
+      return `Record(${kind.typeName}${fieldEntries ? ` { ${fieldEntries} }` : ''})`;
+    }
+    case 'UserDefined': {
+      const paramStr = kind.params.length > 0 ? `(${kind.params.join(', ')})` : '';
+      const extendsStr = kind.extendsKind ? ` extends ${kind.extendsKind}` : '';
+      return `Kind(${kind.kindName}${paramStr}${extendsStr})`;
+    }
+    case 'Quantity': {
+      return `Quantity(unit=${kind.unit})`;
+    }
     case 'UnknownKind':
       return `UnknownKind(${kind.description || 'unspecified'})`;
   }
@@ -191,6 +230,16 @@ export function kindSubsumes(target: MathKind, source: MathKind): boolean {
     if (target.name === 'Set' && source.name === 'Set') {
       return kindSubsumes(target.elementKind, source.elementKind);
     }
+    if (target.name === 'Record' && source.name === 'Record') {
+      if (target.typeName !== source.typeName && target.typeName !== 'Record') return false;
+      for (const [k, v] of Object.entries(target.fields)) {
+        if (!source.fields[k] || !kindSubsumes(v, source.fields[k])) return false;
+      }
+      return true;
+    }
+    if (target.name === 'UserDefined' && source.name === 'UserDefined') {
+      return target.kindName === source.kindName;
+    }
     return true;
   }
 
@@ -199,18 +248,28 @@ export function kindSubsumes(target: MathKind, source: MathKind): boolean {
     return true;
   }
 
+  if (target.name === 'LinearMap' && source.name === 'Vector') {
+    return true;
+  }
+
+  // User-defined kinds with extends
+  if (source.name === 'UserDefined' && source.extendsKind) {
+    if (target.name === source.extendsKind) return true;
+    if (target.name === 'UserDefined' && target.kindName === source.extendsKind) return true;
+  }
+
   return false;
 }
 
 /**
- * Lists the valid mathematical operations admitted by this kind.
+ * Returns the list of mathematical operations admitted by a given kind.
  */
 export function admitsOperations(kind: MathKind): string[] {
   switch (kind.name) {
     case 'Scalar':
-      return ['+', '-', '*', '/', '^', 'neg', 'abs', 'sin', 'cos', 'tan', 'exp', 'ln', 'sqrt', '<', '<=', '>', '>=', '==', '!='];
+      return ['+', '-', '*', '/', '^', 'abs', 'round', 'floor', 'ceil', 'sqrt', 'sin', 'cos', 'exp', 'ln'];
     case 'Vector':
-      return ['+', '-', 'scale (*)', 'dot (\u00b7)', 'cross (\u00d7)', 'norm (\u2016\u2016)', 'inner (\u27e8\u27e9)', 'tensor (\u2297)', 'direct_sum (\u2295)'];
+      return ['+', '-', 'dot (\u00b7)', 'cross (\u00d7)', 'norm (|\u22c5|)', 'scale', 'dimension'];
     case 'Matrix':
       return ['+', '-', 'matmul (*)', 'scale', 'transpose (^T)', 'inverse (^-1)', 'det', 'trace', 'eigenvalues', 'rank'];
     case 'LinearMap':
@@ -239,6 +298,12 @@ export function admitsOperations(kind: MathKind): string[] {
       return ['integrate (\u222b_X f d\u03bc)', 'total_measure', 'pushforward'];
     case 'Distribution':
       return ['prob (P)', 'expectation (E)', 'variance (Var)', 'sample', 'pdf', 'cdf'];
+    case 'Record':
+      return ['field_access (.)', 'with_update (with)', 'equality (=, !=)'];
+    case 'UserDefined':
+      return kind.operations.length > 0 ? kind.operations : ['inspect'];
+    case 'Quantity':
+      return ['+', '-', '*', '/', '^', 'convert'];
     case 'UnknownKind':
       return ['inspect', 'describe'];
   }
@@ -328,6 +393,24 @@ export function inferKindOfValue(val: Value): MathKind {
       return { name: val.structureType, structureName: val.name, carrierSet: val.carrierSet, axioms: val.axioms };
     case 'described':
       return val.kind;
+    case 'record': {
+      const fieldKinds: Record<string, MathKind> = {};
+      for (const [k, v] of Object.entries(val.fields)) {
+        fieldKinds[k] = inferKindOfValue(v);
+      }
+      return {
+        name: 'Record',
+        typeName: val.typeName,
+        fields: fieldKinds,
+      };
+    }
+    case 'quantity': {
+      return {
+        name: 'Quantity',
+        dimensions: val.dimensions,
+        unit: val.unit,
+      };
+    }
     default:
       return { name: 'Scalar', subtype: 'real' };
   }

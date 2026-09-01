@@ -1751,6 +1751,18 @@ export class DocumentEditor {
         if (val.standardName) return val.standardName;
         if (val.isInfinite) return `Set(infinite, of=${formatKind(val.elementKind)})`;
         return `Set(${(val.elements ?? []).map(e => this.formatValue(e)).join(', ')})`;
+      case 'record': {
+        const fieldsStr = Object.entries(val.fields)
+          .map(([k, v]) => `${k}: ${this.formatValue(v)}`)
+          .join(', ');
+        return `${val.typeName}(${fieldsStr})`;
+      }
+      case 'record_constructor':
+        return `record ${val.name} { ${val.fieldNames.join(', ')} }`;
+      case 'quantity':
+        return `${this.formatValue(val.magnitude)} ${val.unit}`;
+      case 'module':
+        return `module ${val.name}`;
       default:
         return String((val as any).value ?? val.type);
     }

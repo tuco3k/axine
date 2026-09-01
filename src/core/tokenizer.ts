@@ -119,6 +119,13 @@ export class Tokenizer {
         continue;
       }
 
+      if (char === '=' && this.peek(1) === '>') {
+        this.advance();
+        this.advance();
+        tokens.push(this.makeToken('FAT_ARROW', '=>', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+
       if (char === '=' && this.peek(1) === '=') {
         this.advance();
         this.advance();
@@ -650,6 +657,48 @@ export class Tokenizer {
       case 'dagger':
       case 'adj':
         return this.makeToken('DAGGER', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'record':
+        return this.makeToken('RECORD', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'with':
+        return this.makeToken('WITH', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'dimension':
+        return this.makeToken('DIMENSION', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'unit':
+        return this.makeToken('UNIT', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'operator':
+        return this.makeToken('OPERATOR', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'prefix':
+        return this.makeToken('PREFIX', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'postfix':
+        return this.makeToken('POSTFIX', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'infix':
+        return this.makeToken('INFIX', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'precedence':
+        return this.makeToken('PRECEDENCE', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'associativity':
+        return this.makeToken('ASSOCIATIVITY', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'kind':
+        return this.makeToken('KIND', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'extends':
+        return this.makeToken('EXTENDS', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'operations':
+        return this.makeToken('OPERATIONS', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'axioms':
+        return this.makeToken('AXIOMS', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'rule':
+        return this.makeToken('RULE', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'requires':
+        return this.makeToken('REQUIRES', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'module':
+        return this.makeToken('MODULE', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'export':
+        return this.makeToken('EXPORT', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'import':
+        return this.makeToken('IMPORT', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'from':
+        return this.makeToken('FROM', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'as':
+        return this.makeToken('AS', name, startPos, startLine, startCol, leadingWhitespace);
       default:
         return this.makeToken('IDENTIFIER', name, startPos, startLine, startCol, leadingWhitespace);
     }

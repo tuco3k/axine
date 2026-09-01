@@ -191,6 +191,60 @@ function formatNode(node: ASTNode, parentPrec: number): string {
       }
       return res;
     }
+    case 'MemberAccess': {
+      return `${formatNode(node.target, PREC_POSTFIX)}.${node.property}`;
+    }
+    case 'RecordDef': {
+      return `record { ${node.fields.join(', ')} }`;
+    }
+    case 'RecordWith': {
+      const updatesStr = node.updates.map(u => `${u.name}: ${formatNode(u.value, PREC_NONE)}`).join(', ');
+      return `${formatNode(node.target, PREC_COMPARE)} with { ${updatesStr} }`;
+    }
+    case 'DimensionDecl': {
+      return `dimension ${node.dimensions.join(', ')}`;
+    }
+    case 'UnitDecl': {
+      if (node.dimension) {
+        return `unit ${node.name} : ${node.dimension}`;
+      }
+      return `unit ${node.name} = ${formatNode(node.definition!, PREC_NONE)}`;
+    }
+    case 'OperatorDecl': {
+      const fixStr = node.fixity !== 'infix' ? `${node.fixity} ` : '';
+      let res = `operator ${fixStr}${node.op} (${node.params.join(', ')}) := ${formatNode(node.body, PREC_NONE)}`;
+      if (node.precedence !== undefined) res += `\n  precedence: ${node.precedence}`;
+      if (node.associativity) res += `\n  associativity: ${node.associativity}`;
+      return res;
+    }
+    case 'KindDecl': {
+      const paramStr = node.params.length > 0 ? `(${node.params.join(', ')})` : '';
+      const extStr = node.extendsKind ? ` extends ${node.extendsKind.name}${node.extendsKind.args.length > 0 ? `(${node.extendsKind.args.join(', ')})` : ''}` : '';
+      let body = '';
+      if (node.operations.length > 0) body += `operations: [${node.operations.join(', ')}]`;
+      if (node.axioms.length > 0) {
+        if (body) body += ', ';
+        body += `axioms: [${node.axioms.map(a => `"${a}"`).join(', ')}]`;
+      }
+      return `kind ${node.name}${paramStr}${extStr} { ${body} }`;
+    }
+    case 'RuleDecl': {
+      let res = `rule ${formatNode(node.pattern, PREC_NONE)} => ${formatNode(node.replacement, PREC_NONE)}`;
+      if (node.requires) res += ` requires: ${formatNode(node.requires, PREC_NONE)}`;
+      return res;
+    }
+    case 'ModuleDecl': {
+      return `module ${node.name}`;
+    }
+    case 'Export': {
+      return `export ${node.symbols.join(', ')}`;
+    }
+    case 'Import': {
+      if (node.importedSymbols) {
+        return `from "${node.path}" import ${node.importedSymbols.join(', ')}`;
+      }
+      return `import "${node.path}"${node.asName ? ` as ${node.asName}` : ''}`;
+    }
     case 'Index': {
       return `${formatNode(node.target, PREC_POSTFIX)}[${formatNode(node.index, PREC_NONE)}]`;
     }

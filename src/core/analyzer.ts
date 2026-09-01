@@ -234,6 +234,43 @@ export function analyzeAST(
         walk(n.index);
         break;
       }
+      case 'MemberAccess': {
+        walk(n.target);
+        break;
+      }
+      case 'RecordDef': {
+        break;
+      }
+      case 'RecordWith': {
+        walk(n.target);
+        for (const u of n.updates) {
+          walk(u.value);
+        }
+        break;
+      }
+      case 'DimensionDecl':
+      case 'ModuleDecl':
+      case 'Export':
+      case 'Import':
+      case 'KindDecl': {
+        break;
+      }
+      case 'UnitDecl': {
+        if (n.definition) walk(n.definition);
+        break;
+      }
+      case 'OperatorDecl': {
+        const subParams = new Set(boundParams);
+        for (const p of n.params) subParams.add(p);
+        const bodyRes = analyzeAST(n.body, env, subParams, source);
+        for (const fv of bodyRes.freeVariables) {
+          if (!subParams.has(fv)) freeVars.add(fv);
+        }
+        break;
+      }
+      case 'RuleDecl': {
+        break;
+      }
       case 'Claim': {
         isDef = true;
         definedName = n.name;

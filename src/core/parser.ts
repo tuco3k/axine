@@ -1,13 +1,10 @@
 import {
   ASTNode,
-  AssignmentNode,
   BigOpNode,
   BinaryOpNode,
   ClaimNode,
   DiffNode,
   EquivalenceNode,
-  FunctionDefNode,
-  GlobalAssignmentNode,
   LimitNode,
   RegionIntegralNode,
   NablaOpNode,
@@ -211,12 +208,333 @@ export class Parser {
     return expr;
   }
 
-  private tryParseDefinition(): AssignmentNode | GlobalAssignmentNode | FunctionDefNode | ClaimNode | null {
+  private tryParseDefinition(): ASTNode | null {
     const startPos = this.pos;
 
     // Check for claim <name> { ... }
     if (this.peek().type === 'CLAIM') {
       return this.parseClaim();
+    }
+
+    // Check for dimension <d1>, <d2>, ...
+    if (this.peek().type === 'DIMENSION' && this.peek(1).type !== 'LPAREN') {
+      const dimToken = this.advance();
+      const dimensions: string[] = [];
+      while (this.peek().type === 'IDENTIFIER') {
+        dimensions.push(this.advance().value);
+        if (this.peek().type === 'COMMA') {
+          this.advance();
+        } else {
+          break;
+        }
+      }
+      return {
+        type: 'DimensionDecl',
+        dimensions,
+        span: {
+          start: dimToken.span.start,
+          end: this.peek(-1)?.span.end || dimToken.span.end,
+          line: dimToken.span.line,
+          col: dimToken.span.col,
+        },
+      };
+    }
+
+    // Check for unit <name> : <dimension> OR unit <name> = <expr>
+    if (this.peek().type === 'UNIT') {
+      const unitToken = this.advance();
+      const nameToken = this.expect('IDENTIFIER', 'unit name');
+      if (this.peek().type === 'COLON') {
+        this.advance();
+        const dimToken = this.expect('IDENTIFIER', 'dimension name');
+        return {
+          type: 'UnitDecl',
+          name: nameToken.value,
+          dimension: dimToken.value,
+          span: {
+            start: unitToken.span.start,
+            end: dimToken.span.end,
+            line: unitToken.span.line,
+            col: unitToken.span.col,
+          },
+        };
+      }
+      if (this.peek().type === 'EQ' || this.peek().type === 'ASSIGN') {
+        this.advance();
+        const def = this.parseExpression(PREC_NONE);
+        return {
+          type: 'UnitDecl',
+          name: nameToken.value,
+          definition: def,
+          span: {
+            start: unitToken.span.start,
+            end: def.span.end,
+            line: unitToken.span.line,
+            col: unitToken.span.col,
+          },
+        };
+      }
+    }
+
+    // Check for operator (prefix|postfix|infix) <op> (params) := <body>
+    if (this.peek().type === 'OPERATOR') {
+      const opToken = this.advance();
+      let fixity: 'infix' | 'prefix' | 'postfix' = 'infix';
+      if (this.peek().type === 'PREFIX') {
+        this.advance();
+        fixity = 'prefix';
+      } else if (this.peek().type === 'POSTFIX') {
+        this.advance();
+        fixity = 'postfix';
+      } else if (this.peek().type === 'INFIX') {
+        this.advance();
+        fixity = 'infix';
+      }
+
+      const symToken = this.advance();
+      const opSymbol = symToken.value;
+
+      this.expect('LPAREN', '(');
+      const params: string[] = [];
+      while (this.peek().type !== 'RPAREN' && this.peek().type !== 'EOF') {
+        const p = this.expect('IDENTIFIER', 'parameter name');
+        params.push(p.value);
+        if (this.peek().type === 'COMMA') this.advance();
+      }
+      this.expect('RPAREN', ')');
+      if (this.peek().type === 'ASSIGN' || this.peek().type === 'EQ') {
+        this.advance();
+      }
+      const body = this.parseExpression(PREC_NONE);
+      let precedence: number | undefined;
+      let associativity: 'left' | 'right' | undefined;
+
+      while (this.peek().type === 'PRECEDENCE' || this.peek().type === 'ASSOCIATIVITY') {
+        if (this.peek().type === 'PRECEDENCE') {
+          this.advance();
+          this.expect('COLON', ':');
+          const precToken = this.expect('NUMBER', 'precedence number');
+          precedence = parseFloat(precToken.value);
+        } else if (this.peek().type === 'ASSOCIATIVITY') {
+          this.advance();
+          this.expect('COLON', ':');
+          const assocToken = this.expect('IDENTIFIER', 'left or right');
+          associativity = assocToken.value === 'right' ? 'right' : 'left';
+        }
+      }
+
+      return {
+        type: 'OperatorDecl',
+        op: opSymbol,
+        fixity,
+        params,
+        body,
+        precedence,
+        associativity,
+        span: {
+          start: opToken.span.start,
+          end: body.span.end,
+          line: opToken.span.line,
+          col: opToken.span.col,
+        },
+      };
+    }
+
+    // Check for kind <Name>(params) extends <Parent>(args) { ... }
+    if (this.peek().type === 'KIND' && this.peek(1).type !== 'LPAREN') {
+      const kindToken = this.advance();
+      const nameToken = this.expect('IDENTIFIER', 'kind name');
+      const params: string[] = [];
+      if (this.peek().type === 'LPAREN') {
+        this.advance();
+        while (this.peek().type !== 'RPAREN' && this.peek().type !== 'EOF') {
+          params.push(this.expect('IDENTIFIER', 'parameter').value);
+          if (this.peek().type === 'COMMA') this.advance();
+        }
+        this.expect('RPAREN', ')');
+      }
+      let extendsKind: { name: string; args: string[] } | undefined;
+      if (this.peek().type === 'EXTENDS') {
+        this.advance();
+        const extName = this.expect('IDENTIFIER', 'parent kind name').value;
+        const extArgs: string[] = [];
+        if (this.peek().type === 'LPAREN') {
+          this.advance();
+          while (this.peek().type !== 'RPAREN' && this.peek().type !== 'EOF') {
+            extArgs.push(this.expect('IDENTIFIER', 'argument').value);
+            if (this.peek().type === 'COMMA') this.advance();
+          }
+          this.expect('RPAREN', ')');
+        }
+        extendsKind = { name: extName, args: extArgs };
+      }
+
+      this.expect('LBRACE', '{');
+      const operations: string[] = [];
+      const axioms: string[] = [];
+
+      while (this.peek().type !== 'RBRACE' && this.peek().type !== 'EOF') {
+        if (this.peek().type === 'OPERATIONS') {
+          this.advance();
+          this.expect('COLON', ':');
+          this.expect('LBRACKET', '[');
+          while (this.peek().type !== 'RBRACKET' && this.peek().type !== 'EOF') {
+            operations.push(this.advance().value);
+            if (this.peek().type === 'COMMA') this.advance();
+          }
+          this.expect('RBRACKET', ']');
+        } else if (this.peek().type === 'AXIOMS') {
+          this.advance();
+          this.expect('COLON', ':');
+          this.expect('LBRACKET', '[');
+          while (this.peek().type !== 'RBRACKET' && this.peek().type !== 'EOF') {
+            axioms.push(this.expect('STRING', 'axiom description').value);
+            if (this.peek().type === 'COMMA') this.advance();
+          }
+          this.expect('RBRACKET', ']');
+        } else {
+          this.advance();
+        }
+        if (this.peek().type === 'COMMA') this.advance();
+      }
+      const rBrace = this.expect('RBRACE', '}');
+
+      return {
+        type: 'KindDecl',
+        name: nameToken.value,
+        params,
+        extendsKind,
+        operations,
+        axioms,
+        span: {
+          start: kindToken.span.start,
+          end: rBrace.span.end,
+          line: kindToken.span.line,
+          col: kindToken.span.col,
+        },
+      };
+    }
+
+    // Check for rule <pattern> => <replacement> (requires: <cond>)
+    if (this.peek().type === 'RULE') {
+      const ruleToken = this.advance();
+      const patTokens: Token[] = [];
+      while (this.peek().type !== 'FAT_ARROW' && this.peek().type !== 'EOF') {
+        patTokens.push(this.advance());
+      }
+      this.expect('FAT_ARROW', '=>');
+      const patternParser = new Parser(patTokens, { source: this.source });
+      const patternAST = patternParser.parseExpression(PREC_NONE);
+
+      const replTokens: Token[] = [];
+      while (this.peek().type !== 'REQUIRES' && this.peek().type !== 'EOF') {
+        replTokens.push(this.advance());
+      }
+      const replParser = new Parser(replTokens, { source: this.source });
+      const replacementAST = replParser.parseExpression(PREC_NONE);
+
+      let requiresAST: ASTNode | undefined;
+      if (this.peek().type === 'REQUIRES') {
+        this.advance();
+        if (this.peek().type === 'COLON') this.advance();
+        requiresAST = this.parseExpression(PREC_NONE);
+      }
+
+      return {
+        type: 'RuleDecl',
+        pattern: patternAST,
+        replacement: replacementAST,
+        requires: requiresAST,
+        span: {
+          start: ruleToken.span.start,
+          end: this.peek(-1)?.span.end || ruleToken.span.end,
+          line: ruleToken.span.line,
+          col: ruleToken.span.col,
+        },
+      };
+    }
+
+    // Check for module <name>
+    if (this.peek().type === 'MODULE') {
+      const modToken = this.advance();
+      const nameToken = this.expect('IDENTIFIER', 'module name');
+      return {
+        type: 'ModuleDecl',
+        name: nameToken.value,
+        span: {
+          start: modToken.span.start,
+          end: nameToken.span.end,
+          line: modToken.span.line,
+          col: modToken.span.col,
+        },
+      };
+    }
+
+    // Check for export <sym1>, <sym2>
+    if (this.peek().type === 'EXPORT') {
+      const expToken = this.advance();
+      const symbols: string[] = [];
+      while (this.peek().type === 'IDENTIFIER') {
+        symbols.push(this.advance().value);
+        if (this.peek().type === 'COMMA') this.advance();
+        else break;
+      }
+      return {
+        type: 'Export',
+        symbols,
+        span: {
+          start: expToken.span.start,
+          end: this.peek(-1)?.span.end || expToken.span.end,
+          line: expToken.span.line,
+          col: expToken.span.col,
+        },
+      };
+    }
+
+    // Check for import "<path>" (as <name>)
+    if (this.peek().type === 'IMPORT') {
+      const impToken = this.advance();
+      const pathToken = this.expect('STRING', 'module path');
+      let asName: string | undefined;
+      if (this.peek().type === 'AS') {
+        this.advance();
+        asName = this.expect('IDENTIFIER', 'alias name').value;
+      }
+      return {
+        type: 'Import',
+        path: pathToken.value,
+        asName,
+        span: {
+          start: impToken.span.start,
+          end: this.peek(-1)?.span.end || pathToken.span.end,
+          line: impToken.span.line,
+          col: impToken.span.col,
+        },
+      };
+    }
+
+    // Check for from "<path>" import <sym1>, <sym2>
+    if (this.peek().type === 'FROM') {
+      const fromToken = this.advance();
+      const pathToken = this.expect('STRING', 'module path');
+      this.expect('IMPORT', 'import');
+      const symbols: string[] = [];
+      while (this.peek().type === 'IDENTIFIER') {
+        symbols.push(this.advance().value);
+        if (this.peek().type === 'COMMA') this.advance();
+        else break;
+      }
+      return {
+        type: 'Import',
+        path: pathToken.value,
+        importedSymbols: symbols,
+        span: {
+          start: fromToken.span.start,
+          end: this.peek(-1)?.span.end || pathToken.span.end,
+          line: fromToken.span.line,
+          col: fromToken.span.col,
+        },
+      };
     }
 
     // Check for f(x, y) := expr OR f(x, y) :\u2261 expr
@@ -415,6 +733,37 @@ export class Parser {
             span,
           };
         }
+        continue;
+      }
+
+      // Check for record with { field: val, ... }
+      if (this.peek().type === 'WITH' && precedence < PREC_COMPARE) {
+        this.advance(); // consume with
+        this.expect('LBRACE', '{');
+        const updates: { name: string; value: ASTNode }[] = [];
+        while (this.peek().type !== 'RBRACE' && this.peek().type !== 'EOF') {
+          const fieldToken = this.expect('IDENTIFIER', 'field name');
+          this.expect('COLON', ':');
+          const val = this.parseExpression(PREC_NONE);
+          updates.push({ name: fieldToken.value, value: val });
+          if (this.peek().type === 'COMMA') {
+            this.advance();
+          } else {
+            break;
+          }
+        }
+        const rBrace = this.expect('RBRACE', '}');
+        left = {
+          type: 'RecordWith',
+          target: left,
+          updates,
+          span: {
+            start: left.span.start,
+            end: rBrace.span.end,
+            line: left.span.line,
+            col: left.span.col,
+          },
+        };
         continue;
       }
 
@@ -882,7 +1231,32 @@ export class Parser {
       return this.parseIntegral();
     }
 
-
+    // Record definition expression: record { mass, position, velocity }
+    if (token.type === 'RECORD') {
+      this.advance();
+      this.expect('LBRACE', '{');
+      const fields: string[] = [];
+      while (this.peek().type !== 'RBRACE' && this.peek().type !== 'EOF') {
+        const fieldToken = this.expect('IDENTIFIER', 'field name');
+        fields.push(fieldToken.value);
+        if (this.peek().type === 'COMMA') {
+          this.advance();
+        } else {
+          break;
+        }
+      }
+      const rBrace = this.expect('RBRACE', '}');
+      return {
+        type: 'RecordDef',
+        fields,
+        span: {
+          start: token.span.start,
+          end: rBrace.span.end,
+          line: token.span.line,
+          col: token.span.col,
+        },
+      };
+    }
 
     // Number literal
     if (token.type === 'NUMBER') {
@@ -924,7 +1298,27 @@ export class Parser {
     }
 
     // Identifiers, Function Calls, Bare Function Applications
-    if (token.type === 'IDENTIFIER') {
+    if (
+      token.type === 'IDENTIFIER' ||
+      token.type === 'REQUIRES' ||
+      token.type === 'FROM' ||
+      token.type === 'AS' ||
+      token.type === 'KIND' ||
+      token.type === 'DIMENSION' ||
+      token.type === 'UNIT' ||
+      token.type === 'OPERATOR' ||
+      token.type === 'PREFIX' ||
+      token.type === 'POSTFIX' ||
+      token.type === 'INFIX' ||
+      token.type === 'PRECEDENCE' ||
+      token.type === 'ASSOCIATIVITY' ||
+      token.type === 'EXTENDS' ||
+      token.type === 'OPERATIONS' ||
+      token.type === 'AXIOMS' ||
+      token.type === 'MODULE' ||
+      token.type === 'EXPORT' ||
+      token.type === 'IMPORT'
+    ) {
       const name = token.value;
 
       // Special Expectation syntax: E[X]
@@ -968,7 +1362,7 @@ export class Parser {
         return { type: 'DecoratedIdentifier', decoration: 'ddot', name: baseName, span: token.span };
       }
 
-      const isKnownFunc = this.knownFunctions.has(name);
+      const isKnownFunc = this.knownFunctions.has(name) || /^[A-Z]/.test(name);
 
       // Check if followed immediately by '(' with standard call syntax
       if (this.peek(1).type === 'LPAREN') {
@@ -1193,7 +1587,7 @@ export class Parser {
     if (this.peek().type !== 'RPAREN') {
       while (true) {
         // Check for named argument: name: value
-        if ((this.peek().type === 'IDENTIFIER' || this.peek().type === 'IN' || this.peek().type === 'STEP' || this.peek().type === 'NOT') && this.peek(1).type === 'COLON') {
+        if (this.peek().type !== 'RPAREN' && this.peek(1).type === 'COLON') {
           const nameTok = this.advance();
           this.advance(); // consume :
           const val = this.parseExpression(PREC_NONE);
@@ -1591,7 +1985,14 @@ export class Parser {
     let expectNode: ASTNode = { type: 'Identifier', name: 'true', span: claimTok.span };
 
     while (this.peek().type !== 'RBRACE' && this.peek().type !== 'EOF') {
-      const keyTok = this.expect('IDENTIFIER', 'claim field (statement, proved_by, relevance, kind, shadow, expect)');
+      const nextTok = this.peek();
+      if (nextTok.type !== 'IDENTIFIER' && nextTok.type !== 'KIND') {
+        throw createError(
+          `Unexpected token '${nextTok.value || nextTok.type}'. Expected claim field (statement, proved_by, relevance, kind, shadow, expect)`,
+          nextTok.span
+        );
+      }
+      const keyTok = this.advance();
       this.expect('COLON', ':');
       const key = keyTok.value;
       if (key === 'statement') {
