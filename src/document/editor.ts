@@ -1,11 +1,12 @@
 import { DocumentState, DocumentLineRecord } from './document_state';
 import { CORPUS_DOCUMENTS } from './corpus_data';
-import { Value, GraphValue, DerivationValue, SolveTraceValue, DescribedValue } from '../core/types';
+import { Value, GraphValue, DerivationValue, SolveTraceValue, DescribedValue, TrajectoryValue } from '../core/types';
 import { Canvas2DPlotter } from '../plot/canvas2d';
 import { Surface3DPlotter } from '../plot/surface3d';
+import { AnimationPlayer } from '../plot/animation_player';
 import { typesetMath } from '../core/math_typeset';
 import { explainSymbol } from '../core/explainer';
-import { analyzeAndParse, createInitialEnvironment, evaluate } from '../core/evaluator';
+import { analyzeAndParse, createInitialEnvironment, evaluate, Evaluator } from '../core/evaluator';
 import { formatAST } from '../core/formatter';
 import { valueToNumber } from '../core/numeric/tower';
 import { formatKind } from '../core/kinds';
@@ -73,6 +74,8 @@ export class DocumentEditor {
   private expandedPlots: Set<number> = new Set();
   private linePlotters: Map<number, Canvas2DPlotter | Surface3DPlotter> = new Map();
   private pinnedPlotters: Map<number, Canvas2DPlotter | Surface3DPlotter> = new Map();
+  private animationPlayers: Map<number, AnimationPlayer> = new Map();
+  private pinnedAnimationPlayers: Map<number, AnimationPlayer> = new Map();
   public mathPopover: MathPopover;
 
   constructor(container: HTMLElement, initialText?: string) {
@@ -847,11 +850,15 @@ export class DocumentEditor {
     }
     this.lineNumbersEl.innerHTML = lineNumsHtml;
 
-    // Clean up existing plotters
+    // Clean up existing plotters and animation players
     this.linePlotters.forEach(p => p.dispose());
     this.linePlotters.clear();
     this.pinnedPlotters.forEach(p => p.dispose());
     this.pinnedPlotters.clear();
+    this.animationPlayers.forEach(p => p.dispose());
+    this.animationPlayers.clear();
+    this.pinnedAnimationPlayers.forEach(p => p.dispose());
+    this.pinnedAnimationPlayers.clear();
 
     // 2. Render Pinned Visuals Slot
     const pinnedContainer = this.container.querySelector('#doc-pinned-visuals') as HTMLElement;
@@ -1006,6 +1013,36 @@ export class DocumentEditor {
       }
     }
 
+    // Instantiate and mount all animation players for visible trajectory rows
+    for (let i = 0; i < records.length; i++) {
+      const rec = records[i];
+      if (rec && rec.result && rec.result.type === 'trajectory' && !this.collapsedLines.has(i)) {
+        const container = this.gutterEl.querySelector(`.doc-inline-animation-container[data-line="${i}"]`) as HTMLElement;
+        if (container) {
+          const trajVal = rec.result as TrajectoryValue;
+          const player = new AnimationPlayer(container, trajVal, {
+            viewResolver: (state) => this.resolveViewForState(state),
+          });
+          this.animationPlayers.set(i, player);
+        }
+      }
+    }
+
+    // Mount pinned animation players
+    for (const lineIdx of this.pinnedLines) {
+      const rec = records[lineIdx];
+      if (rec && rec.result && rec.result.type === 'trajectory') {
+        const container = pinnedContainer?.querySelector(`.doc-pinned-animation-container[data-line="${lineIdx}"]`) as HTMLElement;
+        if (container) {
+          const trajVal = rec.result as TrajectoryValue;
+          const player = new AnimationPlayer(container, trajVal, {
+            viewResolver: (state) => this.resolveViewForState(state),
+          });
+          this.pinnedAnimationPlayers.set(lineIdx, player);
+        }
+      }
+    }
+
     // 4. Scope Tab
     let scopeHtml = '';
     if (activeSymbols.size === 0) {
@@ -1089,6 +1126,19 @@ export class DocumentEditor {
             <button class="doc-unpin-btn" data-line="${lineIdx}">Unpin</button>
           </div>
           <div class="doc-inline-check-container">${this.renderCheckResultFull(checkVal)}</div>
+        </div>
+      `;
+    }
+
+    if (rec.result.type === 'trajectory') {
+      const trajVal = rec.result as TrajectoryValue;
+      return `
+        <div class="doc-pinned-item" data-line="${lineIdx}">
+          <div class="doc-pinned-header">
+            <span>Pinned: Line ${lineIdx + 1} (Animation: ${escapeHtml(trajVal.stateKind)})</span>
+            <button class="doc-unpin-btn" data-line="${lineIdx}">Unpin</button>
+          </div>
+          <div class="doc-pinned-animation-container" data-line="${lineIdx}"></div>
         </div>
       `;
     }
@@ -1441,6 +1491,29 @@ export class DocumentEditor {
       `;
     }
 
+    // 6. Trajectory Animation result
+    if (rec.result.type === 'trajectory') {
+      const trajVal = rec.result as TrajectoryValue;
+      const collapseText = isCollapsed ? '+' : '\u2212';
+      return `
+        <div class="doc-gutter-row" data-line="${lineIdx}">
+          <div class="doc-gutter-row-header">
+            <span class="doc-gutter-lineno">L${lineIdx + 1} &bull; Animation (${escapeHtml(trajVal.stateKind)})</span>
+            <div class="doc-gutter-row-actions">
+              <button class="doc-gutter-action-btn doc-gutter-pin-btn ${isPinned ? 'pinned' : ''}" data-line="${lineIdx}" title="Pin animation to top of panel">${isPinned ? 'Pinned' : 'Pin'}</button>
+              <button class="doc-gutter-action-btn doc-gutter-collapse-btn" data-line="${lineIdx}" title="Collapse/Expand row">${collapseText}</button>
+            </div>
+          </div>
+          <div class="doc-gutter-content">
+            ${isCollapsed
+              ? `<div class="doc-gutter-collapsed-summary">[Collapsed Animation: ${escapeHtml(trajVal.stateKind)} (${trajVal.samples.length} samples)]</div>`
+              : `<div class="doc-inline-animation-container" data-line="${lineIdx}"></div>`
+            }
+          </div>
+        </div>
+      `;
+    }
+
     // 6. Scalar / Standard result
     return `
       <div class="doc-gutter-row" data-line="${lineIdx}">
@@ -1766,9 +1839,32 @@ export class DocumentEditor {
         return `${this.formatValue(val.magnitude)} ${val.unit}`;
       case 'module':
         return `module ${val.name}`;
+      case 'trajectory':
+        return `Trajectory(${val.stateKind}, ${val.tStart}..${val.tEnd}, ${val.samples.length} samples)`;
+      case 'drawing_primitive':
+        return `Primitive(${val.primitive})`;
+      case 'scene':
+        return `Scene(${val.primitives.length} primitives)`;
       default:
         return String((val as any).value ?? val.type);
     }
+  }
+
+  private resolveViewForState(state: Value): Value | null {
+    if (!state) return null;
+    const views = (this.state as any)?.lastEnv?.__views__ || (window as any).__axine_views__;
+    if (state.type === 'record' && views && views.has(state.typeName)) {
+      const viewFn = views.get(state.typeName);
+      if (viewFn) {
+        try {
+          const evaluator = new Evaluator(createInitialEnvironment());
+          return (evaluator as any).evalCall(viewFn, [state]);
+        } catch {
+          return null;
+        }
+      }
+    }
+    return null;
   }
 
   public dispose() {
@@ -1776,6 +1872,10 @@ export class DocumentEditor {
     this.linePlotters.clear();
     this.pinnedPlotters.forEach(p => p.dispose());
     this.pinnedPlotters.clear();
+    this.animationPlayers.forEach(p => p.dispose());
+    this.animationPlayers.clear();
+    this.pinnedAnimationPlayers.forEach(p => p.dispose());
+    this.pinnedAnimationPlayers.clear();
     this.mathPopover.dispose();
     this.state.dispose();
   }

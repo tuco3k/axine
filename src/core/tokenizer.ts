@@ -704,6 +704,10 @@ export class Tokenizer {
         return this.makeToken('AS', name, startPos, startLine, startCol, leadingWhitespace);
       case 'is':
         return this.makeToken('IS', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'view':
+        return this.makeToken('VIEW', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'for':
+        return this.makeToken('FOR', name, startPos, startLine, startCol, leadingWhitespace);
       default:
         return this.makeToken('IDENTIFIER', name, startPos, startLine, startCol, leadingWhitespace);
     }

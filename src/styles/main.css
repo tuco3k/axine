@@ -2063,3 +2063,138 @@ html, body {
   border: 1px solid var(--color-border-subtle);
 }
 
+/* Animation Player (Phase 12) */
+.axine-animation-player {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-base);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--border-radius-md);
+  padding: var(--space-sm);
+  gap: var(--space-xs);
+  max-width: 520px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.anim-hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hud-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs);
+}
+
+.hud-badge {
+  font-family: var(--font-family-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--color-bg-elevated);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-subtle);
+}
+
+.hud-source {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.3);
+}
+
+.hud-drift-ok {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
+  border-color: rgba(52, 211, 153, 0.3);
+}
+
+.hud-drift-warn {
+  background: rgba(244, 63, 94, 0.15);
+  color: #f43f5e;
+  border-color: rgba(244, 63, 94, 0.4);
+}
+
+.anim-canvas {
+  background: #0f141c;
+  border-radius: var(--border-radius-sm);
+  border: 1px solid var(--color-border-subtle);
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 10;
+}
+
+.anim-scrub-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.anim-scrub-bar {
+  flex: 1;
+  cursor: pointer;
+  accent-color: var(--color-accent);
+}
+
+.anim-time-display {
+  font-family: var(--font-family-mono);
+  font-size: 0.8rem;
+  color: var(--color-text-primary);
+  min-width: 65px;
+  text-align: right;
+}
+
+.anim-telemetry {
+  font-family: var(--font-family-mono);
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-elevated);
+  padding: 4px 8px;
+  border-radius: 4px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.anim-controls-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-top: 2px;
+}
+
+.anim-btn {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text-primary);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.anim-btn:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border-strong);
+}
+
+.anim-btn-play {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.anim-speed-select {
+  margin-left: auto;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+

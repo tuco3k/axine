@@ -172,6 +172,28 @@ export function analyzeAST(
           }
           break;
         }
+        if (n.callee === 'ode') {
+          const subParams = new Set(boundParams);
+          subParams.add('t');
+          subParams.add('y');
+          subParams.add('dy');
+          subParams.add('dt');
+          subParams.add('dx');
+          for (const arg of n.args) {
+            if (arg.type === 'BinaryOp' && arg.op === 'in' && arg.left.type === 'Identifier') {
+              subParams.add(arg.left.name);
+            } else if (arg.type === 'Range' && (arg as any).variable) {
+              subParams.add((arg as any).variable);
+            }
+          }
+          for (const arg of n.args) {
+            const subRes = analyzeAST(arg, env, subParams, source);
+            for (const fv of subRes.freeVariables) {
+              if (!subParams.has(fv)) freeVars.add(fv);
+            }
+          }
+          break;
+        }
         if (n.callee !== 'unknown') {
           for (const arg of n.args) {
             walk(arg);

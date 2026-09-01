@@ -1,0 +1,17 @@
+# spring.ax — Damped harmonic oscillator simulation
+import "./physics.ax"
+
+k := 4.0
+c := 0.2
+b0 := Body(mass: 1.0, position: (3.0, 0.0), velocity: (0.0, 0.0))
+
+spring_force_fn(b) := (
+  -k * b.position[0] - c * b.velocity[0],
+  0.0
+)
+
+traj := simulate(b -> rk4_step(b, spring_force_fn, 0.05), b0, t in 0..10, dt: 0.05)
+
+# Verify position at t = 3.0s
+b_3 := traj[3.0]
+x_3 := b_3.position[0]

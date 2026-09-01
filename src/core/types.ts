@@ -107,6 +107,8 @@ export type TokenType =
   | 'AS'
   | 'IS'
   | 'CUSTOM_OP'
+  | 'VIEW'
+  | 'FOR'
   | 'EOF';
 
 export interface Token {
@@ -161,7 +163,8 @@ export type ASTNode =
   | RuleDeclNode
   | ModuleDeclNode
   | ImportNode
-  | ExportNode;
+  | ExportNode
+  | ViewDeclNode;
 
 export interface RecordDefNode {
   type: 'RecordDef';
@@ -238,6 +241,13 @@ export interface ImportNode {
 export interface ExportNode {
   type: 'Export';
   symbols: string[];
+  span: Span;
+}
+
+export interface ViewDeclNode {
+  type: 'ViewDecl';
+  targetType: string;
+  viewFunction: ASTNode;
   span: Span;
 }
 
@@ -785,7 +795,11 @@ export type StepRule =
   | 'substitution'
   | 'factoring'
   | 'conjugate-multiplication'
-  | 'lhopitals-rule';
+  | 'lhopitals-rule'
+  | 'separation-of-variables'
+  | 'integrate-both-sides'
+  | 'exponentiate'
+  | 'initial-condition';
 
 export interface DerivationBranch {
   condition?: string;
@@ -910,6 +924,54 @@ export interface ModuleValue {
   exports: Record<string, Value>;
 }
 
+export interface TrajectorySample {
+  t: number;
+  state: Value;
+}
+
+export interface TrajectoryValue {
+  type: 'trajectory';
+  stateKind: string;
+  tStart: number;
+  tEnd: number;
+  samples: TrajectorySample[];
+  sourceInfo: {
+    source: 'simulate' | 'ode' | 'closed_form';
+    integrator?: string;
+    dt?: number;
+    errorEstimate?: number;
+    energyDrift?: number;
+    symbolicDerivation?: DerivationValue;
+  };
+  units?: {
+    timeUnit?: string;
+    stateUnits?: Record<string, string>;
+  };
+}
+
+export type DrawingPrimitiveKind =
+  | 'point'
+  | 'segment'
+  | 'arrow'
+  | 'circle'
+  | 'polygon'
+  | 'path'
+  | 'patch'
+  | 'label'
+  | 'field';
+
+export interface DrawingPrimitiveValue {
+  type: 'drawing_primitive';
+  primitive: DrawingPrimitiveKind;
+  params: Record<string, any>;
+  units?: Record<string, string>;
+}
+
+export interface SceneValue {
+  type: 'scene';
+  primitives: DrawingPrimitiveValue[];
+}
+
 export type Value =
   | RationalValue
   | FloatValue
@@ -943,7 +1005,10 @@ export type Value =
   | RecordValue
   | RecordConstructorValue
   | QuantityValue
-  | ModuleValue;
+  | ModuleValue
+  | TrajectoryValue
+  | DrawingPrimitiveValue
+  | SceneValue;
 
 export type Environment = Record<string, Value>;
 

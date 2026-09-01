@@ -122,6 +122,12 @@ export interface QuantityKind {
   unit: string;
 }
 
+export interface TrajectoryKind {
+  name: 'Trajectory';
+  stateKind: string;
+  stateMathKind?: MathKind;
+}
+
 export interface UnknownKind {
   name: 'UnknownKind';
   description?: string;
@@ -146,6 +152,7 @@ export type MathKind =
   | RecordKind
   | UserDefinedKind
   | QuantityKind
+  | TrajectoryKind
   | UnknownKind;
 
 /**
@@ -199,6 +206,9 @@ export function formatKind(kind: MathKind): string {
     }
     case 'Quantity': {
       return `Quantity(unit=${kind.unit})`;
+    }
+    case 'Trajectory': {
+      return kind.stateKind ? `Trajectory of ${kind.stateKind}` : 'Trajectory';
     }
     case 'UnknownKind':
       return `UnknownKind(${kind.description || 'unspecified'})`;
@@ -310,6 +320,8 @@ export function admitsOperations(kind: MathKind): string[] {
     }
     case 'Quantity':
       return ['+', '-', '*', '/', '^', 'convert'];
+    case 'Trajectory':
+      return ['index ([t])', 'duration', 'samples', 'map', 'animate'];
     case 'UnknownKind':
       return ['inspect', 'describe'];
   }
@@ -415,6 +427,15 @@ export function inferKindOfValue(val: Value): MathKind {
         name: 'Quantity',
         dimensions: val.dimensions,
         unit: val.unit,
+      };
+    }
+    case 'trajectory': {
+      const firstState = val.samples[0]?.state;
+      const stateMathKind = firstState ? inferKindOfValue(firstState) : undefined;
+      return {
+        name: 'Trajectory',
+        stateKind: val.stateKind,
+        stateMathKind,
       };
     }
     default:

@@ -132,6 +132,21 @@ export const BUILTIN_FUNCTIONS = new Set([
   'oplus',
   'limsup',
   'liminf',
+  // Phase 12: Simulation, Trajectories & Drawing Primitives
+  'Trajectory',
+  'simulate',
+  'ode',
+  'closed_form',
+  'export_trajectory',
+  'point',
+  'segment',
+  'arrow',
+  'circle',
+  'polygon',
+  'path',
+  'patch',
+  'label',
+  'field',
 ]);
 
 export const CONSTANTS = new Set([
@@ -507,6 +522,30 @@ export class Parser {
           end: this.peek(-1)?.span.end || pathToken.span.end,
           line: fromToken.span.line,
           col: fromToken.span.col,
+        },
+      };
+    }
+
+    // Check for view for <Type> := <viewFunction>
+    if (this.peek().type === 'VIEW') {
+      const viewToken = this.advance();
+      if (this.peek().type === 'FOR') {
+        this.advance();
+      }
+      const targetTypeToken = this.expect('IDENTIFIER', 'view target type name');
+      if (this.peek().type === 'ASSIGN' || this.peek().type === 'GLOBAL_ASSIGN') {
+        this.advance();
+      }
+      const viewFunction = this.parseExpression(PREC_NONE);
+      return {
+        type: 'ViewDecl',
+        targetType: targetTypeToken.value,
+        viewFunction,
+        span: {
+          start: viewToken.span.start,
+          end: viewFunction.span.end,
+          line: viewToken.span.line,
+          col: viewToken.span.col,
         },
       };
     }
@@ -1372,7 +1411,9 @@ export class Parser {
       token.type === 'MODULE' ||
       token.type === 'EXPORT' ||
       token.type === 'IMPORT' ||
-      token.type === 'IS'
+      token.type === 'IS' ||
+      token.type === 'VIEW' ||
+      token.type === 'FOR'
     ) {
       const name = token.value;
 
@@ -1419,12 +1460,13 @@ export class Parser {
 
       const isKnownFunc =
         this.knownFunctions.has(name) ||
-        BUILTIN_FUNCTIONS.has(name) ||
-        /^[A-Z]/.test(name);
+        BUILTIN_FUNCTIONS.has(name);
+
+      const isConstructor = /^[A-Z]/.test(name);
 
       // Check if followed immediately by '(' with standard call syntax
       if (this.peek(1).type === 'LPAREN') {
-        if (isKnownFunc || (name.length > 1 && !this.peek(1).leadingWhitespace)) {
+        if (isKnownFunc || isConstructor || (name.length > 1 && !this.peek(1).leadingWhitespace)) {
           // It is a defined function / builtin call / user function call: f(...) or myfunc(...)
           this.advance(); // consume func name
           return this.parseFunctionCallArgs(name, token.span);
@@ -2546,7 +2588,8 @@ export class Parser {
   private isContextualKeyword(type: TokenType): boolean {
     return [
       'DIMENSION', 'UNIT', 'MODULE', 'EXPORT', 'IMPORT', 'FROM', 'AS', 'KIND',
-      'STEP', 'WITH', 'RECORD', 'IS', 'EXTENDS', 'OPERATIONS', 'AXIOMS', 'RULE', 'REQUIRES'
+      'STEP', 'WITH', 'RECORD', 'IS', 'EXTENDS', 'OPERATIONS', 'AXIOMS', 'RULE', 'REQUIRES',
+      'VIEW', 'FOR'
     ].includes(type);
   }
 

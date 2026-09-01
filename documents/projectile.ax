@@ -1,59 +1,18 @@
-# =========================================================================
-# Projectile Motion & Elevated Launch Range Optimization (Closed-Form)
-# =========================================================================
+# projectile.ax — Projectile motion with gravity and air drag
+import "./physics.ax"
 
-# 1. Physical Parameters & Launch Constants
-g := 9.81
-v0 := 50
-h0 := 10
-theta0 := 0.785398
+b0 := Body(mass: 1, position: (0, 0), velocity: (10, 15))
+g := 9.8
+c := 0.05
 
-# Initial Velocity Components at 45°
-vx0 := v0 * cos(theta0)
-vy0 := v0 * sin(theta0)
+force_fn(b) := (
+  -c * b.velocity[0],
+  -b.mass * g - c * b.velocity[1]
+)
 
-# 2. Trajectory Equations & Landing Time Derivations
-# Case A: Ground level launch (h0 = 0)
-# y0(t) = vy0 * t - 0.5 * g * t^2 = 0
-t_ground_deriv := isolate(35.35533328235472 * t - 4.905 * t^2 = 0, for: t)
-t_ground_num := solve(t -> vy0 * t - 0.5 * g * t^2, near: 7.2)
+# Simulate projectile trajectory using RK4
+traj := simulate(b -> rk4_step(b, force_fn, 0.02), b0, t in 0..3, dt: 0.02)
 
-# Case B: Elevated cliff launch (h0 = 10m)
-# y10(t) = 10 + vy0 * t - 0.5 * g * t^2 = 0
-t_cliff_deriv := isolate(10 + 35.35533328235472 * t - 4.905 * t^2 = 0, for: t)
-t_cliff_num := solve(t -> 10 + vy0 * t - 0.5 * g * t^2, near: 7.4)
-
-# 3. Closed-Form Range Functions as a Function of Launch Angle Theta
-# Ground level range: R0(th) = (v0^2 / g) * sin(2 * th)
-R0(th) := (v0^2 / g) * sin(2 * th)
-
-# Elevated cliff range: R10(th) = (v0*cos(th)/g) * (v0*sin(th) + sqrt(v0^2 * sin(th)^2 + 2*g*h0))
-R10(th) := (v0 * cos(th) / g) * (v0 * sin(th) + sqrt(v0^2 * sin(th)^2 + 2 * g * h0))
-
-# 4. Plot Range vs Launch Angle for Both Heights
-graph(R0(th), R10(th), th in 0.2..1.4)
-
-# 5. 3D Parametric Trajectory Surface with Crosswind
-# Height as a function of horizontal distance x and launch angle theta:
-traj_3d(x, th) := h0 + tan(th) * x - (g / (2 * v0^2 * cos(th)^2)) * x^2
-graph(traj_3d(x, th), x in 0..260, th in 0.4..1.2)
-
-# 6. Optimal Launch Angle Optimization via Inline Derivative Root Finding
-# Ground optimal angle: d//dth R0(th) = 0 -> theta = pi/4 = 0.785398 rad (45.00°)
-opt_theta_ground := solve(d//dth R0(th), for: th, near: 0.75)
-
-# Elevated cliff optimal angle: d//dth R10(th) = 0 -> theta ≈ 0.76637 rad (43.91° < 45°)
-opt_theta_cliff := solve(d//dth R10(th), for: th, near: 0.75)
-
-# Evaluated Maximum Ranges
-max_range_ground := R0(opt_theta_ground)
-max_range_cliff := R10(opt_theta_cliff)
-
-# 7. Verified Claim: Elevated launch angle is strictly < 45° with proven shadow
-claim optimal_angle_elevated {
-  statement: "For a projectile launched from an elevated cliff (h0 = 10m), the range-maximizing launch angle is strictly less than 45 degrees (pi/4 radians)",
-  relevance: "Launching from an initial height h0 > 0 provides extra airborne duration during descent, so trading vertical velocity for horizontal forward velocity maximizes total horizontal displacement.",
-  kind: "B",
-  shadow: R10(opt_theta_cliff) > R10(0.785398) and opt_theta_cliff < 0.785398,
-  expect: true
-}
+# Sample state at t = 1.0s
+b_1 := traj[1.0]
+E_k1 := kinetic_energy(b_1)

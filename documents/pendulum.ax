@@ -1,0 +1,24 @@
+# pendulum.ax — Simple pendulum trajectory and energy
+import "./physics.ax"
+
+L := 2.0
+g := 9.81
+
+# Pendulum state: (theta, omega)
+p0 := (0.5, 0.0)
+
+# Step function for pendulum: d(theta)/dt = omega, d(omega)/dt = -(g/L)*sin(theta)
+pendulum_step(s, dt) := {
+  theta := s[0];
+  omega := s[1];
+  alpha := -(g / L) * sin(theta);
+  new_theta := theta + omega * dt + 0.5 * alpha * dt^2;
+  alpha_next := -(g / L) * sin(new_theta);
+  new_omega := omega + 0.5 * (alpha + alpha_next) * dt;
+  (new_theta, new_omega)
+}
+
+traj := simulate(s -> pendulum_step(s, 0.02), p0, t in 0..5, dt: 0.02)
+
+# Verify oscillation at t = 2.0s
+s_2 := traj[2.0]

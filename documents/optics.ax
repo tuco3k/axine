@@ -1,0 +1,38 @@
+# optics.ax — Geometric optics with zero built-in physics
+# Ray propagation, interface refraction (Snell's Law), and custom views
+
+Ray := record { origin, direction, intensity }
+
+view for Ray := r -> [
+  segment(r.origin, (r.origin[0] + r.direction[0] * 4.0, r.origin[1] + r.direction[1] * 4.0)),
+  circle(r.origin, 0.2)
+]
+
+# Snell's law step function for medium boundary at x = 5.0 (n1 = 1.0 -> n2 = 1.5)
+propagate_and_refract(r, dt) := {
+  x := r.origin[0];
+  y := r.origin[1];
+  dx := r.direction[0];
+  dy := r.direction[1];
+  new_x := x + dx * dt;
+  new_y := y + dy * dt;
+  
+  # When crossing boundary at x = 5.0 from air (1.0) into glass (1.5)
+  crossed := (x < 5.0 and new_x >= 5.0);
+  n1 := 1.0;
+  n2 := 1.5;
+  # theta1 relative to normal (1, 0): cos(theta1) = dx
+  # n1*sin(theta1) = n2*sin(theta2)
+  new_dx := if crossed then sqrt(1.0 - (n1 / n2)^2 * (1.0 - dx^2)) else dx;
+  new_dy := if crossed then (n1 / n2) * dy else dy;
+  
+  Ray(origin: (new_x, new_y), direction: (new_dx, new_dy), intensity: r.intensity)
+}
+
+# Initial ray incident at 45 degrees
+r0 := Ray(origin: (0.0, 0.0), direction: (0.707106, 0.707106), intensity: 1.0)
+
+traj := simulate(r -> propagate_and_refract(r, 0.1), r0, t in 0..2, dt: 0.1)
+
+# Ray state after refraction
+r_end := traj[2.0]

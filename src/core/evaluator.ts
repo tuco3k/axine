@@ -29,7 +29,11 @@ import {
   UnaryOpNode,
   PostfixOpNode,
   ImportNode,
+  TrajectoryValue,
+  TrajectorySample,
 } from './types';
+import { getTrajectoryStateAt, mapTrajectory, exportTrajectory } from './simulation/trajectory';
+import { classifyODE, solveODERK4 } from './simulation/ode_solver';
 import { BigFraction } from './numeric/rational';
 import {
   addValues,
@@ -166,6 +170,7 @@ export class Evaluator {
   public userOperators: Map<string, any> = new Map();
   public declaredKinds: Map<string, any> = new Map();
   public userRules: any[] = [];
+  public declaredViews: Map<string, Value> = new Map();
 
   constructor(
     env: Environment = createInitialEnvironment(),
@@ -187,6 +192,11 @@ export class Evaluator {
     }
     if ((env as any).__rules__) {
       this.userRules.push(...(env as any).__rules__);
+    }
+    if ((env as any).__views__) {
+      for (const [k, v] of (env as any).__views__.entries()) {
+        this.declaredViews.set(k, v);
+      }
     }
   }
 
@@ -721,6 +731,15 @@ export class Evaluator {
       case 'Import': {
         return this.evalImport(node, currentEnv);
       }
+      case 'ViewDecl': {
+        const viewFnVal = this.evalNode(node.viewFunction, currentEnv);
+        this.declaredViews.set(node.targetType, viewFnVal);
+        if (!(currentEnv as any).__views__) (currentEnv as any).__views__ = new Map();
+        (currentEnv as any).__views__.set(node.targetType, viewFnVal);
+        if (!(this.env as any).__views__) (this.env as any).__views__ = new Map();
+        (this.env as any).__views__.set(node.targetType, viewFnVal);
+        return { type: 'none' };
+      }
       case 'Index': {
         const targetVal = this.evalNode(node.target, currentEnv);
         const indexVal = this.evalNode(node.index, currentEnv);
@@ -758,11 +777,44 @@ export class Evaluator {
           }
           return { type: 'list', elements: targetVal.data[idxNum] };
         }
+        if (targetVal.type === 'trajectory') {
+          const t = valueToNumber(indexVal, node.index.span);
+          return getTrajectoryStateAt(targetVal, t);
+        }
         throw createError(`Cannot index value of type ${targetVal.type}`, node.span);
       }
       case 'MemberAccess': {
         const targetVal = this.evalNode(node.target, currentEnv);
         const prop = node.property;
+        if (targetVal.type === 'trajectory') {
+          if (prop === 'duration') {
+            return { type: 'float', value: targetVal.tEnd - targetVal.tStart };
+          }
+          if (prop === 'samples') {
+            return {
+              type: 'list',
+              elements: targetVal.samples.map(s => s.state),
+            };
+          }
+          if (prop === 'tStart') {
+            return { type: 'float', value: targetVal.tStart };
+          }
+          if (prop === 'tEnd') {
+            return { type: 'float', value: targetVal.tEnd };
+          }
+          if (prop === 'source') {
+            return { type: 'string', value: targetVal.sourceInfo.source };
+          }
+          if (prop === 'integrator') {
+            return { type: 'string', value: targetVal.sourceInfo.integrator ?? 'none' };
+          }
+          if (prop === 'errorEstimate') {
+            return { type: 'float', value: targetVal.sourceInfo.errorEstimate ?? 0 };
+          }
+          if (prop === 'energyDrift') {
+            return { type: 'float', value: targetVal.sourceInfo.energyDrift ?? 0 };
+          }
+        }
         if (targetVal.type === 'record') {
           if (prop in targetVal.fields) {
             return targetVal.fields[prop];
@@ -1421,6 +1473,113 @@ export class Evaluator {
     if (callee === 'check') {
       return this.evalCheck(node, currentEnv);
     }
+    if (callee === 'Trajectory') {
+      return this.evalTrajectoryConstructor(node, currentEnv);
+    }
+    if (callee === 'simulate') {
+      return this.evalSimulate(node, currentEnv);
+    }
+    if (callee === 'ode') {
+      return this.evalODE(node, currentEnv);
+    }
+    if (callee === 'closed_form') {
+      return this.evalClosedForm(node, currentEnv);
+    }
+    if (callee === 'export_trajectory') {
+      if (node.args.length < 1) throw createError('export_trajectory(traj, [format]) requires at least 1 argument', node.span);
+      const trajVal = this.evalNode(node.args[0], currentEnv);
+      if (trajVal.type !== 'trajectory') {
+        throw createError('export_trajectory first argument must be a Trajectory', node.args[0].span);
+      }
+      let fmt: 'csv' | 'json' = 'csv';
+      if (node.args.length >= 2) {
+        const arg1 = node.args[1];
+        if (arg1.type === 'NamedArg' && arg1.name === 'format') {
+          const val = this.evalNode(arg1.value, currentEnv);
+          if (val.type === 'string' && (val.value === 'json' || val.value === 'csv')) {
+            fmt = val.value;
+          }
+        } else {
+          const val = this.evalNode(arg1, currentEnv);
+          if (val.type === 'string' && (val.value === 'json' || val.value === 'csv')) {
+            fmt = val.value;
+          }
+        }
+      }
+      return { type: 'string', value: exportTrajectory(trajVal, fmt) };
+    }
+
+    // Drawing Primitives (Phase 12 Part B.5)
+    if (callee === 'point') {
+      const p = node.args.length > 0 ? this.evalNode(node.args[0], currentEnv) : { type: 'tuple', elements: [] };
+      return { type: 'drawing_primitive', primitive: 'point', params: { p } };
+    }
+    if (callee === 'segment') {
+      const a = node.args.length > 0 ? this.evalNode(node.args[0], currentEnv) : { type: 'tuple', elements: [] };
+      const b = node.args.length > 1 ? this.evalNode(node.args[1], currentEnv) : { type: 'tuple', elements: [] };
+      return { type: 'drawing_primitive', primitive: 'segment', params: { a, b } };
+    }
+    if (callee === 'arrow') {
+      const from = node.args.length > 0 ? this.evalNode(node.args[0], currentEnv) : { type: 'tuple', elements: [] };
+      const to = node.args.length > 1 ? this.evalNode(node.args[1], currentEnv) : { type: 'tuple', elements: [] };
+      const params: Record<string, any> = { from, to };
+      for (let i = 2; i < node.args.length; i++) {
+        const arg = node.args[i];
+        if (arg.type === 'NamedArg') {
+          params[arg.name] = this.evalNode(arg.value, currentEnv);
+        }
+      }
+      return { type: 'drawing_primitive', primitive: 'arrow', params };
+    }
+    if (callee === 'circle') {
+      const center = node.args.length > 0 ? this.evalNode(node.args[0], currentEnv) : { type: 'tuple', elements: [] };
+      const r = node.args.length > 1 ? this.evalNode(node.args[1], currentEnv) : { type: 'float', value: 1 };
+      const params: Record<string, any> = { center, r };
+      for (let i = 2; i < node.args.length; i++) {
+        const arg = node.args[i];
+        if (arg.type === 'NamedArg') {
+          params[arg.name] = this.evalNode(arg.value, currentEnv);
+        }
+      }
+      return { type: 'drawing_primitive', primitive: 'circle', params };
+    }
+    if (callee === 'polygon') {
+      const points = node.args.length > 0 ? this.evalNode(node.args[0], currentEnv) : { type: 'list', elements: [] };
+      return { type: 'drawing_primitive', primitive: 'polygon', params: { points } };
+    }
+    if (callee === 'path') {
+      const points = node.args.length > 0 ? this.evalNode(node.args[0], currentEnv) : { type: 'list', elements: [] };
+      return { type: 'drawing_primitive', primitive: 'path', params: { points } };
+    }
+    if (callee === 'patch') {
+      const fn = node.args.length > 0 ? this.evalNode(node.args[0], currentEnv) : { type: 'none' };
+      const params: Record<string, any> = { fn };
+      for (let i = 1; i < node.args.length; i++) {
+        const arg = node.args[i];
+        if (arg.type === 'NamedArg') {
+          params[arg.name] = this.evalNode(arg.value, currentEnv);
+        } else if (arg.type === 'Range') {
+          params[arg.variable || `range${i}`] = this.evalNode(arg, currentEnv);
+        }
+      }
+      return { type: 'drawing_primitive', primitive: 'patch', params };
+    }
+    if (callee === 'label') {
+      const text = node.args.length > 0 ? this.evalNode(node.args[0], currentEnv) : { type: 'string', value: '' };
+      const at = node.args.length > 1 ? this.evalNode(node.args[1], currentEnv) : { type: 'tuple', elements: [] };
+      return { type: 'drawing_primitive', primitive: 'label', params: { text, at } };
+    }
+    if (callee === 'field') {
+      const f = node.args.length > 0 ? this.evalNode(node.args[0], currentEnv) : { type: 'none' };
+      const params: Record<string, any> = { f };
+      for (let i = 1; i < node.args.length; i++) {
+        const arg = node.args[i];
+        if (arg.type === 'NamedArg') {
+          params[arg.name] = this.evalNode(arg.value, currentEnv);
+        }
+      }
+      return { type: 'drawing_primitive', primitive: 'field', params };
+    }
 
     if (callee === 'div' || callee === 'curl' || callee === 'grad' || callee === 'laplacian') {
       const isVectorOut = callee === 'grad' || callee === 'curl';
@@ -1690,14 +1849,22 @@ export class Evaluator {
     throw createError('range() expects range(a..b) or range(a, b, step)', node.span);
   }
 
-  private evalMap(node: FunctionCallNode, currentEnv: Environment): ListValue {
-    if (node.args.length !== 2) throw createError('map(f, list) requires 2 arguments', node.span);
+  private evalMap(node: FunctionCallNode, currentEnv: Environment): Value {
+    if (node.args.length !== 2) throw createError('map(f, collection) requires 2 arguments', node.span);
     const fnVal = this.evalNode(node.args[0], currentEnv);
-    const listVal = this.evalNode(node.args[1], currentEnv);
-    if (listVal.type !== 'list') throw createError('map expects a list as second argument', node.span);
+    const colVal = this.evalNode(node.args[1], currentEnv);
+
+    if (colVal.type === 'trajectory') {
+      return mapTrajectory(colVal, (state: Value) => {
+        this.budget.check('map_trajectory', node.span);
+        return this.invokeCallable(fnVal, [state], node.span);
+      });
+    }
+
+    if (colVal.type !== 'list') throw createError('map expects a list or trajectory as second argument', node.span);
 
     const elements: Value[] = [];
-    for (const item of listVal.elements) {
+    for (const item of colVal.elements) {
       this.budget.check('map', node.span);
       elements.push(this.invokeCallable(fnVal, [item], node.span));
     }
@@ -2574,6 +2741,398 @@ export class Evaluator {
       }
     }
     return null;
+  }
+
+  private evalTrajectoryConstructor(node: FunctionCallNode, currentEnv: Environment): TrajectoryValue {
+    let stateKind = 'Value';
+    let tStart = 0;
+    let tEnd = 1;
+    let samples: TrajectorySample[] = [];
+
+    if (node.args.length === 4) {
+      const kArg = node.args[0];
+      if (kArg.type === 'Identifier') stateKind = kArg.name;
+      else if (kArg.type === 'StringLiteral') stateKind = kArg.value;
+      else {
+        const kVal = this.evalNode(kArg, currentEnv);
+        stateKind = kVal.type === 'string' ? kVal.value : (kVal.type === 'kind' ? formatKind(kVal.kind) : kVal.type);
+      }
+
+      tStart = valueToNumber(this.evalNode(node.args[1], currentEnv), node.args[1].span);
+      tEnd = valueToNumber(this.evalNode(node.args[2], currentEnv), node.args[2].span);
+      const rawSamplesVal = this.evalNode(node.args[3], currentEnv);
+      if (rawSamplesVal.type !== 'list') {
+        throw createError('Trajectory samples must be a list', node.args[3].span);
+      }
+      const rawList = rawSamplesVal.elements;
+      if (rawList.length === 0) {
+        throw createError('Trajectory samples list cannot be empty', node.args[3].span);
+      }
+
+      samples = rawList.map((item, idx) => {
+        if (item.type === 'tuple' && item.elements.length === 2 && (item.elements[0].type === 'rational' || item.elements[0].type === 'float')) {
+          const t = valueToNumber(item.elements[0]);
+          return { t, state: item.elements[1] };
+        }
+        if (item.type === 'record' && 't' in item.fields && 'state' in item.fields) {
+          const t = valueToNumber(item.fields['t']);
+          return { t, state: item.fields['state'] };
+        }
+        const t = rawList.length === 1 ? tStart : tStart + (idx / (rawList.length - 1)) * (tEnd - tStart);
+        return { t, state: item };
+      });
+    } else if (node.args.length === 1) {
+      const rawSamplesVal = this.evalNode(node.args[0], currentEnv);
+      if (rawSamplesVal.type !== 'list') {
+        throw createError('Trajectory expects a list of samples', node.args[0].span);
+      }
+      const rawList = rawSamplesVal.elements;
+      if (rawList.length === 0) {
+        throw createError('Trajectory samples list cannot be empty', node.args[0].span);
+      }
+      samples = rawList.map((item, idx) => {
+        if (item.type === 'tuple' && item.elements.length === 2 && (item.elements[0].type === 'rational' || item.elements[0].type === 'float')) {
+          const t = valueToNumber(item.elements[0]);
+          return { t, state: item.elements[1] };
+        }
+        if (item.type === 'record' && 't' in item.fields && 'state' in item.fields) {
+          const t = valueToNumber(item.fields['t']);
+          return { t, state: item.fields['state'] };
+        }
+        return { t: idx, state: item };
+      });
+      tStart = samples[0].t;
+      tEnd = samples[samples.length - 1].t;
+      const firstState = samples[0].state;
+      if (firstState.type === 'record') stateKind = firstState.typeName;
+      else if (firstState.type === 'tuple') stateKind = `Vector(${firstState.elements.length})`;
+      else if (firstState.type === 'quantity') stateKind = `Quantity(${firstState.unit})`;
+      else if (firstState.type === 'rational' || firstState.type === 'float') stateKind = 'Scalar';
+    } else {
+      throw createError('Trajectory() expects Trajectory(stateKind, tStart, tEnd, samples) or Trajectory(samples)', node.span);
+    }
+
+    // Unit verification across all samples (Phase 12 Part A.3 & Gate E1)
+    this.validateTrajectoryUnits(samples, node.span);
+
+    return {
+      type: 'trajectory',
+      stateKind,
+      tStart,
+      tEnd,
+      samples,
+      sourceInfo: {
+        source: 'simulate',
+      },
+    };
+  }
+
+  private validateTrajectoryUnits(samples: TrajectorySample[], span: Span) {
+    if (samples.length <= 1) return;
+    const baseState = samples[0].state;
+
+    const extractUnits = (val: Value): Record<string, string> => {
+      const map: Record<string, string> = {};
+      if (val.type === 'quantity') {
+        map[''] = val.unit;
+      } else if (val.type === 'record') {
+        for (const [k, v] of Object.entries(val.fields)) {
+          if (v.type === 'quantity') map[k] = v.unit;
+        }
+      } else if (val.type === 'tuple') {
+        val.elements.forEach((e, idx) => {
+          if (e.type === 'quantity') map[String(idx)] = e.unit;
+        });
+      }
+      return map;
+    };
+
+    const baseUnits = extractUnits(baseState);
+    if (Object.keys(baseUnits).length === 0) return;
+
+    for (let i = 1; i < samples.length; i++) {
+      const currUnits = extractUnits(samples[i].state);
+      for (const [key, baseUnit] of Object.entries(baseUnits)) {
+        const currUnit = currUnits[key];
+        if (currUnit && currUnit !== baseUnit) {
+          throw createError(
+            `Trajectory state has mismatched dimensional units at t = ${samples[i].t}: expected unit '${baseUnit}', got '${currUnit}'`,
+            span,
+            {
+              expected: `consistent unit '${baseUnit}'`,
+              suggestion: `Ensure all trajectory samples maintain uniform dimensional units across all time steps`,
+              source: this.source,
+            }
+          );
+        }
+      }
+    }
+  }
+
+  private evalSimulate(node: FunctionCallNode, currentEnv: Environment): TrajectoryValue {
+    if (node.args.length < 3) {
+      throw createError('simulate(step, initial, t in 0..T, [dt: h]) requires at least 3 arguments', node.span);
+    }
+    const stepFnVal = this.evalNode(node.args[0], currentEnv);
+    const initialVal = this.evalNode(node.args[1], currentEnv);
+
+    let tStart = 0;
+    let tEnd = 1;
+    let rangeNode: RangeNode | null = null;
+    let dt = 0.01;
+
+    for (let i = 2; i < node.args.length; i++) {
+      const arg = node.args[i];
+      if (arg.type === 'Range') {
+        rangeNode = arg;
+      } else if (arg.type === 'NamedArg') {
+        if (arg.name === 'dt' || arg.name === 'h') {
+          dt = valueToNumber(this.evalNode(arg.value, currentEnv), arg.value.span);
+        }
+      }
+    }
+
+    if (!rangeNode && node.args[2].type === 'Range') {
+      rangeNode = node.args[2] as RangeNode;
+    }
+
+    if (rangeNode) {
+      tStart = valueToNumber(this.evalNode(rangeNode.start, currentEnv), rangeNode.start.span);
+      tEnd = valueToNumber(this.evalNode(rangeNode.end, currentEnv), rangeNode.end.span);
+    } else if (node.args.length >= 3 && node.args[2].type !== 'NamedArg') {
+      tEnd = valueToNumber(this.evalNode(node.args[2], currentEnv), node.args[2].span);
+    }
+
+    if (dt <= 0) dt = 0.01;
+
+    const samples: TrajectorySample[] = [{ t: tStart, state: initialVal }];
+    let currState = initialVal;
+    let t = tStart;
+    const maxIters = 100_000;
+    let iters = 0;
+
+    while (t < tEnd - 1e-12 && iters < maxIters) {
+      this.budget.check('simulate', node.span);
+      iters++;
+      const hStep = Math.min(dt, tEnd - t);
+      const dtVal: Value = { type: 'float', value: hStep };
+      const tVal: Value = { type: 'float', value: t };
+
+      let nextState: Value;
+      try {
+        if ((stepFnVal.type === 'function' && stepFnVal.params.length === 3) ||
+            (stepFnVal.type === 'lambda' && stepFnVal.params.length === 3)) {
+          nextState = this.invokeCallable(stepFnVal, [currState, tVal, dtVal], node.span);
+        } else if ((stepFnVal.type === 'function' && stepFnVal.params.length === 1) ||
+                   (stepFnVal.type === 'lambda' && stepFnVal.params.length === 1)) {
+          nextState = this.invokeCallable(stepFnVal, [currState], node.span);
+        } else {
+          nextState = this.invokeCallable(stepFnVal, [currState, dtVal], node.span);
+        }
+      } catch (err: any) {
+        throw createError(`Simulation step failed at t = ${t}: ${err.message || String(err)}`, node.span);
+      }
+
+      t += hStep;
+      if (Math.abs(t - Math.round(t / dt) * dt) < 1e-10) {
+        t = Math.round(t / dt) * dt;
+      }
+      samples.push({ t, state: nextState });
+      currState = nextState;
+    }
+
+    this.validateTrajectoryUnits(samples, node.span);
+
+    let stateKind = 'Value';
+    if (initialVal.type === 'record') stateKind = initialVal.typeName;
+    else if (initialVal.type === 'tuple') stateKind = `Vector(${initialVal.elements.length})`;
+    else if (initialVal.type === 'quantity') stateKind = `Quantity(${initialVal.unit})`;
+    else if (initialVal.type === 'rational' || initialVal.type === 'float') stateKind = 'Scalar';
+
+    return {
+      type: 'trajectory',
+      stateKind,
+      tStart,
+      tEnd,
+      samples,
+      sourceInfo: {
+        source: 'simulate',
+        dt,
+      },
+    };
+  }
+
+  private evalClosedForm(node: FunctionCallNode, currentEnv: Environment): TrajectoryValue {
+    if (node.args.length < 2) {
+      throw createError('closed_form(f, t in 0..T, [dt: h, samples: N]) requires at least 2 arguments', node.span);
+    }
+    const fnVal = this.evalNode(node.args[0], currentEnv);
+
+    let tStart = 0;
+    let tEnd = 1;
+    let rangeNode: RangeNode | null = null;
+    let dt: number | undefined;
+    let numSamples = 101;
+
+    for (let i = 1; i < node.args.length; i++) {
+      const arg = node.args[i];
+      if (arg.type === 'Range') {
+        rangeNode = arg;
+      } else if (arg.type === 'NamedArg') {
+        if (arg.name === 'dt' || arg.name === 'h') {
+          dt = valueToNumber(this.evalNode(arg.value, currentEnv), arg.value.span);
+        } else if (arg.name === 'samples' || arg.name === 'N' || arg.name === 'n') {
+          numSamples = Math.max(2, Math.round(valueToNumber(this.evalNode(arg.value, currentEnv), arg.value.span)));
+        }
+      }
+    }
+
+    if (rangeNode) {
+      tStart = valueToNumber(this.evalNode(rangeNode.start, currentEnv), rangeNode.start.span);
+      tEnd = valueToNumber(this.evalNode(rangeNode.end, currentEnv), rangeNode.end.span);
+    }
+
+    if (dt !== undefined && dt > 0) {
+      numSamples = Math.max(2, Math.round((tEnd - tStart) / dt) + 1);
+    } else {
+      dt = (tEnd - tStart) / (numSamples - 1);
+    }
+
+    const samples: TrajectorySample[] = [];
+    for (let i = 0; i < numSamples; i++) {
+      this.budget.check('closed_form', node.span);
+      const frac = i / (numSamples - 1);
+      const t = tStart + frac * (tEnd - tStart);
+      const tVal: Value = { type: 'float', value: t };
+      const s = this.invokeCallable(fnVal, [tVal], node.span);
+      samples.push({ t, state: s });
+    }
+
+    this.validateTrajectoryUnits(samples, node.span);
+
+    let stateKind = 'Value';
+    const firstState = samples[0]?.state;
+    if (firstState) {
+      if (firstState.type === 'record') stateKind = firstState.typeName;
+      else if (firstState.type === 'tuple') stateKind = `Vector(${firstState.elements.length})`;
+      else if (firstState.type === 'quantity') stateKind = `Quantity(${firstState.unit})`;
+      else if (firstState.type === 'rational' || firstState.type === 'float') stateKind = 'Scalar';
+    }
+
+    return {
+      type: 'trajectory',
+      stateKind,
+      tStart,
+      tEnd,
+      samples,
+      sourceInfo: {
+        source: 'closed_form',
+        dt,
+      },
+    };
+  }
+
+  private evalODE(node: FunctionCallNode, currentEnv: Environment): TrajectoryValue {
+    if (node.args.length < 3) {
+      throw createError('ode(dy//dt = f(t,y), y(0) = y0, t in 0..T, [dt: h]) requires at least 3 arguments', node.span);
+    }
+    const eqArg = node.args[0];
+    const initArg = node.args[1];
+
+    let tStart = 0;
+    let tEnd = 1;
+    let rangeNode: RangeNode | null = null;
+    let dt = 0.05;
+
+    for (let i = 2; i < node.args.length; i++) {
+      const arg = node.args[i];
+      if (arg.type === 'Range') {
+        rangeNode = arg;
+      } else if (arg.type === 'NamedArg') {
+        if (arg.name === 'dt' || arg.name === 'h') {
+          dt = valueToNumber(this.evalNode(arg.value, currentEnv), arg.value.span);
+        }
+      }
+    }
+
+    if (!rangeNode && node.args[2].type === 'Range') {
+      rangeNode = node.args[2] as RangeNode;
+    }
+
+    let depVar = 'y';
+    let indepVar = 't';
+
+    if (rangeNode) {
+      if (rangeNode.variable) indepVar = rangeNode.variable;
+      tStart = valueToNumber(this.evalNode(rangeNode.start, currentEnv), rangeNode.start.span);
+      tEnd = valueToNumber(this.evalNode(rangeNode.end, currentEnv), rangeNode.end.span);
+    } else if (node.args.length >= 3 && node.args[2].type !== 'NamedArg') {
+      tEnd = valueToNumber(this.evalNode(node.args[2], currentEnv), node.args[2].span);
+    }
+
+    if (dt <= 0) dt = 0.05;
+
+    // Initial condition y0
+    let y0 = 1;
+    if (initArg.type === 'BinaryOp' && initArg.op === '=') {
+      y0 = valueToNumber(this.evalNode(initArg.right, currentEnv), initArg.right.span);
+    } else {
+      y0 = valueToNumber(this.evalNode(initArg, currentEnv), initArg.span);
+    }
+
+    // Classify ODE and extract rate function f(t, y)
+    let classification = classifyODE(eqArg, depVar, indepVar);
+    let fRate: (t: number, y: number) => number;
+
+    if (eqArg.type === 'BinaryOp' && eqArg.op === '=') {
+      const rhs = eqArg.right;
+      fRate = (tNum: number, yNum: number) => {
+        const localEnv: Environment = {
+          ...currentEnv,
+          [indepVar]: { type: 'float', value: tNum },
+          [depVar]: { type: 'float', value: yNum },
+        };
+        const res = this.evalNode(rhs, localEnv);
+        return valueToNumber(res, rhs.span);
+      };
+    } else {
+      const fnVal = this.evalNode(eqArg, currentEnv);
+      fRate = (tNum: number, yNum: number) => {
+        const tVal: Value = { type: 'float', value: tNum };
+        const yVal: Value = { type: 'float', value: yNum };
+        let res: Value;
+        if ((fnVal.type === 'function' && fnVal.params.length === 1) ||
+            (fnVal.type === 'lambda' && fnVal.params.length === 1)) {
+          res = this.invokeCallable(fnVal, [yVal], node.span);
+        } else {
+          res = this.invokeCallable(fnVal, [tVal, yVal], node.span);
+        }
+        return valueToNumber(res, node.span);
+      };
+    }
+
+    // Solve via RK4 with error estimation
+    const solution = solveODERK4(fRate, y0, tStart, tEnd, dt);
+
+    const samples: TrajectorySample[] = solution.samples.map(s => ({
+      t: s.t,
+      state: { type: 'float', value: s.y },
+    }));
+
+    return {
+      type: 'trajectory',
+      stateKind: 'Scalar',
+      tStart,
+      tEnd,
+      samples,
+      sourceInfo: {
+        source: 'ode',
+        integrator: 'rk4',
+        dt,
+        errorEstimate: solution.cumulativeErrorEstimate,
+        symbolicDerivation: classification.derivation,
+      },
+    };
   }
 
   private evalImport(node: ImportNode, currentEnv: Environment): Value {
