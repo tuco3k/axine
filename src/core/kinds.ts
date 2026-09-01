@@ -300,8 +300,14 @@ export function admitsOperations(kind: MathKind): string[] {
       return ['prob (P)', 'expectation (E)', 'variance (Var)', 'sample', 'pdf', 'cdf'];
     case 'Record':
       return ['field_access (.)', 'with_update (with)', 'equality (=, !=)'];
-    case 'UserDefined':
-      return kind.operations.length > 0 ? kind.operations : ['inspect'];
+    case 'UserDefined': {
+      let inherited: string[] = [];
+      if (kind.extendsKind === 'VectorSpace' || kind.extendsKind === 'Vector') {
+        inherited = ['+', '-', 'scale'];
+      }
+      const ops = [...kind.operations, ...inherited];
+      return ops.length > 0 ? ops : ['inspect'];
+    }
     case 'Quantity':
       return ['+', '-', '*', '/', '^', 'convert'];
     case 'UnknownKind':

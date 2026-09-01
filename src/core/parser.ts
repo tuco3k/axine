@@ -342,78 +342,8 @@ export class Parser {
     }
 
     // Check for kind <Name>(params) extends <Parent>(args) { ... }
-    if (this.peek().type === 'KIND' && this.peek(1).type !== 'LPAREN') {
-      const kindToken = this.advance();
-      const nameToken = this.expect('IDENTIFIER', 'kind name');
-      const params: string[] = [];
-      if (this.peek().type === 'LPAREN') {
-        this.advance();
-        while (this.peek().type !== 'RPAREN' && this.peek().type !== 'EOF') {
-          params.push(this.expect('IDENTIFIER', 'parameter').value);
-          if (this.peek().type === 'COMMA') this.advance();
-        }
-        this.expect('RPAREN', ')');
-      }
-      let extendsKind: { name: string; args: string[] } | undefined;
-      if (this.peek().type === 'EXTENDS') {
-        this.advance();
-        const extName = this.expect('IDENTIFIER', 'parent kind name').value;
-        const extArgs: string[] = [];
-        if (this.peek().type === 'LPAREN') {
-          this.advance();
-          while (this.peek().type !== 'RPAREN' && this.peek().type !== 'EOF') {
-            extArgs.push(this.expect('IDENTIFIER', 'argument').value);
-            if (this.peek().type === 'COMMA') this.advance();
-          }
-          this.expect('RPAREN', ')');
-        }
-        extendsKind = { name: extName, args: extArgs };
-      }
-
-      this.expect('LBRACE', '{');
-      const operations: string[] = [];
-      const axioms: string[] = [];
-
-      while (this.peek().type !== 'RBRACE' && this.peek().type !== 'EOF') {
-        if (this.peek().type === 'OPERATIONS') {
-          this.advance();
-          this.expect('COLON', ':');
-          this.expect('LBRACKET', '[');
-          while (this.peek().type !== 'RBRACKET' && this.peek().type !== 'EOF') {
-            operations.push(this.advance().value);
-            if (this.peek().type === 'COMMA') this.advance();
-          }
-          this.expect('RBRACKET', ']');
-        } else if (this.peek().type === 'AXIOMS') {
-          this.advance();
-          this.expect('COLON', ':');
-          this.expect('LBRACKET', '[');
-          while (this.peek().type !== 'RBRACKET' && this.peek().type !== 'EOF') {
-            axioms.push(this.expect('STRING', 'axiom description').value);
-            if (this.peek().type === 'COMMA') this.advance();
-          }
-          this.expect('RBRACKET', ']');
-        } else {
-          this.advance();
-        }
-        if (this.peek().type === 'COMMA') this.advance();
-      }
-      const rBrace = this.expect('RBRACE', '}');
-
-      return {
-        type: 'KindDecl',
-        name: nameToken.value,
-        params,
-        extendsKind,
-        operations,
-        axioms,
-        span: {
-          start: kindToken.span.start,
-          end: rBrace.span.end,
-          line: kindToken.span.line,
-          col: kindToken.span.col,
-        },
-      };
+    if (this.peek().type === 'KIND' && this.peek(1).type !== 'LPAREN' && this.peek(1).type !== 'COLON') {
+      return this.parseKindDecl();
     }
 
     // Check for rule <pattern> => <replacement> (requires: <cond>)
@@ -1272,6 +1202,11 @@ export class Parser {
           col: opTok.span.col,
         },
       };
+    }
+
+    // User kind expression: kind LieAlgebra(dim, field) extends ...
+    if (token.type === 'KIND' && this.peek(1).type !== 'LPAREN' && this.peek(1).type !== 'COLON') {
+      return this.parseKindDecl();
     }
 
     // Quantifiers: forall, exists, exists_unique
@@ -2409,6 +2344,80 @@ export class Parser {
         end: endSpan.end,
         line: opTok.span.line,
         col: opTok.span.col,
+      },
+    };
+  }
+
+  private parseKindDecl(): ASTNode {
+    const kindToken = this.advance();
+    const nameToken = this.expect('IDENTIFIER', 'kind name');
+    const params: string[] = [];
+    if (this.peek().type === 'LPAREN') {
+      this.advance();
+      while (this.peek().type !== 'RPAREN' && this.peek().type !== 'EOF') {
+        params.push(this.expect('IDENTIFIER', 'parameter').value);
+        if (this.peek().type === 'COMMA') this.advance();
+      }
+      this.expect('RPAREN', ')');
+    }
+    let extendsKind: { name: string; args: string[] } | undefined;
+    if (this.peek().type === 'EXTENDS') {
+      this.advance();
+      const extName = this.expect('IDENTIFIER', 'parent kind name').value;
+      const extArgs: string[] = [];
+      if (this.peek().type === 'LPAREN') {
+        this.advance();
+        while (this.peek().type !== 'RPAREN' && this.peek().type !== 'EOF') {
+          extArgs.push(this.expect('IDENTIFIER', 'argument').value);
+          if (this.peek().type === 'COMMA') this.advance();
+        }
+        this.expect('RPAREN', ')');
+      }
+      extendsKind = { name: extName, args: extArgs };
+    }
+
+    this.expect('LBRACE', '{');
+    const operations: string[] = [];
+    const axioms: string[] = [];
+
+    while (this.peek().type !== 'RBRACE' && this.peek().type !== 'EOF') {
+      if (this.peek().type === 'OPERATIONS') {
+        this.advance();
+        this.expect('COLON', ':');
+        this.expect('LBRACKET', '[');
+        while (this.peek().type !== 'RBRACKET' && this.peek().type !== 'EOF') {
+          operations.push(this.advance().value);
+          if (this.peek().type === 'COMMA') this.advance();
+        }
+        this.expect('RBRACKET', ']');
+      } else if (this.peek().type === 'AXIOMS') {
+        this.advance();
+        this.expect('COLON', ':');
+        this.expect('LBRACKET', '[');
+        while (this.peek().type !== 'RBRACKET' && this.peek().type !== 'EOF') {
+          axioms.push(this.expect('STRING', 'axiom description').value);
+          if (this.peek().type === 'COMMA') this.advance();
+        }
+        this.expect('RBRACKET', ']');
+      } else {
+        this.advance();
+      }
+      if (this.peek().type === 'COMMA') this.advance();
+    }
+    const rBrace = this.expect('RBRACE', '}');
+
+    return {
+      type: 'KindDecl',
+      name: nameToken.value,
+      params,
+      extendsKind,
+      operations,
+      axioms,
+      span: {
+        start: kindToken.span.start,
+        end: rBrace.span.end,
+        line: kindToken.span.line,
+        col: kindToken.span.col,
       },
     };
   }
