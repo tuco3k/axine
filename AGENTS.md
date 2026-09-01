@@ -80,3 +80,17 @@ dropped.
 
 ## Phase Specifications
 Detailed requirements and acceptance criteria for Phases 5 through 7 are defined in [`SPEC.md`](./SPEC.md). Read `SPEC.md` directly before starting any phase.
+
+## Fix the layer where the bug lives
+When a document, test, or example has to work around a renderer or
+engine bug, fix the renderer or engine. Patching the instance leaves the
+class intact and the next person hits it again.
+
+Precedent in this codebase: LaTeX command strings patched in one
+explanation while others still leaked; a placeholder removed from one
+quantity while the rest kept theirs; a float() call added to one .ax
+document to hide a fraction-flattening bug that affects every large
+exact rational.
+
+If you find yourself editing content to avoid a defect, stop and fix the
+defect. Then revert the content change.
