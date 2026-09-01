@@ -1,6 +1,6 @@
 import { DocumentState, DocumentLineRecord } from './document_state';
 import { CORPUS_DOCUMENTS } from './corpus_data';
-import { Value, GraphValue, DerivationValue, SolveTraceValue } from '../core/types';
+import { Value, GraphValue, DerivationValue, SolveTraceValue, DescribedValue } from '../core/types';
 import { Canvas2DPlotter } from '../plot/canvas2d';
 import { Surface3DPlotter } from '../plot/surface3d';
 import { typesetMath } from '../core/math_typeset';
@@ -8,6 +8,7 @@ import { explainSymbol } from '../core/explainer';
 import { analyzeAndParse, createInitialEnvironment, evaluate } from '../core/evaluator';
 import { formatAST } from '../core/formatter';
 import { valueToNumber } from '../core/numeric/tower';
+import { formatKind } from '../core/kinds';
 import { MathPopover } from './popover';
 import { ICONS } from '../styles/icons';
 
@@ -18,6 +19,21 @@ function escapeHtml(str: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+export type DockEdge = 'right' | 'left' | 'bottom' | 'top';
+
+export interface DockLayoutState {
+  edge: DockEdge;
+  width: number;
+  height: number;
+  collapsed: boolean;
+  edgeSizes: {
+    right: number;
+    left: number;
+    bottom: number;
+    top: number;
+  };
 }
 
 export class DocumentEditor {
@@ -32,25 +48,182 @@ export class DocumentEditor {
   private framesPanelEl!: HTMLElement;
   private statusBadge!: HTMLElement;
   private statsBadge!: HTMLElement;
-  private activePlotter: Canvas2DPlotter | Surface3DPlotter | null = null;
-  private activeTab: 'results' | 'visual' | 'scope' | 'trace' | 'frames' = 'results';
+  private workspaceEl!: HTMLElement;
+  private panelEl!: HTMLElement;
+  private edgeAffordanceEl!: HTMLElement;
+
+  private dockLayout: DockLayoutState = {
+    edge: 'right',
+    width: 480,
+    height: 300,
+    collapsed: false,
+    edgeSizes: {
+      right: 480,
+      left: 480,
+      bottom: 300,
+      top: 300,
+    },
+  };
+
+  private activeTab: 'results' | 'scope' | 'trace' | 'frames' = 'results';
   private frames: { id: number; line: number; type: string; summary: string; timestamp: number; value: Value }[] = [];
   private nextFrameId: number = 0;
-  private isPinned: boolean = false;
-  private pinnedLine: number | null = null;
-  private activeVisualLine: number = 0;
+  private pinnedLines: Set<number> = new Set();
+  private collapsedLines: Set<number> = new Set();
+  private expandedPlots: Set<number> = new Set();
+  private linePlotters: Map<number, Canvas2DPlotter | Surface3DPlotter> = new Map();
+  private pinnedPlotters: Map<number, Canvas2DPlotter | Surface3DPlotter> = new Map();
   public mathPopover: MathPopover;
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, initialText?: string) {
     this.container = container;
     this.state = new DocumentState();
     this.mathPopover = new MathPopover();
-    this.buildUI();
+    this.loadDockLayout();
+    this.buildUI(initialText);
+    this.applyDockLayout();
     this.bindEvents();
     this.state.subscribe((records, isEvaluating) => this.renderWorkPanel(records, isEvaluating));
+    if (initialText !== undefined) {
+      this.state.setText(initialText);
+    }
   }
 
-  private buildUI() {
+  private loadDockLayout() {
+    try {
+      const saved = localStorage.getItem('doc_dock_layout');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') {
+          if (['right', 'left', 'bottom', 'top'].includes(parsed.edge)) {
+            this.dockLayout.edge = parsed.edge;
+          }
+          if (typeof parsed.collapsed === 'boolean') {
+            this.dockLayout.collapsed = parsed.collapsed;
+          }
+          if (parsed.edgeSizes && typeof parsed.edgeSizes === 'object') {
+            this.dockLayout.edgeSizes = {
+              right: parsed.edgeSizes.right || 480,
+              left: parsed.edgeSizes.left || 480,
+              bottom: parsed.edgeSizes.bottom || 300,
+              top: parsed.edgeSizes.top || 300,
+            };
+          }
+        }
+      } else {
+        const oldWidth = localStorage.getItem('doc_panel_width');
+        if (oldWidth) {
+          const num = parseInt(oldWidth, 10);
+          if (!isNaN(num) && num > 100) {
+            this.dockLayout.edgeSizes.right = num;
+            this.dockLayout.edgeSizes.left = num;
+          }
+        }
+      }
+    } catch {
+      // Ignore parse errors
+    }
+
+    try {
+      const savedCollapsed = localStorage.getItem('doc_collapsed_lines');
+      if (savedCollapsed) {
+        const arr = JSON.parse(savedCollapsed);
+        if (Array.isArray(arr)) {
+          this.collapsedLines = new Set(arr);
+        }
+      }
+    } catch {
+      // Ignore parse errors
+    }
+  }
+
+  private saveDockLayout() {
+    try {
+      localStorage.setItem('doc_dock_layout', JSON.stringify(this.dockLayout));
+    } catch {
+      // Ignore
+    }
+  }
+
+  private saveCollapsedLines() {
+    try {
+      localStorage.setItem('doc_collapsed_lines', JSON.stringify(Array.from(this.collapsedLines)));
+    } catch {
+      // Ignore
+    }
+  }
+
+  public applyDockLayout() {
+    if (!this.workspaceEl || !this.panelEl) return;
+    this.workspaceEl.setAttribute('data-dock', this.dockLayout.edge);
+    this.workspaceEl.classList.toggle('panel-collapsed', this.dockLayout.collapsed);
+
+    // Update dock buttons
+    const dockBtns = this.container.querySelectorAll('.doc-dock-btn');
+    dockBtns.forEach(btn => {
+      const edge = (btn as HTMLElement).getAttribute('data-edge');
+      btn.classList.toggle('active', edge === this.dockLayout.edge);
+    });
+
+    const collapseBtn = this.container.querySelector('.doc-dock-collapse-btn');
+    if (collapseBtn) {
+      collapseBtn.textContent = this.dockLayout.collapsed ? 'Show' : 'Hide';
+    }
+
+    if (this.dockLayout.collapsed) {
+      this.panelEl.style.width = '0px';
+      this.panelEl.style.height = '0px';
+      this.panelEl.style.display = 'none';
+    } else {
+      this.panelEl.style.display = 'flex';
+      const edge = this.dockLayout.edge;
+      if (edge === 'right' || edge === 'left') {
+        const w = this.dockLayout.edgeSizes[edge] || 480;
+        this.panelEl.style.width = `${w}px`;
+        this.panelEl.style.height = '100%';
+      } else {
+        const h = this.dockLayout.edgeSizes[edge] || 300;
+        this.panelEl.style.width = '100%';
+        this.panelEl.style.height = `${h}px`;
+      }
+    }
+
+    // Trigger plotter re-renders so canvas widths match
+    this.linePlotters.forEach(p => p.render());
+    this.pinnedPlotters.forEach(p => p.render());
+    this.updateCaret();
+  }
+
+  public setDockEdge(edge: DockEdge) {
+    this.dockLayout.edge = edge;
+    this.saveDockLayout();
+    this.applyDockLayout();
+  }
+
+  public togglePanelCollapse() {
+    this.dockLayout.collapsed = !this.dockLayout.collapsed;
+    this.saveDockLayout();
+    this.applyDockLayout();
+  }
+
+  public cycleDockEdge() {
+    const cycle: DockEdge[] = ['right', 'bottom', 'left', 'top'];
+    const currentIdx = cycle.indexOf(this.dockLayout.edge);
+    const nextEdge = cycle[(currentIdx + 1) % cycle.length];
+    this.setDockEdge(nextEdge);
+  }
+
+  public setText(text: string): void {
+    if (this.textarea) {
+      this.textarea.value = text;
+      this.updateTypesetOverlay();
+      this.updateCaret();
+      this.state.setText(text);
+    }
+  }
+
+  private buildUI(initialText?: string) {
+    const rawText = initialText ?? (CORPUS_DOCUMENTS[0]?.content || '');
     this.container.innerHTML = `
       <div class="doc-app-shell">
         <header class="doc-header">
@@ -78,22 +251,29 @@ export class DocumentEditor {
                 <option value="unbounded">Unbounded</option>
               </select>
             </div>
-
-            <button id="doc-run-btn" class="doc-btn primary" title="Run in Invoked Worker Pool">${ICONS.run} Run All</button>
-            <button id="doc-stop-btn" class="doc-btn danger" title="Stop execution immediately (<100ms)">${ICONS.stop} Stop</button>
-            <span id="doc-status-badge" class="doc-status-badge ready">Ambient</span>
-            <span id="doc-stats-badge" class="doc-stats-badge">0 ms</span>
-            <button id="doc-clear-btn" class="doc-btn">Clear</button>
-            <button id="doc-theme-btn" class="doc-theme-btn" title="Toggle Light/Dark Theme">${ICONS.sun}</button>
+            <button id="doc-run-btn" class="doc-btn doc-btn-primary" title="Execute current document (Cmd+Enter / Ctrl+Enter)">
+              ${ICONS.run} Run
+            </button>
+            <button id="doc-stop-btn" class="doc-btn doc-btn-danger hidden" title="Cancel background execution">
+              ${ICONS.stop} Stop
+            </button>
+            <button id="doc-clear-btn" class="doc-btn" title="Clear document text">Clear</button>
+          </div>
+          <div class="doc-toolbar-right">
+            <span id="doc-stats-badge" class="doc-stats-badge">Ready</span>
+            <span id="doc-status-badge" class="doc-status-badge ambient">Ambient Reactive</span>
+            <button id="doc-theme-btn" class="doc-btn doc-btn-icon" title="Toggle dark/light theme">
+              ${ICONS.sun}
+            </button>
           </div>
         </header>
 
-        <main class="doc-editor-main">
+        <main id="doc-workspace" class="doc-workspace" data-dock="right">
           <div class="doc-pane-left">
-            <div id="doc-line-numbers" class="doc-line-numbers"></div>
             <div class="doc-editor-surface">
-              <div id="doc-typeset-overlay" class="doc-typeset-overlay" aria-hidden="true"></div>
-              <div id="doc-caret" class="doc-custom-caret"></div>
+              <div id="doc-line-numbers" class="doc-line-numbers"></div>
+              <div id="doc-typeset-overlay" class="doc-typeset-overlay"></div>
+              <div id="doc-caret" class="doc-caret"></div>
               <textarea
                 id="doc-textarea"
                 class="doc-textarea"
@@ -101,42 +281,34 @@ export class DocumentEditor {
                 spellcheck="false"
                 autocomplete="off"
                 autocapitalize="off"
-              ></textarea>
+              >${escapeHtml(rawText)}</textarea>
             </div>
           </div>
 
           <div id="doc-splitter" class="doc-splitter" title="Drag to resize panel"></div>
 
-          <div class="doc-pane-right">
-            <div class="doc-work-panel-tabs">
-              <button class="doc-tab-btn active" data-tab="results">Results</button>
-              <button class="doc-tab-btn" data-tab="visual">Visual</button>
-              <button class="doc-tab-btn" data-tab="scope">Scope</button>
-              <button class="doc-tab-btn" data-tab="trace">Trace & Fuel</button>
-              <button class="doc-tab-btn" data-tab="frames">Frames</button>
+          <div id="doc-panel-edge-affordance" class="doc-panel-edge-affordance" title="Click to show panel (Cmd+B)"></div>
+
+          <div id="doc-work-panel" class="doc-work-panel">
+            <div class="doc-work-panel-header">
+              <div class="doc-work-panel-tabs">
+                <button class="doc-tab-btn active" data-tab="results">Results</button>
+                <button class="doc-tab-btn" data-tab="scope">Scope</button>
+                <button class="doc-tab-btn" data-tab="trace">Trace & Fuel</button>
+                <button class="doc-tab-btn" data-tab="frames">Frames</button>
+              </div>
+              <div class="doc-dock-controls">
+                <button class="doc-dock-btn" data-edge="left" title="Dock Left">Left</button>
+                <button class="doc-dock-btn" data-edge="bottom" title="Dock Bottom">Bottom</button>
+                <button class="doc-dock-btn" data-edge="top" title="Dock Top">Top</button>
+                <button class="doc-dock-btn active" data-edge="right" title="Dock Right">Right</button>
+                <button class="doc-dock-collapse-btn" title="Toggle panel collapse (Cmd+B)">Hide</button>
+              </div>
             </div>
 
             <div id="tab-results-panel" class="doc-tab-content active">
+              <div id="doc-pinned-visuals" class="doc-pinned-visuals empty"></div>
               <div id="doc-gutter" class="doc-gutter"></div>
-            </div>
-
-            <div id="tab-visual-panel" class="doc-tab-content">
-              <div class="doc-visual-header">
-                <div class="doc-visual-title-row">
-                  <span id="visual-title" class="doc-panel-section-title">Visual Output</span>
-                  <button id="visual-pin-btn" class="doc-pin-btn" title="Pin visual to current line">${ICONS.pin} Pin</button>
-                </div>
-                <div id="visual-meta" class="doc-visual-meta">Line 1: No visual content</div>
-              </div>
-              <div id="visual-body" class="doc-visual-body">
-                <div id="visual-empty-state" class="doc-visual-empty">Select or type a plot or derivation to visualize</div>
-                <div id="visual-canvas-wrapper" class="doc-visual-canvas-wrapper hidden">
-                  <canvas id="visual-canvas"></canvas>
-                </div>
-                <div id="visual-derivation-wrapper" class="doc-visual-derivation-wrapper hidden">
-                  <div id="visual-derivation-content" class="visual-derivation-tree"></div>
-                </div>
-              </div>
             </div>
 
             <div id="tab-scope-panel" class="doc-tab-content">
@@ -171,6 +343,9 @@ export class DocumentEditor {
       </div>
     `;
 
+    this.workspaceEl = this.container.querySelector('#doc-workspace') as HTMLElement;
+    this.panelEl = this.container.querySelector('#doc-work-panel') as HTMLElement;
+    this.edgeAffordanceEl = this.container.querySelector('#doc-panel-edge-affordance') as HTMLElement;
     this.textarea = this.container.querySelector('#doc-textarea') as HTMLTextAreaElement;
     this.overlayEl = this.container.querySelector('#doc-typeset-overlay') as HTMLElement;
     this.caretEl = this.container.querySelector('#doc-caret') as HTMLElement;
@@ -180,13 +355,6 @@ export class DocumentEditor {
     this.statsBadge = this.container.querySelector('#doc-stats-badge') as HTMLElement;
     this.scopePanelEl = this.container.querySelector('#doc-scope-list') as HTMLElement;
     this.framesPanelEl = this.container.querySelector('#doc-frames-list') as HTMLElement;
-
-    // Apply persisted right pane width
-    const savedWidth = localStorage.getItem('doc_panel_width');
-    if (savedWidth) {
-      const rightPane = this.container.querySelector('.doc-pane-right') as HTMLElement;
-      if (rightPane) rightPane.style.width = savedWidth;
-    }
 
     this.updateTypesetOverlay();
     this.updateCaret();
@@ -238,6 +406,44 @@ export class DocumentEditor {
         const panel = this.container.querySelector(`#tab-${tab}-panel`);
         if (panel) panel.classList.add('active');
       });
+    });
+
+    // Dock Buttons in panel header
+    const dockBtns = this.container.querySelectorAll('.doc-dock-btn');
+    dockBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const edge = (btn as HTMLElement).getAttribute('data-edge') as DockEdge;
+        if (edge) this.setDockEdge(edge);
+      });
+    });
+
+    // Collapse button in panel header
+    const collapseBtn = this.container.querySelector('.doc-dock-collapse-btn');
+    if (collapseBtn) {
+      collapseBtn.addEventListener('click', () => {
+        this.togglePanelCollapse();
+      });
+    }
+
+    // Edge affordance click to restore
+    if (this.edgeAffordanceEl) {
+      this.edgeAffordanceEl.addEventListener('click', () => {
+        this.togglePanelCollapse();
+      });
+    }
+
+    // Global keyboard shortcuts
+    window.addEventListener('keydown', (e: KeyboardEvent) => {
+      // Cmd+B / Ctrl+B / Cmd+\ / Ctrl+\ : Toggle collapse
+      if ((e.key === 'b' || e.key === 'B' || e.key === '\\') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        e.preventDefault();
+        this.togglePanelCollapse();
+      }
+      // Cmd+Shift+D / Ctrl+Shift+D / Alt+D : Cycle dock edge
+      if ((e.key === 'd' || e.key === 'D') && ((e.metaKey && e.shiftKey) || (e.ctrlKey && e.shiftKey) || e.altKey)) {
+        e.preventDefault();
+        this.cycleDockEdge();
+      }
     });
 
     // Corpus selector
@@ -293,26 +499,71 @@ export class DocumentEditor {
       document.documentElement.setAttribute('data-theme', nextTheme);
       themeBtn.innerHTML = nextTheme === 'light' ? ICONS.moon : ICONS.sun;
       localStorage.setItem('math_notebook_theme', nextTheme);
-      if (this.activePlotter) this.activePlotter.render();
+      this.linePlotters.forEach(p => p.render());
+      this.pinnedPlotters.forEach(p => p.render());
     });
 
-    // Draggable Splitter
+    // Multi-edge Draggable Splitter
     const splitter = this.container.querySelector('#doc-splitter') as HTMLElement;
-    const rightPane = this.container.querySelector('.doc-pane-right') as HTMLElement;
     let isDragging = false;
 
     splitter.addEventListener('mousedown', () => {
       isDragging = true;
-      document.body.style.cursor = 'col-resize';
+      const isHorizontal = this.dockLayout.edge === 'bottom' || this.dockLayout.edge === 'top';
+      document.body.style.cursor = isHorizontal ? 'row-resize' : 'col-resize';
       document.body.style.userSelect = 'none';
     });
 
     window.addEventListener('mousemove', (e) => {
-      if (!isDragging) return;
-      const containerRect = this.container.getBoundingClientRect();
-      const newWidth = Math.max(300, Math.min(containerRect.width - 200, containerRect.right - e.clientX));
-      rightPane.style.width = `${newWidth}px`;
-      localStorage.setItem('doc_panel_width', `${newWidth}px`);
+      if (!isDragging || !this.workspaceEl) return;
+      const containerRect = this.workspaceEl.getBoundingClientRect();
+      const edge = this.dockLayout.edge;
+
+      if (edge === 'right') {
+        const newWidth = containerRect.right - e.clientX;
+        if (newWidth < 40) {
+          this.dockLayout.collapsed = true;
+          this.applyDockLayout();
+          return;
+        }
+        this.dockLayout.collapsed = false;
+        const clampedWidth = Math.max(200, Math.min(containerRect.width * 0.7, newWidth));
+        this.dockLayout.edgeSizes.right = clampedWidth;
+        this.panelEl.style.width = `${clampedWidth}px`;
+      } else if (edge === 'left') {
+        const newWidth = e.clientX - containerRect.left;
+        if (newWidth < 40) {
+          this.dockLayout.collapsed = true;
+          this.applyDockLayout();
+          return;
+        }
+        this.dockLayout.collapsed = false;
+        const clampedWidth = Math.max(200, Math.min(containerRect.width * 0.7, newWidth));
+        this.dockLayout.edgeSizes.left = clampedWidth;
+        this.panelEl.style.width = `${clampedWidth}px`;
+      } else if (edge === 'bottom') {
+        const newHeight = containerRect.bottom - e.clientY;
+        if (newHeight < 40) {
+          this.dockLayout.collapsed = true;
+          this.applyDockLayout();
+          return;
+        }
+        this.dockLayout.collapsed = false;
+        const clampedHeight = Math.max(150, Math.min(containerRect.height * 0.7, newHeight));
+        this.dockLayout.edgeSizes.bottom = clampedHeight;
+        this.panelEl.style.height = `${clampedHeight}px`;
+      } else if (edge === 'top') {
+        const newHeight = e.clientY - containerRect.top;
+        if (newHeight < 40) {
+          this.dockLayout.collapsed = true;
+          this.applyDockLayout();
+          return;
+        }
+        this.dockLayout.collapsed = false;
+        const clampedHeight = Math.max(150, Math.min(containerRect.height * 0.7, newHeight));
+        this.dockLayout.edgeSizes.top = clampedHeight;
+        this.panelEl.style.height = `${clampedHeight}px`;
+      }
     });
 
     window.addEventListener('mouseup', () => {
@@ -320,33 +571,14 @@ export class DocumentEditor {
         isDragging = false;
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
-        if (this.activePlotter) this.activePlotter.render();
-      }
-    });
-
-    // Pin Control
-    const pinBtn = this.container.querySelector('#visual-pin-btn') as HTMLButtonElement;
-    pinBtn.addEventListener('click', () => {
-      this.isPinned = !this.isPinned;
-      pinBtn.innerHTML = this.isPinned ? `${ICONS.pinned} Pinned` : `${ICONS.pin} Pin`;
-      pinBtn.classList.toggle('pinned', this.isPinned);
-      if (this.isPinned) {
-        this.pinnedLine = this.activeVisualLine;
-      } else {
-        this.pinnedLine = null;
-        this.syncVisualToCursor();
+        this.saveDockLayout();
+        this.applyDockLayout();
       }
     });
 
     // Cursor synchronization
-    const syncToCursor = () => {
-      this.updateCaret();
-      if (this.isPinned) return;
-      const lineIdx = this.getCursorLineIndex();
-      this.displayVisualForLine(lineIdx, false);
-    };
-    this.textarea.addEventListener('keyup', syncToCursor);
-    this.textarea.addEventListener('click', syncToCursor);
+    this.textarea.addEventListener('keyup', () => this.updateCaret());
+    this.textarea.addEventListener('click', () => this.updateCaret());
     document.addEventListener('selectionchange', () => {
       if (document.activeElement === this.textarea) {
         this.updateCaret();
@@ -581,18 +813,9 @@ export class DocumentEditor {
     });
   }
 
-  private getCursorLineIndex(): number {
+  public getCursorLineIndex(): number {
     const textBefore = this.textarea.value.substring(0, this.textarea.selectionStart);
     return textBefore.split('\n').length - 1;
-  }
-
-  private syncVisualToCursor() {
-    if (this.isPinned && this.pinnedLine !== null) {
-      this.displayVisualForLine(this.pinnedLine, false);
-      return;
-    }
-    const lineIdx = this.getCursorLineIndex();
-    this.displayVisualForLine(lineIdx, false);
   }
 
   private renderWorkPanel(records: DocumentLineRecord[], isEvaluating: boolean) {
@@ -621,19 +844,70 @@ export class DocumentEditor {
     }
     this.lineNumbersEl.innerHTML = lineNumsHtml;
 
-    // 2. Results Gutter
+    // Clean up existing plotters
+    this.linePlotters.forEach(p => p.dispose());
+    this.linePlotters.clear();
+    this.pinnedPlotters.forEach(p => p.dispose());
+    this.pinnedPlotters.clear();
+
+    // 2. Render Pinned Visuals Slot
+    const pinnedContainer = this.container.querySelector('#doc-pinned-visuals') as HTMLElement;
+    if (pinnedContainer) {
+      if (this.pinnedLines.size === 0) {
+        pinnedContainer.classList.add('empty');
+        pinnedContainer.innerHTML = '';
+      } else {
+        pinnedContainer.classList.remove('empty');
+        let pinnedHtml = '';
+        this.pinnedLines.forEach(lineIdx => {
+          const rec = records[lineIdx];
+          if (!rec || !rec.result) return;
+          pinnedHtml += this.formatPinnedItem(rec);
+        });
+        pinnedContainer.innerHTML = pinnedHtml;
+
+        // Wire unpin buttons
+        pinnedContainer.querySelectorAll('.doc-unpin-btn').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const lineIdx = parseInt((btn as HTMLElement).getAttribute('data-line') ?? '0', 10);
+            this.pinnedLines.delete(lineIdx);
+            this.renderWorkPanel(this.state.getRecords(), false);
+          });
+        });
+
+        // Instantiate pinned plotters
+        this.pinnedLines.forEach(lineIdx => {
+          const rec = records[lineIdx];
+          if (rec && rec.result && rec.result.type === 'graph') {
+            const canvas = pinnedContainer.querySelector(`.doc-pinned-canvas[data-line="${lineIdx}"]`) as HTMLCanvasElement;
+            if (canvas) {
+              const spec = (rec.result as GraphValue).spec;
+              let plotter: Canvas2DPlotter | Surface3DPlotter;
+              if (spec.dimensionality === 2 && (spec.surface || spec.parametric?.zExpr || spec.kind === 'surface' || spec.kind === 'pointcloud')) {
+                plotter = new Surface3DPlotter(canvas, spec, {});
+              } else {
+                plotter = new Canvas2DPlotter(canvas, spec, {});
+              }
+              this.pinnedPlotters.set(lineIdx, plotter);
+              plotter.render();
+            }
+          }
+        });
+      }
+    }
+
+    // 3. Results Gutter with inline visuals
     let gutterHtml = '';
     const activeSymbols: Map<string, { type: string; value: string; line: number; isShadowed?: boolean }> = new Map();
 
     for (let i = 0; i < records.length; i++) {
       const rec = records[i];
-      const rowContent = this.formatGutterRow(rec);
-      gutterHtml += `
-        <div class="doc-gutter-row" data-line="${i}">
-          <span class="doc-gutter-lineno">L${i + 1}</span>
-          <div class="doc-gutter-content">${rowContent}</div>
-        </div>
-      `;
+      const isCollapsed = this.collapsedLines.has(i);
+      const isExpanded = this.expandedPlots.has(i);
+      const isPinned = this.pinnedLines.has(i);
+
+      gutterHtml += this.formatGutterRow(rec, isCollapsed, isExpanded, isPinned);
 
       if (rec.boundName && rec.result) {
         activeSymbols.set(rec.boundName, {
@@ -667,28 +941,69 @@ export class DocumentEditor {
       });
     });
 
-    // Attach plot click handlers to focus Visual tab
-    const plotButtons = this.gutterEl.querySelectorAll('.doc-plot-btn');
-    plotButtons.forEach(btn => {
-      btn.addEventListener('click', () => {
+    // Wire Pin buttons
+    this.gutterEl.querySelectorAll('.doc-gutter-pin-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const lineIdx = parseInt((btn as HTMLElement).getAttribute('data-line') ?? '0', 10);
-        this.displayVisualForLine(lineIdx, true);
+        if (this.pinnedLines.has(lineIdx)) {
+          this.pinnedLines.delete(lineIdx);
+        } else {
+          this.pinnedLines.add(lineIdx);
+        }
+        this.renderWorkPanel(this.state.getRecords(), false);
       });
     });
 
-    // Row clicks also focus visual panel
-    const rows = this.gutterEl.querySelectorAll('.doc-gutter-row');
-    rows.forEach(row => {
-      row.addEventListener('click', () => {
-        const lineIdx = parseInt((row as HTMLElement).getAttribute('data-line') ?? '0', 10);
-        this.displayVisualForLine(lineIdx, true);
+    // Wire Collapse buttons
+    this.gutterEl.querySelectorAll('.doc-gutter-collapse-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const lineIdx = parseInt((btn as HTMLElement).getAttribute('data-line') ?? '0', 10);
+        if (this.collapsedLines.has(lineIdx)) {
+          this.collapsedLines.delete(lineIdx);
+        } else {
+          this.collapsedLines.add(lineIdx);
+        }
+        this.saveCollapsedLines();
+        this.renderWorkPanel(this.state.getRecords(), false);
       });
     });
 
-    // Update active visual if unpinned or if currently in Visual tab
-    this.syncVisualToCursor();
+    // Wire Plot size Expand / Compact buttons
+    this.gutterEl.querySelectorAll('.doc-gutter-expand-plot-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const lineIdx = parseInt((btn as HTMLElement).getAttribute('data-line') ?? '0', 10);
+        if (this.expandedPlots.has(lineIdx)) {
+          this.expandedPlots.delete(lineIdx);
+        } else {
+          this.expandedPlots.add(lineIdx);
+        }
+        this.renderWorkPanel(this.state.getRecords(), false);
+      });
+    });
 
-    // 3. Scope Tab
+    // Instantiate and render all inline plotters for visible graph rows
+    for (let i = 0; i < records.length; i++) {
+      const rec = records[i];
+      if (rec && rec.result && rec.result.type === 'graph' && !this.collapsedLines.has(i)) {
+        const canvas = this.gutterEl.querySelector(`.doc-inline-canvas[data-line="${i}"]`) as HTMLCanvasElement;
+        if (canvas) {
+          const spec = (rec.result as GraphValue).spec;
+          let plotter: Canvas2DPlotter | Surface3DPlotter;
+          if (spec.dimensionality === 2 && (spec.surface || spec.parametric?.zExpr || spec.kind === 'surface' || spec.kind === 'pointcloud')) {
+            plotter = new Surface3DPlotter(canvas, spec, {});
+          } else {
+            plotter = new Canvas2DPlotter(canvas, spec, {});
+          }
+          this.linePlotters.set(i, plotter);
+          plotter.render();
+        }
+      }
+    }
+
+    // 4. Scope Tab
     let scopeHtml = '';
     if (activeSymbols.size === 0) {
       scopeHtml = `<div class="doc-scope-empty">No user definitions in scope</div>`;
@@ -709,116 +1024,126 @@ export class DocumentEditor {
     }
     this.scopePanelEl.innerHTML = scopeHtml;
 
-    // 4. Trace Tab
+    // 5. Trace Tab
     const durationEl = this.container.querySelector('#trace-duration');
     const lineCountEl = this.container.querySelector('#trace-line-count');
     if (durationEl) durationEl.textContent = `${this.state.getLastDurationMs()} ms`;
     if (lineCountEl) lineCountEl.textContent = `${records.length}`;
 
-    // 5. Frames Tab
+    // 6. Frames Tab
     this.renderFrames();
   }
 
-  public displayVisualForLine(lineIdx: number, switchTab: boolean = true) {
-    this.activeVisualLine = lineIdx;
-    const records = this.state.getRecords();
-    let record = records[lineIdx];
+  private formatPinnedItem(rec: DocumentLineRecord): string {
+    const lineIdx = rec.lineIndex;
+    if (!rec.result) return '';
 
-    // If current line has no visual, find the nearest preceding visual or derivation
-    if (!record || !record.result || (record.result.type !== 'graph' && record.result.type !== 'derivation')) {
-      for (let k = lineIdx - 1; k >= 0; k--) {
-        if (records[k]?.result?.type === 'graph' || records[k]?.result?.type === 'derivation') {
-          record = records[k];
-          break;
-        }
-      }
+    if (rec.result.type === 'graph') {
+      const graphVal = rec.result as GraphValue;
+      return `
+        <div class="doc-pinned-item" data-line="${lineIdx}">
+          <div class="doc-pinned-header">
+            <span>Pinned: Line ${lineIdx + 1} (Plot: ${escapeHtml(graphVal.spec.kind)})</span>
+            <button class="doc-unpin-btn" data-line="${lineIdx}">Unpin</button>
+          </div>
+          <canvas class="doc-pinned-canvas" data-line="${lineIdx}"></canvas>
+        </div>
+      `;
     }
 
-    if (switchTab) {
-      this.activeTab = 'visual';
-      const tabButtons = this.container.querySelectorAll('.doc-tab-btn');
-      tabButtons.forEach(b => {
-        b.classList.toggle('active', (b as HTMLElement).getAttribute('data-tab') === 'visual');
-      });
-      this.container.querySelectorAll('.doc-tab-content').forEach(p => p.classList.remove('active'));
-      const panel = this.container.querySelector('#tab-visual-panel');
-      if (panel) panel.classList.add('active');
+    if (rec.result.type === 'derivation') {
+      const derivVal = rec.result as DerivationValue;
+      return `
+        <div class="doc-pinned-item" data-line="${lineIdx}">
+          <div class="doc-pinned-header">
+            <span>Pinned: Line ${lineIdx + 1} (Derivation: ${escapeHtml(derivVal.targetVar ?? 'Roots')})</span>
+            <button class="doc-unpin-btn" data-line="${lineIdx}">Unpin</button>
+          </div>
+          <div class="doc-inline-derivation-container">${this.renderDerivationFull(derivVal)}</div>
+        </div>
+      `;
     }
 
-    const titleEl = this.container.querySelector('#visual-title') as HTMLElement;
-    const metaEl = this.container.querySelector('#visual-meta') as HTMLElement;
-    const emptyStateEl = this.container.querySelector('#visual-empty-state') as HTMLElement;
-    const canvasWrapper = this.container.querySelector('#visual-canvas-wrapper') as HTMLElement;
-    const derivWrapper = this.container.querySelector('#visual-derivation-wrapper') as HTMLElement;
-    const derivContent = this.container.querySelector('#visual-derivation-content') as HTMLElement;
-    const canvas = this.container.querySelector('#visual-canvas') as HTMLCanvasElement;
-
-    if (!record || !record.result || (record.result.type !== 'graph' && record.result.type !== 'derivation' && record.result.type !== 'check_result')) {
-      if (titleEl) titleEl.textContent = 'Visual Output';
-      if (metaEl) metaEl.textContent = `Line ${lineIdx + 1}: No visual content`;
-      if (emptyStateEl) emptyStateEl.classList.remove('hidden');
-      if (canvasWrapper) canvasWrapper.classList.add('hidden');
-      if (derivWrapper) derivWrapper.classList.add('hidden');
-      if (this.activePlotter) {
-        this.activePlotter.dispose();
-        this.activePlotter = null;
-      }
-      return;
+    if (rec.result.type === 'described') {
+      const desc = rec.result as DescribedValue;
+      return `
+        <div class="doc-pinned-item" data-line="${lineIdx}">
+          <div class="doc-pinned-header">
+            <span>Pinned: Line ${lineIdx + 1} (${escapeHtml(formatKind(desc.kind))}: ${escapeHtml(desc.namedOperation || desc.operation)})</span>
+            <button class="doc-unpin-btn" data-line="${lineIdx}">Unpin</button>
+          </div>
+          <div class="doc-inline-described-container">${this.renderDescribedFull(desc)}</div>
+        </div>
+      `;
     }
 
-    if (emptyStateEl) emptyStateEl.classList.add('hidden');
-
-    if (record.result.type === 'graph') {
-      const graphVal = record.result as GraphValue;
-      if (titleEl) titleEl.textContent = `Plot: ${graphVal.spec.kind}`;
-      if (metaEl) metaEl.textContent = `Line ${lineIdx + 1}: ${graphVal.spec.dimensionality}D visualization`;
-
-      if (derivWrapper) derivWrapper.classList.add('hidden');
-      if (canvasWrapper) canvasWrapper.classList.remove('hidden');
-
-      if (this.activePlotter) {
-        this.activePlotter.dispose();
-        this.activePlotter = null;
-      }
-
-      const spec = graphVal.spec;
-      if (spec.dimensionality === 2 && (spec.surface || spec.parametric?.zExpr || spec.kind === 'surface' || spec.kind === 'pointcloud')) {
-        this.activePlotter = new Surface3DPlotter(canvas, spec, {});
-      } else {
-        this.activePlotter = new Canvas2DPlotter(canvas, spec, {});
-      }
-      this.activePlotter.render();
-    } else if (record.result.type === 'derivation') {
-      const derivVal = record.result as DerivationValue;
-      if (titleEl) titleEl.textContent = `Derivation: ${derivVal.targetVar ?? 'Expression'}`;
-      if (metaEl) metaEl.textContent = `Line ${lineIdx + 1}: ${derivVal.steps.length} steps (${derivVal.verified ? 'Verified' : 'Unverified'})`;
-
-      if (canvasWrapper) canvasWrapper.classList.add('hidden');
-      if (derivWrapper) derivWrapper.classList.remove('hidden');
-      if (this.activePlotter) {
-        this.activePlotter.dispose();
-        this.activePlotter = null;
-      }
-
-      if (derivContent) {
-        derivContent.innerHTML = this.renderDerivationFull(derivVal);
-      }
-    } else if (record.result.type === 'check_result') {
-      const checkVal = record.result as any;
-      if (titleEl) titleEl.textContent = `Check: ${checkVal.targetQuantity}`;
-      if (metaEl) metaEl.textContent = `Line ${lineIdx + 1}: ${checkVal.isValid ? 'Verified' : 'Dimensional Analysis'}`;
-
-      if (canvasWrapper) canvasWrapper.classList.add('hidden');
-      if (derivWrapper) derivWrapper.classList.remove('hidden');
-      if (this.activePlotter) {
-        this.activePlotter.dispose();
-        this.activePlotter = null;
-      }
-
-      if (derivContent) {
-        derivContent.innerHTML = this.renderCheckResultFull(checkVal);
-      }
+    if (rec.result.type === 'check_result') {
+      const checkVal = rec.result as any;
+      return `
+        <div class="doc-pinned-item" data-line="${lineIdx}">
+          <div class="doc-pinned-header">
+            <span>Pinned: Line ${lineIdx + 1} (Check: ${escapeHtml(checkVal.targetQuantity)})</span>
+            <button class="doc-unpin-btn" data-line="${lineIdx}">Unpin</button>
+          </div>
+          <div class="doc-inline-check-container">${this.renderCheckResultFull(checkVal)}</div>
+        </div>
+      `;
     }
+
+    return `
+      <div class="doc-pinned-item" data-line="${lineIdx}">
+        <div class="doc-pinned-header">
+          <span>Pinned: Line ${lineIdx + 1}</span>
+          <button class="doc-unpin-btn" data-line="${lineIdx}">Unpin</button>
+        </div>
+        <div class="doc-gutter-result"><span class="doc-result-value">${this.typesetMathReadOnly(this.formatValue(rec.result))}</span></div>
+      </div>
+    `;
+  }
+
+  private renderDescribedFull(desc: DescribedValue): string {
+    const kindStr = formatKind(desc.kind);
+    const opStr = desc.namedOperation || desc.operation;
+    const meaningStr = desc.meaningInWords || desc.meaning;
+    const reqStr = Array.isArray(desc.requires) ? desc.requires.join('; ') : desc.requires;
+    const canDoList = Array.isArray(desc.canDo) ? desc.canDo : [desc.canDo];
+    const relatedList = Array.isArray(desc.related) ? desc.related : (desc.related ? [desc.related] : []);
+
+    let html = `<div class="visual-described-pane" data-kind="${escapeHtml(kindStr)}" data-op="${escapeHtml(opStr)}">`;
+    html += `
+      <div class="described-header-card">
+        <div class="described-kind-badge">${escapeHtml(kindStr)}</div>
+        <h3 class="described-title">${escapeHtml(opStr)}</h3>
+        <p class="described-meaning">${escapeHtml(meaningStr)}</p>
+      </div>
+
+      <div class="described-section obstruction-section">
+        <div class="section-label">Obstruction to Evaluation:</div>
+        <div class="obstruction-badge">${escapeHtml(desc.obstruction)}</div>
+      </div>
+
+      <div class="described-section requires-section">
+        <div class="section-label">Requires to Evaluate:</div>
+        <div class="section-content">${escapeHtml(reqStr)}</div>
+      </div>
+
+      <div class="described-section cando-section">
+        <div class="section-label">Operations Supported:</div>
+        <ul class="cando-list">
+          ${canDoList.map((item: string) => `<li>${escapeHtml(item)}</li>`).join('')}
+        </ul>
+      </div>
+
+      ${relatedList.length > 0 ? `
+        <div class="described-section related-section">
+          <div class="section-label">Related Theorems & Concepts:</div>
+          <div class="related-tags">
+            ${relatedList.map((t: string) => `<span class="related-tag">${escapeHtml(t)}</span>`).join('')}
+          </div>
+        </div>
+      ` : ''}
+    </div>`;
+    return html;
   }
 
   private renderCheckResultFull(checkVal: any): string {
@@ -948,52 +1273,182 @@ export class DocumentEditor {
     this.framesPanelEl.innerHTML = framesHtml;
   }
 
-  private formatGutterRow(rec: DocumentLineRecord): string {
-    if (rec.classification.state === 'PROSE') return '';
-    if (rec.classification.state === 'INCOMPLETE') return '<span class="doc-gutter-incomplete">...</span>';
-    if (rec.classification.state === 'ERROR') {
-      return `<span class="doc-gutter-error" title="${escapeHtml(rec.error?.message ?? '')}">${ICONS.warning} ${escapeHtml(rec.error?.message ?? 'Error')}</span>`;
-    }
-
-    if (rec.result) {
-      if (rec.result.type === 'graph') {
-        return `<button class="doc-plot-btn" data-line="${rec.lineIndex}">${ICONS.plot} View Plot (${rec.result.spec.kind})</button>`;
-      }
-      if (rec.result.type === 'derivation') {
-        const deriv = rec.result as DerivationValue;
-        return this.formatDerivationGutter(deriv);
-      }
-      if (rec.result.type === 'solve_trace') {
-        const traceVal = rec.result as SolveTraceValue;
-        return this.formatSolveTraceGutter(traceVal);
-      }
-      if (rec.result.type === 'claim') {
-        const verified = (rec.result as any).verified;
-        const kind = (rec.result as any).kind;
-        return `<span class="doc-claim-badge ${verified ? 'verified' : 'unverified'}">[Claim ${kind}: ${verified ? 'Verified' : 'Unverified'}]</span>`;
-      }
-      return `<div class="doc-gutter-result"><span class="doc-result-value">${this.typesetMathReadOnly(this.formatValue(rec.result))}</span></div>`;
-    }
-
-    return '';
-  }
-
-  private formatDerivationGutter(deriv: DerivationValue): string {
-    let html = `<div class="derivation">`;
-    for (const step of deriv.steps) {
-      const eqStr = step.after || step.equation || '';
-      html += `
-        <div class="derivation-step">
-          <div class="step-main">
-            <span class="step-eq">${this.typesetMathReadOnly(eqStr)}</span>
-            <span class="step-rule">${escapeHtml(step.rule)}</span>
+  private formatGutterRow(rec: DocumentLineRecord, isCollapsed: boolean, isExpandedPlot: boolean, isPinned: boolean): string {
+    const lineIdx = rec.lineIndex;
+    if (rec.classification.state === 'PROSE') {
+      return `
+        <div class="doc-gutter-row" data-line="${lineIdx}">
+          <div class="doc-gutter-row-header">
+            <span class="doc-gutter-lineno">L${lineIdx + 1}</span>
           </div>
-          ${step.sideCondition ? `<div class="step-condition">${escapeHtml(step.sideCondition)}</div>` : ''}
         </div>
       `;
     }
-    html += `</div>`;
-    return html;
+
+    if (rec.classification.state === 'INCOMPLETE') {
+      return `
+        <div class="doc-gutter-row" data-line="${lineIdx}">
+          <div class="doc-gutter-row-header">
+            <span class="doc-gutter-lineno">L${lineIdx + 1}</span>
+          </div>
+          <div class="doc-gutter-content"><span class="doc-gutter-incomplete">...</span></div>
+        </div>
+      `;
+    }
+
+    if (rec.classification.state === 'ERROR') {
+      return `
+        <div class="doc-gutter-row" data-line="${lineIdx}">
+          <div class="doc-gutter-row-header">
+            <span class="doc-gutter-lineno">L${lineIdx + 1}</span>
+          </div>
+          <div class="doc-gutter-content">
+            <span class="doc-gutter-error" title="${escapeHtml(rec.error?.message ?? '')}">${ICONS.warning} ${escapeHtml(rec.error?.message ?? 'Error')}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    if (!rec.result) {
+      return `
+        <div class="doc-gutter-row" data-line="${lineIdx}">
+          <div class="doc-gutter-row-header">
+            <span class="doc-gutter-lineno">L${lineIdx + 1}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    // 1. Graph result
+    if (rec.result.type === 'graph') {
+      const graphVal = rec.result as GraphValue;
+      const kindStr = graphVal.spec.kind;
+      const collapseText = isCollapsed ? '+' : '\u2212';
+      return `
+        <div class="doc-gutter-row" data-line="${lineIdx}">
+          <div class="doc-gutter-row-header">
+            <span class="doc-gutter-lineno">L${lineIdx + 1} &bull; Plot (${escapeHtml(kindStr)})</span>
+            <div class="doc-gutter-row-actions">
+              <button class="doc-gutter-action-btn doc-gutter-pin-btn ${isPinned ? 'pinned' : ''}" data-line="${lineIdx}" title="Pin plot to top of panel">${isPinned ? 'Pinned' : 'Pin'}</button>
+              ${!isCollapsed ? `<button class="doc-gutter-action-btn doc-gutter-expand-plot-btn" data-line="${lineIdx}" title="Toggle plot canvas size">${isExpandedPlot ? 'Compact' : 'Expand'}</button>` : ''}
+              <button class="doc-gutter-action-btn doc-gutter-collapse-btn" data-line="${lineIdx}" title="Collapse/Expand row">${collapseText}</button>
+            </div>
+          </div>
+          <div class="doc-gutter-content">
+            ${isCollapsed
+              ? `<div class="doc-gutter-collapsed-summary">[Collapsed Plot: ${escapeHtml(kindStr)}]</div>`
+              : `<div class="doc-inline-plot-container"><canvas class="doc-inline-canvas ${isExpandedPlot ? 'expanded' : ''}" data-line="${lineIdx}"></canvas></div>`
+            }
+          </div>
+        </div>
+      `;
+    }
+
+    // 2. Derivation result
+    if (rec.result.type === 'derivation') {
+      const derivVal = rec.result as DerivationValue;
+      const collapseText = isCollapsed ? '+' : '\u2212';
+      return `
+        <div class="doc-gutter-row" data-line="${lineIdx}">
+          <div class="doc-gutter-row-header">
+            <span class="doc-gutter-lineno">L${lineIdx + 1} &bull; Derivation (${escapeHtml(derivVal.targetVar ?? 'Roots')})</span>
+            <div class="doc-gutter-row-actions">
+              <button class="doc-gutter-action-btn doc-gutter-pin-btn ${isPinned ? 'pinned' : ''}" data-line="${lineIdx}" title="Pin derivation to top of panel">${isPinned ? 'Pinned' : 'Pin'}</button>
+              <button class="doc-gutter-action-btn doc-gutter-collapse-btn" data-line="${lineIdx}" title="Collapse/Expand row">${collapseText}</button>
+            </div>
+          </div>
+          <div class="doc-gutter-content">
+            ${isCollapsed
+              ? `<div class="doc-gutter-collapsed-summary">[Collapsed Derivation: ${derivVal.steps.length} steps (${derivVal.verified ? 'Verified' : 'Unverified'})]</div>`
+              : `<div class="doc-inline-derivation-container">${this.renderDerivationFull(derivVal)}</div>`
+            }
+          </div>
+        </div>
+      `;
+    }
+
+    // 3. Described result
+    if (rec.result.type === 'described') {
+      const desc = rec.result as DescribedValue;
+      const kindStr = formatKind(desc.kind);
+      const opStr = desc.namedOperation || desc.operation;
+      const collapseText = isCollapsed ? '+' : '\u2212';
+      return `
+        <div class="doc-gutter-row" data-line="${lineIdx}">
+          <div class="doc-gutter-row-header">
+            <span class="doc-gutter-lineno">L${lineIdx + 1} &bull; ${escapeHtml(kindStr)} (${escapeHtml(opStr)})</span>
+            <div class="doc-gutter-row-actions">
+              <button class="doc-gutter-action-btn doc-gutter-pin-btn ${isPinned ? 'pinned' : ''}" data-line="${lineIdx}" title="Pin described card to top of panel">${isPinned ? 'Pinned' : 'Pin'}</button>
+              <button class="doc-gutter-action-btn doc-gutter-collapse-btn" data-line="${lineIdx}" title="Collapse/Expand row">${collapseText}</button>
+            </div>
+          </div>
+          <div class="doc-gutter-content">
+            ${isCollapsed
+              ? `<div class="doc-described-card"><span class="described-kind-badge">${escapeHtml(kindStr)}</span> <span class="described-op">${escapeHtml(opStr)}</span></div>`
+              : `<div class="doc-inline-described-container">${this.renderDescribedFull(desc)}</div>`
+            }
+          </div>
+        </div>
+      `;
+    }
+
+    // 4. Check result
+    if (rec.result.type === 'check_result') {
+      const checkVal = rec.result as any;
+      const collapseText = isCollapsed ? '+' : '\u2212';
+      return `
+        <div class="doc-gutter-row" data-line="${lineIdx}">
+          <div class="doc-gutter-row-header">
+            <span class="doc-gutter-lineno">L${lineIdx + 1} &bull; Check (${escapeHtml(checkVal.targetQuantity)})</span>
+            <div class="doc-gutter-row-actions">
+              <button class="doc-gutter-action-btn doc-gutter-pin-btn ${isPinned ? 'pinned' : ''}" data-line="${lineIdx}" title="Pin check to top of panel">${isPinned ? 'Pinned' : 'Pin'}</button>
+              <button class="doc-gutter-action-btn doc-gutter-collapse-btn" data-line="${lineIdx}" title="Collapse/Expand row">${collapseText}</button>
+            </div>
+          </div>
+          <div class="doc-gutter-content">
+            ${isCollapsed
+              ? `<div class="doc-gutter-collapsed-summary">[Collapsed Check: ${checkVal.isValid ? 'Verified' : 'Dimensional Analysis'}]</div>`
+              : `<div class="doc-inline-check-container">${this.renderCheckResultFull(checkVal)}</div>`
+            }
+          </div>
+        </div>
+      `;
+    }
+
+    // 5. Solve trace result
+    if (rec.result.type === 'solve_trace') {
+      const traceVal = rec.result as SolveTraceValue;
+      const collapseText = isCollapsed ? '+' : '\u2212';
+      return `
+        <div class="doc-gutter-row" data-line="${lineIdx}">
+          <div class="doc-gutter-row-header">
+            <span class="doc-gutter-lineno">L${lineIdx + 1} &bull; Trace (${escapeHtml(traceVal.method)})</span>
+            <div class="doc-gutter-row-actions">
+              <button class="doc-gutter-action-btn doc-gutter-pin-btn ${isPinned ? 'pinned' : ''}" data-line="${lineIdx}" title="Pin trace to top of panel">${isPinned ? 'Pinned' : 'Pin'}</button>
+              <button class="doc-gutter-action-btn doc-gutter-collapse-btn" data-line="${lineIdx}" title="Collapse/Expand row">${collapseText}</button>
+            </div>
+          </div>
+          <div class="doc-gutter-content">
+            ${isCollapsed
+              ? `<div class="doc-gutter-collapsed-summary">[Collapsed Trace: ${traceVal.iterations.length} iters, root \u2248 ${escapeHtml(this.formatValue(traceVal.root))}]</div>`
+              : this.formatSolveTraceGutter(traceVal)
+            }
+          </div>
+        </div>
+      `;
+    }
+
+    // 6. Scalar / Standard result
+    return `
+      <div class="doc-gutter-row" data-line="${lineIdx}">
+        <div class="doc-gutter-row-header">
+          <span class="doc-gutter-lineno">L${lineIdx + 1}</span>
+        </div>
+        <div class="doc-gutter-content">
+          <div class="doc-gutter-result"><span class="doc-result-value">${this.typesetMathReadOnly(this.formatValue(rec.result))}</span></div>
+        </div>
+      </div>
+    `;
   }
 
   private formatSolveTraceGutter(trace: SolveTraceValue): string {
@@ -1288,17 +1743,26 @@ export class DocumentEditor {
         if (val.isValid) return `Verified: ${val.targetQuantity}`;
         return `Not ${val.targetQuantity}: ${val.messageLines[1]?.replace(/^\d+\.\s*/, '') || 'Dimension mismatch'}`;
       }
+      case 'kind':
+        return formatKind(val.kind);
+      case 'described':
+        return `[Described: ${val.namedOperation || (val as any).operation || 'unevaluable'}]`;
+      case 'set_value':
+        if (val.standardName) return val.standardName;
+        if (val.isInfinite) return `Set(infinite, of=${formatKind(val.elementKind)})`;
+        return `Set(${(val.elements ?? []).map(e => this.formatValue(e)).join(', ')})`;
       default:
         return String((val as any).value ?? val.type);
     }
   }
 
   public dispose() {
-    if (this.activePlotter) {
-      this.activePlotter.dispose();
-      this.activePlotter = null;
-    }
+    this.linePlotters.forEach(p => p.dispose());
+    this.linePlotters.clear();
+    this.pinnedPlotters.forEach(p => p.dispose());
+    this.pinnedPlotters.clear();
     this.mathPopover.dispose();
     this.state.dispose();
   }
 }
+

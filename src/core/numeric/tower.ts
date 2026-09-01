@@ -1,6 +1,7 @@
 import { BooleanValue, FloatValue, ListValue, MatrixValue, NoneValue, RationalValue, Span, UnknownReason, UnknownValue, Value } from '../types';
 import { BigFraction } from './rational';
 import { createError } from '../errors';
+import { inferKindOfValue, formatKind } from '../kinds';
 import {
   matrixAdd,
   matrixDet,
@@ -88,6 +89,16 @@ export function addValues(a: Value, b: Value, span?: Span): Value {
   if (a.type === 'matrix' && b.type === 'matrix') {
     return matrixAdd(a, b, span);
   }
+  if ((a.type === 'list' || a.type === 'tuple') && (b.type === 'rational' || b.type === 'float')) {
+    const kA = inferKindOfValue(a);
+    const kB = inferKindOfValue(b);
+    throw createError(`Cannot add ${formatKind(kA)} to ${formatKind(kB)}: addition requires matching kinds`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+  }
+  if ((b.type === 'list' || b.type === 'tuple') && (a.type === 'rational' || a.type === 'float')) {
+    const kA = inferKindOfValue(a);
+    const kB = inferKindOfValue(b);
+    throw createError(`Cannot add ${formatKind(kA)} to ${formatKind(kB)}: addition requires matching kinds`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+  }
   if (a.type === 'list' && b.type === 'list') {
     return { type: 'list', elements: [...a.elements, ...b.elements] };
   }
@@ -121,6 +132,16 @@ export function subValues(a: Value, b: Value, span?: Span): Value {
   }
   if (a.type === 'matrix' && b.type === 'matrix') {
     return matrixSub(a, b, span);
+  }
+  if ((a.type === 'list' || a.type === 'tuple') && (b.type === 'rational' || b.type === 'float')) {
+    const kA = inferKindOfValue(a);
+    const kB = inferKindOfValue(b);
+    throw createError(`Cannot subtract ${formatKind(kB)} from ${formatKind(kA)}: subtraction requires matching kinds`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+  }
+  if ((b.type === 'list' || b.type === 'tuple') && (a.type === 'rational' || a.type === 'float')) {
+    const kA = inferKindOfValue(a);
+    const kB = inferKindOfValue(b);
+    throw createError(`Cannot subtract ${formatKind(kB)} from ${formatKind(kA)}: subtraction requires matching kinds`, span ?? { start: 0, end: 0, line: 1, col: 1 });
   }
   if (a.type === 'rational' && b.type === 'rational') {
     const fA = new BigFraction(a.n, a.d, span);
@@ -522,68 +543,139 @@ export function applyBuiltin(name: string, args: Value[], span?: Span): Value {
     if (a.type === 'unknown') return a;
   }
   switch (name) {
-    case 'sin': {
-      if (args.length !== 1) throw createError(`sin expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      return { type: 'float', value: floatSin(valueToNumber(args[0], span)) };
-    }
-    case 'cos': {
-      if (args.length !== 1) throw createError(`cos expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      return { type: 'float', value: floatCos(valueToNumber(args[0], span)) };
-    }
-    case 'tan': {
-      if (args.length !== 1) throw createError(`tan expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      return { type: 'float', value: floatTan(valueToNumber(args[0], span)) };
-    }
-    case 'asin': {
-      if (args.length !== 1) throw createError(`asin expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      return { type: 'float', value: floatAsin(valueToNumber(args[0], span), span) };
-    }
-    case 'acos': {
-      if (args.length !== 1) throw createError(`acos expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      return { type: 'float', value: floatAcos(valueToNumber(args[0], span), span) };
-    }
-    case 'atan': {
-      if (args.length !== 1) throw createError(`atan expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      return { type: 'float', value: floatAtan(valueToNumber(args[0], span)) };
-    }
-    case 'sinh': {
-      if (args.length !== 1) throw createError(`sinh expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      return { type: 'float', value: floatSinh(valueToNumber(args[0], span)) };
-    }
-    case 'cosh': {
-      if (args.length !== 1) throw createError(`cosh expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      return { type: 'float', value: floatCosh(valueToNumber(args[0], span)) };
-    }
-    case 'tanh': {
-      if (args.length !== 1) throw createError(`tanh expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      return { type: 'float', value: floatTanh(valueToNumber(args[0], span)) };
-    }
-    case 'ln': {
-      if (args.length !== 1) throw createError(`ln expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      return { type: 'float', value: floatLn(valueToNumber(args[0], span), span) };
-    }
-    case 'log': {
-      if (args.length === 1) {
-        return { type: 'float', value: floatLog(valueToNumber(args[0], span), span) };
-      }
-      if (args.length === 2) {
-        const val = valueToNumber(args[0], span);
-        const base = valueToNumber(args[1], span);
-        return { type: 'float', value: floatLn(val, span) / floatLn(base, span) };
-      }
-      throw createError(`log expects 1 or 2 arguments, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-    }
-    case 'log2': {
-      if (args.length !== 1) throw createError(`log2 expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      return { type: 'float', value: floatLog2(valueToNumber(args[0], span), span) };
-    }
-    case 'exp': {
-      if (args.length !== 1) throw createError(`exp expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      return { type: 'float', value: floatExp(valueToNumber(args[0], span)) };
-    }
+    case 'sin':
+    case 'cos':
+    case 'tan':
+    case 'asin':
+    case 'acos':
+    case 'atan':
+    case 'sinh':
+    case 'cosh':
+    case 'tanh':
+    case 'ln':
+    case 'log':
+    case 'log2':
+    case 'exp':
     case 'sqrt': {
-      if (args.length !== 1) throw createError(`sqrt expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      return sqrtValue(args[0], span);
+      const a = args[0];
+      if (a && (a.type === 'list' || a.type === 'tuple')) {
+        const k = inferKindOfValue(a);
+        throw createError(`Cannot apply ${name} to ${formatKind(k)}: ${name} has domain Scalar`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+      }
+      if (name === 'sin') {
+        if (args.length !== 1) throw createError(`sin expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+        return { type: 'float', value: floatSin(valueToNumber(args[0], span)) };
+      }
+      if (name === 'cos') {
+        if (args.length !== 1) throw createError(`cos expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+        return { type: 'float', value: floatCos(valueToNumber(args[0], span)) };
+      }
+      if (name === 'tan') {
+        if (args.length !== 1) throw createError(`tan expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+        return { type: 'float', value: floatTan(valueToNumber(args[0], span)) };
+      }
+      if (name === 'asin') {
+        if (args.length !== 1) throw createError(`asin expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+        return { type: 'float', value: floatAsin(valueToNumber(args[0], span), span) };
+      }
+      if (name === 'acos') {
+        if (args.length !== 1) throw createError(`acos expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+        return { type: 'float', value: floatAcos(valueToNumber(args[0], span), span) };
+      }
+      if (name === 'atan') {
+        if (args.length !== 1) throw createError(`atan expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+        return { type: 'float', value: floatAtan(valueToNumber(args[0], span)) };
+      }
+      if (name === 'sinh') {
+        if (args.length !== 1) throw createError(`sinh expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+        return { type: 'float', value: floatSinh(valueToNumber(args[0], span)) };
+      }
+      if (name === 'cosh') {
+        if (args.length !== 1) throw createError(`cosh expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+        return { type: 'float', value: floatCosh(valueToNumber(args[0], span)) };
+      }
+      if (name === 'tanh') {
+        if (args.length !== 1) throw createError(`tanh expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+        return { type: 'float', value: floatTanh(valueToNumber(args[0], span)) };
+      }
+      if (name === 'ln') {
+        if (args.length !== 1) throw createError(`ln expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+        return { type: 'float', value: floatLn(valueToNumber(args[0], span), span) };
+      }
+      if (name === 'log') {
+        if (args.length === 1) {
+          return { type: 'float', value: floatLog(valueToNumber(args[0], span), span) };
+        }
+        if (args.length === 2) {
+          const val = valueToNumber(args[0], span);
+          const base = valueToNumber(args[1], span);
+          return { type: 'float', value: floatLn(val, span) / floatLn(base, span) };
+        }
+        throw createError(`log expects 1 or 2 arguments, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+      }
+      if (name === 'log2') {
+        if (args.length !== 1) throw createError(`log2 expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+        return { type: 'float', value: floatLog2(valueToNumber(args[0], span), span) };
+      }
+      if (name === 'exp') {
+        if (args.length !== 1) throw createError(`exp expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+        return { type: 'float', value: floatExp(valueToNumber(args[0], span)) };
+      }
+      if (name === 'sqrt') {
+        if (args.length !== 1) throw createError(`sqrt expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+        return sqrtValue(args[0], span);
+      }
+      throw createError(`Unknown builtin function '${name}'`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+    }
+    case 'inner':
+    case 'dot': {
+      if (args.length !== 2) throw createError(`${name} expects 2 vector arguments`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+      const a = args[0];
+      const b = args[1];
+      if ((a.type === 'list' || a.type === 'tuple') && (b.type === 'list' || b.type === 'tuple')) {
+        const dimA = a.elements.length;
+        const dimB = b.elements.length;
+        if (dimA !== dimB) {
+          throw createError(`Cannot compute inner product of Vector(dim=${dimA}, field=R) and Vector(dim=${dimB}, field=R): dimension mismatch (${dimA} vs ${dimB})`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+        }
+        let sum: Value = { type: 'rational', n: 0n, d: 1n };
+        for (let i = 0; i < dimA; i++) {
+          const prod = mulValues(a.elements[i], b.elements[i], span);
+          sum = addValues(sum, prod, span);
+        }
+        return sum;
+      }
+      throw createError(`Cannot compute inner product on non-vector kinds`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+    }
+    case 'norm': {
+      if (args.length !== 1) throw createError(`norm expects 1 argument`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+      const a = args[0];
+      if (a.type === 'list' || a.type === 'tuple') {
+        let sumSq: Value = { type: 'rational', n: 0n, d: 1n };
+        for (const el of a.elements) {
+          const prod = mulValues(el, el, span);
+          sumSq = addValues(sumSq, prod, span);
+        }
+        return sqrtValue(sumSq, span);
+      }
+      if (a.type === 'rational' || a.type === 'float') {
+        return applyBuiltin('abs', [a], span);
+      }
+      throw createError(`Cannot compute norm of ${formatKind(inferKindOfValue(a))}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+    }
+    case 'card': {
+      if (args.length !== 1) throw createError(`card expects 1 argument`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+      const a = args[0];
+      if (a.type === 'set_value') {
+        if (a.isInfinite) {
+          return { type: 'string', value: 'infinite (\u2135\u2080 or c)' };
+        }
+        if (a.elements) return { type: 'rational', n: BigInt(a.elements.length), d: 1n };
+      }
+      if (a.type === 'list') {
+        return { type: 'rational', n: BigInt(a.elements.length), d: 1n };
+      }
+      throw createError(`Cannot compute cardinality of non-set kind`, span ?? { start: 0, end: 0, line: 1, col: 1 });
     }
     case 'abs': {
       if (args.length !== 1) throw createError(`abs expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });

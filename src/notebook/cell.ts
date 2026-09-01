@@ -293,6 +293,12 @@ export class CellView {
         return `builtin ${val.name}`;
       case 'graph':
         return `Plot: ${val.spec.kind}`;
+      case 'kind':
+        return `Kind: ${val.kind.name}`;
+      case 'described':
+        return `[Described: ${val.namedOperation || val.operation || 'unevaluable'}]`;
+      case 'set_value':
+        return val.standardName || `Set(${val.isInfinite ? 'infinite' : (val.elements ?? []).length})`;
       default:
         return String((val as any).value ?? (val as any).type);
     }

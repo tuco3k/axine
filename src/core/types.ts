@@ -52,6 +52,37 @@ export type TokenType =
   | 'DIFF_OP' // d//dx, \u2202//\u2202x, dy//dx
   | 'CLAIM'
   | 'SUPERSCRIPT_DIGITS' // ², ³, etc.
+  | 'DOUBLE_INTEGRAL'
+  | 'TRIPLE_INTEGRAL'
+  | 'CONTOUR_INTEGRAL'
+  | 'NABLA'
+  | 'LAPLACIAN'
+  | 'WEDGE'
+  | 'HODGE_STAR'
+  | 'TENSOR_PROD'
+  | 'DIRECT_SUM'
+  | 'LANGLE'
+  | 'RANGLE'
+  | 'NORM_BAR'
+  | 'FLOOR_L'
+  | 'FLOOR_R'
+  | 'CEIL_L'
+  | 'CEIL_R'
+  | 'FORALL'
+  | 'EXISTS'
+  | 'EXISTS_UNIQUE'
+  | 'SET_IN'
+  | 'SET_NOTIN'
+  | 'SET_SUBSET'
+  | 'SET_SUBSETEQ'
+  | 'SET_UNION'
+  | 'SET_INTERSECT'
+  | 'SET_DIFF'
+  | 'ISO'
+  | 'HOMOTOPY'
+  | 'EQUIV'
+  | 'DAGGER'
+  | 'BAR_SEP'
   | 'EOF';
 
 export interface Token {
@@ -84,7 +115,19 @@ export type ASTNode =
   | LimitNode
   | ClaimNode
   | IndexNode
-  | MemberAccessNode;
+  | MemberAccessNode
+  | RegionIntegralNode
+  | NablaOpNode
+  | DifferentialFormOpNode
+  | TensorOpNode
+  | BracketOpNode
+  | QuantifierNode
+  | SetOpNode
+  | SetBuilderNode
+  | EquivalenceNode
+  | DecoratedIdentifierNode
+  | MatrixPostfixNode
+  | ProbabilityNode;
 
 export interface MemberAccessNode {
   type: 'MemberAccess';
@@ -260,6 +303,99 @@ export interface ClaimNode {
   span: Span;
 }
 
+export interface RegionIntegralNode {
+  type: 'RegionIntegral';
+  integralType: 'single' | 'double' | 'triple' | 'contour' | 'surface';
+  region: ASTNode;
+  integrand: ASTNode;
+  differential: string;
+  span: Span;
+}
+
+export interface NablaOpNode {
+  type: 'NablaOp';
+  op: 'grad' | 'div' | 'curl' | 'laplacian';
+  target: ASTNode;
+  span: Span;
+}
+
+export interface DifferentialFormOpNode {
+  type: 'DifferentialFormOp';
+  op: 'exterior_derivative' | 'wedge' | 'hodge_star';
+  operands: ASTNode[];
+  span: Span;
+}
+
+export interface TensorOpNode {
+  type: 'TensorOp';
+  op: 'tensor' | 'direct_sum';
+  left: ASTNode;
+  right: ASTNode;
+  span: Span;
+}
+
+export interface BracketOpNode {
+  type: 'BracketOp';
+  op: 'inner_product' | 'norm' | 'floor' | 'ceil' | 'abs' | 'card';
+  operands: ASTNode[];
+  span: Span;
+}
+
+export interface QuantifierNode {
+  type: 'Quantifier';
+  quantifier: 'forall' | 'exists' | 'exists_unique';
+  variable: string;
+  domain: ASTNode;
+  predicate: ASTNode;
+  span: Span;
+}
+
+export interface SetOpNode {
+  type: 'SetOp';
+  op: 'union' | 'intersect' | 'setminus' | 'subset' | 'subseteq' | 'in' | 'notin';
+  left: ASTNode;
+  right: ASTNode;
+  span: Span;
+}
+
+export interface SetBuilderNode {
+  type: 'SetBuilder';
+  variable: string;
+  domain: ASTNode;
+  predicate: ASTNode;
+  span: Span;
+}
+
+export interface EquivalenceNode {
+  type: 'Equivalence';
+  relation: 'iso' | 'homotopy' | 'equiv';
+  left: ASTNode;
+  right: ASTNode;
+  span: Span;
+}
+
+export interface DecoratedIdentifierNode {
+  type: 'DecoratedIdentifier';
+  decoration: 'bar' | 'hat' | 'dot' | 'ddot';
+  name: string;
+  span: Span;
+}
+
+export interface MatrixPostfixNode {
+  type: 'MatrixPostfix';
+  op: 'transpose' | 'adjoint' | 'inverse';
+  target: ASTNode;
+  span: Span;
+}
+
+export interface ProbabilityNode {
+  type: 'Probability';
+  op: 'prob' | 'expect' | 'variance' | 'covariance';
+  event: ASTNode;
+  condition?: ASTNode;
+  span: Span;
+}
+
 // -----------------------------------------------------------------------------
 // Values & Numeric Tower
 // -----------------------------------------------------------------------------
@@ -296,18 +432,87 @@ export interface NoneValue {
   type: 'none';
 }
 
+import { MathKind } from './kinds';
+
+export type ObstructionReason =
+  | 'needs-parameterization'
+  | 'needs-basis'
+  | 'not-elementary'
+  | 'undecidable'
+  | 'unimplemented-technique'
+  | 'requires-proof'
+  | 'infinite-object'
+  | 'ill-posed';
+
 export type UnknownReason =
   | 'budget-exhausted'
   | 'not-finitely-checkable'
   | 'search-incomplete'
   | 'no-convergence'
   | 'undefined-at-point'
-  | 'requires-unavailable-theory';
+  | 'requires-unavailable-theory'
+  | ObstructionReason;
 
 export interface UnknownValue {
   type: 'unknown';
   reason: UnknownReason;
   detail?: string;
+}
+
+export interface KindValue {
+  type: 'kind';
+  kind: MathKind;
+}
+
+export interface SetValue {
+  type: 'set_value';
+  elementKind: MathKind;
+  standardName?: string;
+  isInfinite?: boolean;
+  predicate?: ASTNode;
+  elements?: Value[];
+}
+
+export interface DifferentialFormValue {
+  type: 'differential_form';
+  degree: number;
+  manifold?: string;
+  expression?: ASTNode;
+}
+
+export interface VectorFieldValue {
+  type: 'vector_field';
+  domain: string;
+  dimension: number | string;
+  components?: ASTNode[];
+}
+
+export interface DistributionValue {
+  type: 'distribution';
+  support: string;
+  family?: string;
+}
+
+export interface AlgebraicStructureValue {
+  type: 'algebraic_structure';
+  structureType: 'Field' | 'Ring' | 'Group';
+  name: string;
+  carrierSet: string;
+  axioms: string[];
+}
+
+export interface DescribedValue {
+  type: 'described';
+  kind: MathKind;
+  operation: string;
+  namedOperation?: string;
+  meaning: string;
+  meaningInWords?: string;
+  obstruction: ObstructionReason;
+  requires: string | string[];
+  canDo: string | string[];
+  related?: string | string[];
+  ast?: ASTNode;
 }
 
 export interface MatrixValue {
@@ -588,7 +793,14 @@ export type Value =
   | SolveTraceValue
   | DimensionValue
   | CheckResultValue
-  | StringValue;
+  | StringValue
+  | KindValue
+  | SetValue
+  | DifferentialFormValue
+  | VectorFieldValue
+  | DistributionValue
+  | AlgebraicStructureValue
+  | DescribedValue;
 
 export type Environment = Record<string, Value>;
 

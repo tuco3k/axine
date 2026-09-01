@@ -199,19 +199,180 @@ export class Tokenizer {
         tokens.push(this.makeToken('CONGRUENT', '\u2261', startPos, startLine, startCol, leadingWhitespace));
         continue;
       }
-      if (char === 'Σ') {
+      if (char === '\u03a3') {
         this.advance();
-        tokens.push(this.makeToken('SIGMA', 'Σ', startPos, startLine, startCol, leadingWhitespace));
+        tokens.push(this.makeToken('SIGMA', '\u03a3', startPos, startLine, startCol, leadingWhitespace));
         continue;
       }
-      if (char === 'Π') {
+      if (char === '\u03a0') {
         this.advance();
-        tokens.push(this.makeToken('PI_PROD', 'Π', startPos, startLine, startCol, leadingWhitespace));
+        tokens.push(this.makeToken('PI_PROD', '\u03a0', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u222c') {
+        this.advance();
+        tokens.push(this.makeToken('DOUBLE_INTEGRAL', '\u222c', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u222d') {
+        this.advance();
+        tokens.push(this.makeToken('TRIPLE_INTEGRAL', '\u222d', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u222e') {
+        this.advance();
+        tokens.push(this.makeToken('CONTOUR_INTEGRAL', '\u222e', startPos, startLine, startCol, leadingWhitespace));
         continue;
       }
       if (char === '\u222b') {
         this.advance();
         tokens.push(this.makeToken('INTEGRAL', '\u222b', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u2207') {
+        this.advance();
+        if (this.pos < this.source.length && (this.source[this.pos] === '\u00b2' || this.source[this.pos] === '2')) {
+          this.advance();
+          tokens.push(this.makeToken('LAPLACIAN', '\u2207\u00b2', startPos, startLine, startCol, leadingWhitespace));
+        } else {
+          tokens.push(this.makeToken('NABLA', '\u2207', startPos, startLine, startCol, leadingWhitespace));
+        }
+        continue;
+      }
+      if (char === '\u2227') {
+        this.advance();
+        tokens.push(this.makeToken('WEDGE', '\u2227', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u22c6') {
+        this.advance();
+        tokens.push(this.makeToken('HODGE_STAR', '\u22c6', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u2297') {
+        this.advance();
+        tokens.push(this.makeToken('TENSOR_PROD', '\u2297', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u2295') {
+        this.advance();
+        tokens.push(this.makeToken('DIRECT_SUM', '\u2295', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u27e8') {
+        this.advance();
+        tokens.push(this.makeToken('LANGLE', '\u27e8', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u27e9') {
+        this.advance();
+        tokens.push(this.makeToken('RANGLE', '\u27e9', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u2016') {
+        this.advance();
+        tokens.push(this.makeToken('NORM_BAR', '\u2016', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u230a') {
+        this.advance();
+        tokens.push(this.makeToken('FLOOR_L', '\u230a', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u230b') {
+        this.advance();
+        tokens.push(this.makeToken('FLOOR_R', '\u230b', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u2308') {
+        this.advance();
+        tokens.push(this.makeToken('CEIL_L', '\u2308', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u2309') {
+        this.advance();
+        tokens.push(this.makeToken('CEIL_R', '\u2309', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u2200') {
+        this.advance();
+        tokens.push(this.makeToken('FORALL', '\u2200', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u2203') {
+        this.advance();
+        if (this.pos < this.source.length && this.source[this.pos] === '!') {
+          this.advance();
+          tokens.push(this.makeToken('EXISTS_UNIQUE', '\u2203!', startPos, startLine, startCol, leadingWhitespace));
+        } else {
+          tokens.push(this.makeToken('EXISTS', '\u2203', startPos, startLine, startCol, leadingWhitespace));
+        }
+        continue;
+      }
+      if (char === '\u2208') {
+        this.advance();
+        tokens.push(this.makeToken('SET_IN', '\u2208', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u2209') {
+        this.advance();
+        tokens.push(this.makeToken('SET_NOTIN', '\u2209', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u2282') {
+        this.advance();
+        tokens.push(this.makeToken('SET_SUBSET', '\u2282', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u2286') {
+        this.advance();
+        tokens.push(this.makeToken('SET_SUBSETEQ', '\u2286', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u222a') {
+        this.advance();
+        tokens.push(this.makeToken('SET_UNION', '\u222a', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u2229') {
+        this.advance();
+        tokens.push(this.makeToken('SET_INTERSECT', '\u2229', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u2216') {
+        this.advance();
+        tokens.push(this.makeToken('SET_DIFF', '\u2216', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u2245') {
+        this.advance();
+        tokens.push(this.makeToken('ISO', '\u2245', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u2243') {
+        this.advance();
+        tokens.push(this.makeToken('HOMOTOPY', '\u2243', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u223c') {
+        this.advance();
+        tokens.push(this.makeToken('EQUIV', '\u223c', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '\u2020') {
+        this.advance();
+        tokens.push(this.makeToken('DAGGER', '\u2020', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+      if (char === '|') {
+        if (this.peek(1) === '|') {
+          this.advance();
+          this.advance();
+          tokens.push(this.makeToken('NORM_BAR', '||', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        this.advance();
+        tokens.push(this.makeToken('BAR_SEP', '|', startPos, startLine, startCol, leadingWhitespace));
         continue;
       }
       if (char === '\u2202') {
@@ -299,6 +460,7 @@ export class Tokenizer {
           tokens.push(this.makeToken('COMMA', ',', startPos, startLine, startCol, leadingWhitespace));
           break;
         case '.':
+        case '\u00b7':
           this.advance();
           tokens.push(this.makeToken('DOT', '.', startPos, startLine, startCol, leadingWhitespace));
           break;
@@ -438,6 +600,56 @@ export class Tokenizer {
         return this.makeToken('NOT', name, startPos, startLine, startCol, leadingWhitespace);
       case 'claim':
         return this.makeToken('CLAIM', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'iint':
+        return this.makeToken('DOUBLE_INTEGRAL', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'iiint':
+        return this.makeToken('TRIPLE_INTEGRAL', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'oint':
+        return this.makeToken('CONTOUR_INTEGRAL', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'grad':
+      case 'del':
+        return this.makeToken('NABLA', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'laplacian':
+        return this.makeToken('LAPLACIAN', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'wedge':
+        return this.makeToken('WEDGE', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'hodge':
+      case 'star':
+        return this.makeToken('HODGE_STAR', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'tensor':
+        return this.makeToken('TENSOR_PROD', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'direct_sum':
+      case 'oplus':
+        return this.makeToken('DIRECT_SUM', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'forall':
+        return this.makeToken('FORALL', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'exists':
+        if (this.pos < this.source.length && this.source[this.pos] === '!') {
+          this.advance();
+          return this.makeToken('EXISTS_UNIQUE', name + '!', startPos, startLine, startCol, leadingWhitespace);
+        }
+        return this.makeToken('EXISTS', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'notin':
+        return this.makeToken('SET_NOTIN', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'subset':
+        return this.makeToken('SET_SUBSET', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'subseteq':
+        return this.makeToken('SET_SUBSETEQ', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'union':
+        return this.makeToken('SET_UNION', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'intersect':
+        return this.makeToken('SET_INTERSECT', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'setminus':
+        return this.makeToken('SET_DIFF', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'iso':
+        return this.makeToken('ISO', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'homotopic':
+        return this.makeToken('HOMOTOPY', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'equiv':
+        return this.makeToken('EQUIV', name, startPos, startLine, startCol, leadingWhitespace);
+      case 'dagger':
+      case 'adj':
+        return this.makeToken('DAGGER', name, startPos, startLine, startCol, leadingWhitespace);
       default:
         return this.makeToken('IDENTIFIER', name, startPos, startLine, startCol, leadingWhitespace);
     }
@@ -504,11 +716,32 @@ export class Tokenizer {
   }
 
   private isIdentStart(char: string): boolean {
-    return /^[a-zA-Z_]$/.test(char);
+    return (
+      /^[a-zA-Z_]$/.test(char) ||
+      (char >= '\u0370' && char <= '\u03ff') || // Greek letters
+      char === '\u211d' || // R
+      char === '\u2102' || // C
+      char === '\u2124' || // Z
+      char === '\u211a' || // Q
+      char === '\u2115' || // N
+      char === '\u2202'    // partial
+    );
   }
 
   private isIdentPart(char: string): boolean {
-    return /^[a-zA-Z0-9_]$/.test(char);
+    return (
+      /^[a-zA-Z0-9_]$/.test(char) ||
+      (char >= '\u0370' && char <= '\u03ff') || // Greek letters
+      char === '\u0304' || // combining macron / overline
+      char === '\u0302' || // combining circumflex / hat
+      char === '\u0307' || // combining dot
+      char === '\u0308' || // combining diaeresis / double dot
+      char === '\u211d' ||
+      char === '\u2102' ||
+      char === '\u2124' ||
+      char === '\u211a' ||
+      char === '\u2115'
+    );
   }
 
   private peek(offset: number = 0): string {

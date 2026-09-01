@@ -194,6 +194,88 @@ function formatNode(node: ASTNode, parentPrec: number): string {
     case 'Index': {
       return `${formatNode(node.target, PREC_POSTFIX)}[${formatNode(node.index, PREC_NONE)}]`;
     }
+    case 'RegionIntegral': {
+      const sym =
+        node.integralType === 'double'
+          ? '\u222c'
+          : node.integralType === 'triple'
+          ? '\u222d'
+          : node.integralType === 'contour'
+          ? '\u222e'
+          : '\u222b';
+      const reg = formatNode(node.region, PREC_NONE);
+      return `${sym}_${reg} ${formatNode(node.integrand, PREC_NONE)} ${node.differential}`;
+    }
+    case 'NablaOp': {
+      if (node.op === 'laplacian') return `\u2207\u00b2 ${formatNode(node.target, PREC_UNARY)}`;
+      if (node.op === 'div') return `\u2207\u00b7 ${formatNode(node.target, PREC_UNARY)}`;
+      if (node.op === 'curl') return `\u2207\u00d7 ${formatNode(node.target, PREC_UNARY)}`;
+      return `\u2207 ${formatNode(node.target, PREC_UNARY)}`;
+    }
+    case 'DifferentialFormOp': {
+      if (node.op === 'hodge_star') return `\u22c6 ${formatNode(node.operands[0], PREC_UNARY)}`;
+      if (node.op === 'exterior_derivative') return `d ${formatNode(node.operands[0], PREC_UNARY)}`;
+      return `${formatNode(node.operands[0], PREC_EXPLICIT_MUL)} \u2227 ${formatNode(node.operands[1], PREC_EXPLICIT_MUL)}`;
+    }
+    case 'TensorOp': {
+      const sym = node.op === 'tensor' ? '\u2297' : '\u2295';
+      return `${formatNode(node.left, PREC_ADD)} ${sym} ${formatNode(node.right, PREC_ADD)}`;
+    }
+    case 'BracketOp': {
+      if (node.op === 'inner_product') return `\u27e8${formatNode(node.operands[0], PREC_NONE)}, ${formatNode(node.operands[1], PREC_NONE)}\u27e9`;
+      if (node.op === 'norm') return `\u2016${formatNode(node.operands[0], PREC_NONE)}\u2016`;
+      if (node.op === 'floor') return `\u230a${formatNode(node.operands[0], PREC_NONE)}\u230b`;
+      if (node.op === 'ceil') return `\u2308${formatNode(node.operands[0], PREC_NONE)}\u2309`;
+      return `|${formatNode(node.operands[0], PREC_NONE)}|`;
+    }
+    case 'Quantifier': {
+      const qSym = node.quantifier === 'forall' ? '\u2200' : node.quantifier === 'exists_unique' ? '\u2203!' : '\u2203';
+      return `${qSym} ${node.variable} \u2208 ${formatNode(node.domain, PREC_NONE)}, ${formatNode(node.predicate, PREC_NONE)}`;
+    }
+    case 'SetOp': {
+      const symMap: Record<string, string> = {
+        union: '\u222a',
+        intersect: '\u2229',
+        setminus: '\u2216',
+        subset: '\u2282',
+        subseteq: '\u2286',
+        in: '\u2208',
+        notin: '\u2209',
+      };
+      return `${formatNode(node.left, PREC_ADD)} ${symMap[node.op] || node.op} ${formatNode(node.right, PREC_ADD)}`;
+    }
+    case 'SetBuilder': {
+      return `{ ${node.variable} \u2208 ${formatNode(node.domain, PREC_NONE)} : ${formatNode(node.predicate, PREC_NONE)} }`;
+    }
+    case 'Equivalence': {
+      const symMap: Record<string, string> = {
+        iso: '\u2245',
+        homotopy: '\u2243',
+        equiv: '\u223c',
+      };
+      return `${formatNode(node.left, PREC_COMPARE)} ${symMap[node.relation] || node.relation} ${formatNode(node.right, PREC_COMPARE)}`;
+    }
+    case 'DecoratedIdentifier': {
+      const diacriticMap: Record<string, string> = {
+        bar: '\u0304',
+        hat: '\u0302',
+        dot: '\u0307',
+        ddot: '\u0308',
+      };
+      return `${node.name}${diacriticMap[node.decoration] || ''}`;
+    }
+    case 'MatrixPostfix': {
+      if (node.op === 'transpose') return `${formatNode(node.target, PREC_POSTFIX)}^T`;
+      if (node.op === 'adjoint') return `${formatNode(node.target, PREC_POSTFIX)}^\u2020`;
+      return `${formatNode(node.target, PREC_POSTFIX)}^-1`;
+    }
+    case 'Probability': {
+      if (node.op === 'expect') return `E[${formatNode(node.event, PREC_NONE)}]`;
+      if (node.op === 'variance') return `Var(${formatNode(node.event, PREC_NONE)})`;
+      if (node.op === 'covariance') return `Cov(${formatNode(node.event, PREC_NONE)}, ${formatNode(node.condition!, PREC_NONE)})`;
+      if (node.condition) return `P(${formatNode(node.event, PREC_NONE)} | ${formatNode(node.condition, PREC_NONE)})`;
+      return `P(${formatNode(node.event, PREC_NONE)})`;
+    }
     case 'BinaryOp': {
       return formatBinaryOp(node, parentPrec);
     }
