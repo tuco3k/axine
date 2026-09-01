@@ -69,6 +69,7 @@ export function processDocumentLines(
 
   let accumulatedLines: string[] = [];
   let openCount = 0;
+  let inFrontmatter = lines.length > 0 && lines[0].trim() === '---';
 
   for (let i = 0; i < lines.length; i++) {
     if (isCancelled()) {
@@ -77,8 +78,24 @@ export function processDocumentLines(
 
     const line = lines[i];
     const lineStart = Date.now();
-
     const trimmed = line.trim();
+
+    // Handle YAML frontmatter at document start
+    if (inFrontmatter) {
+      if (i > 0 && trimmed === '---') {
+        inFrontmatter = false;
+      }
+      onLineResult({
+        type: 'LINE_RESULT',
+        id,
+        lineIndex: i,
+        line,
+        classification: { state: 'PROSE' },
+        durationMs: Date.now() - lineStart,
+      });
+      continue;
+    }
+
     if (trimmed.startsWith('#') || trimmed.length === 0) {
       if (openCount === 0) {
         onLineResult({

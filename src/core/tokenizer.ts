@@ -38,6 +38,29 @@ export class Tokenizer {
         continue;
       }
 
+      // Handle YAML frontmatter at document start (--- ... ---)
+      if (this.pos === 0 && this.source.startsWith('---')) {
+        hadLeadingWhitespace = true;
+        this.pos += 3;
+        this.col += 3;
+        const endFm = this.source.indexOf('\n---', this.pos);
+        if (endFm !== -1) {
+          const fmSlice = this.source.slice(0, endFm + 4);
+          const lines = fmSlice.split('\n');
+          this.line += lines.length - 1;
+          this.pos = endFm + 4;
+          while (this.pos < this.source.length && this.source[this.pos] !== '\n') {
+            this.pos++;
+          }
+          if (this.pos < this.source.length && this.source[this.pos] === '\n') {
+            this.pos++;
+            this.line++;
+            this.col = 1;
+          }
+        }
+        continue;
+      }
+
       // Handle comments (# until end of line)
       if (char === '#') {
         hadLeadingWhitespace = true;

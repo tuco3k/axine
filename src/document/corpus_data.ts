@@ -1,7 +1,9 @@
+import { BUNDLED_DOCUMENTS } from './virtual_documents';
+
 export interface CorpusDocument {
   id: string;
   title: string;
-  category: 'Arithmetic' | 'Analysis' | 'Algebra' | 'Universality' | 'Geometry3D' | 'Claims';
+  category: 'Arithmetic' | 'Analysis' | 'Algebra' | 'Universality' | 'Geometry3D' | 'Claims' | 'Physics';
   content: string;
 }
 
@@ -410,6 +412,56 @@ claim optimal_angle_elevated {
   kind: "B",
   shadow: R10(opt_theta_cliff) > R10(0.785398) and opt_theta_cliff < 0.785398,
   expect: true
-}`
+}
+`
+  },
+  {
+    id: 'physics_problem',
+    title: '26. Physics Collision & Inelastic Scattering',
+    category: 'Physics',
+    content: BUNDLED_DOCUMENTS['physics_problem.ax']
+  },
+  {
+    id: 'projectile_sim',
+    title: '27. Projectile Simulation with Air Drag',
+    category: 'Physics',
+    content: BUNDLED_DOCUMENTS['projectile.ax']
+  },
+  {
+    id: 'pendulum_sim',
+    title: '28. Simple Harmonic Pendulum',
+    category: 'Physics',
+    content: BUNDLED_DOCUMENTS['pendulum.ax']
+  },
+  {
+    id: 'orbit_sim',
+    title: '29. Gravitational Two-Body Orbit',
+    category: 'Physics',
+    content: BUNDLED_DOCUMENTS['orbit.ax']
+  },
+  {
+    id: 'collision_sim',
+    title: '30. Elastic Two-Body Collision',
+    category: 'Physics',
+    content: BUNDLED_DOCUMENTS['collision.ax']
+  },
+  {
+    id: 'spring_sim',
+    title: '31. Damped Harmonic Oscillator',
+    category: 'Physics',
+    content: BUNDLED_DOCUMENTS['spring.ax']
+  },
+  {
+    id: 'integrator_comparison',
+    title: '32. Integrator Energy Drift Comparison',
+    category: 'Physics',
+    content: BUNDLED_DOCUMENTS['integrator_comparison.ax']
+  },
+  {
+    id: 'optics_sim',
+    title: '33. Geometric Optics & Snell\'s Law',
+    category: 'Physics',
+    content: BUNDLED_DOCUMENTS['optics.ax']
   }
 ];
+

@@ -62,7 +62,7 @@ rk4_step(b, force_fn, dt) := {
   Body(mass: b.mass, position: new_pos, velocity: new_vel)
 }
 
-kinetic_energy(b) := 0.5 * b.mass * (b.velocity[0]^2 + b.velocity[1]^2)
-momentum(b) := (b.mass * b.velocity[0], b.mass * b.velocity[1])
+kinetic_energy(b) := 0.5 * b.mass * (b.velocity[0]^2 + b.velocity[1]^2 + (if length(b.velocity) > 2 then b.velocity[2]^2 else 0))
+momentum(b) := if length(b.velocity) > 2 then (b.mass * b.velocity[0], b.mass * b.velocity[1], b.mass * b.velocity[2]) else (b.mass * b.velocity[0], b.mass * b.velocity[1])
 
 export Body, Particle, gravity_force, spring_force, drag_force, euler_step, verlet_step, rk4_step, kinetic_energy, momentum

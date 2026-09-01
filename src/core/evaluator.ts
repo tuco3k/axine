@@ -32,6 +32,7 @@ import {
   TrajectoryValue,
   TrajectorySample,
 } from './types';
+import { BUNDLED_DOCUMENTS } from '../document/virtual_documents';
 import { getTrajectoryStateAt, mapTrajectory, exportTrajectory } from './simulation/trajectory';
 import { classifyODE, solveODERK4 } from './simulation/ode_solver';
 import { BigFraction } from './numeric/rational';
@@ -159,8 +160,100 @@ export class BudgetTracker {
   }
 }
 
+export function resolveModuleCode(
+  importPath: string
+): { code: string; canonicalPath: string } | { searchedPaths: string[] } {
+  const normPath = importPath.replace(/\\/g, '/');
+  const cleanPath = normPath.replace(/^(\.\/|\/)/, '');
+  const fileName = cleanPath.replace(/^.*[\\/]/, '');
+  const withAx = (p: string) => (p.endsWith('.ax') ? p : p + '.ax');
+
+  const candidatePaths: string[] = [];
+  const addCandidate = (p: string) => {
+    const norm = p.replace(/\\/g, '/');
+    if (!candidatePaths.includes(norm)) {
+      candidatePaths.push(norm);
+    }
+  };
+
+  addCandidate(importPath);
+  addCandidate(normPath);
+  addCandidate(cleanPath);
+  addCandidate(fileName);
+  addCandidate(withAx(normPath));
+  addCandidate(withAx(cleanPath));
+  addCandidate(withAx(fileName));
+  addCandidate(`documents/${withAx(cleanPath)}`);
+  addCandidate(`documents/${withAx(fileName)}`);
+  addCandidate(`/documents/${withAx(cleanPath)}`);
+  addCandidate(`/documents/${withAx(fileName)}`);
+  addCandidate(`./${withAx(fileName)}`);
+
+  // 1. Check in-memory virtualFiles first
+  for (const cp of candidatePaths) {
+    if (Evaluator.virtualFiles.has(cp)) {
+      return { code: Evaluator.virtualFiles.get(cp)!, canonicalPath: withAx(fileName) };
+    }
+  }
+
+  // 2. Check build-time bundled documents
+  for (const cp of candidatePaths) {
+    if (BUNDLED_DOCUMENTS[cp]) {
+      return { code: BUNDLED_DOCUMENTS[cp], canonicalPath: withAx(fileName) };
+    }
+  }
+  const baseAx = withAx(fileName);
+  if (BUNDLED_DOCUMENTS[baseAx]) {
+    return { code: BUNDLED_DOCUMENTS[baseAx], canonicalPath: baseAx };
+  }
+
+  // 3. In Node environment, check physical filesystem
+  try {
+    if (typeof process !== 'undefined' && (process.versions as any)?.node) {
+      const fs = require('fs');
+      const path = require('path');
+      const fsPaths = [
+        normPath,
+        cleanPath,
+        path.resolve(process.cwd(), cleanPath),
+        path.resolve(process.cwd(), 'documents', cleanPath),
+        path.resolve(process.cwd(), 'documents', withAx(fileName)),
+        path.resolve(process.cwd(), 'src', cleanPath),
+      ];
+      for (const fp of fsPaths) {
+        addCandidate(fp);
+        if (fs.existsSync(fp) && fs.statSync(fp).isFile()) {
+          const code = fs.readFileSync(fp, 'utf-8');
+          Evaluator.virtualFiles.set(withAx(fileName), code);
+          return { code, canonicalPath: withAx(fileName) };
+        }
+      }
+    }
+  } catch {}
+
+  return { searchedPaths: candidatePaths };
+}
+
 export class Evaluator {
   public static virtualFiles: Map<string, string> = new Map();
+
+  public static initVirtualFiles(): void {
+    for (const [filename, content] of Object.entries(BUNDLED_DOCUMENTS)) {
+      Evaluator.virtualFiles.set(filename, content);
+      Evaluator.virtualFiles.set(`./${filename}`, content);
+      Evaluator.virtualFiles.set(`documents/${filename}`, content);
+      Evaluator.virtualFiles.set(`/documents/${filename}`, content);
+      Evaluator.virtualFiles.set(`./documents/${filename}`, content);
+      const bareName = filename.replace(/\.ax$/, '');
+      Evaluator.virtualFiles.set(bareName, content);
+    }
+  }
+
+  public static resetVirtualFiles(): void {
+    Evaluator.virtualFiles.clear();
+    Evaluator.initVirtualFiles();
+  }
+
   private env: Environment;
   private source: string;
   private budget: BudgetTracker;
@@ -3146,10 +3239,33 @@ export class Evaluator {
     }
 
     const importStack: string[] = (currentEnv as any).__importStack__ || [];
-    const normalizedPath = importPath.replace(/\\/g, '/');
+    const resolved = resolveModuleCode(importPath);
 
-    if (importStack.includes(normalizedPath)) {
-      const cycleStr = [...importStack, normalizedPath].join(' -> ');
+    if ('searchedPaths' in resolved) {
+      const available = Array.from(
+        new Set([
+          ...Object.keys(BUNDLED_DOCUMENTS),
+          ...Array.from(Evaluator.virtualFiles.keys()).map(k => k.replace(/^.*[\\/]/, '')),
+        ])
+      )
+        .filter(k => k.endsWith('.ax'))
+        .sort();
+
+      throw createError(
+        `Cannot find module '${importPath}'. Looked for: ${resolved.searchedPaths.map(p => `'${p}'`).join(', ')}`,
+        node.span,
+        {
+          expected: 'an existing .ax module',
+          suggestion: `Available modules: ${available.join(', ') || '(none)'}`,
+          source: this.source,
+        }
+      );
+    }
+
+    const { code, canonicalPath } = resolved;
+
+    if (importStack.includes(canonicalPath) || importStack.includes(importPath)) {
+      const cycleStr = [...importStack, canonicalPath].join(' -> ');
       throw createError(`Cyclic module import detected: ${cycleStr}`, node.span, {
         expected: 'acyclic dependency graph',
         suggestion: 'Refactor mutual imports or extract shared definitions into a base module',
@@ -3157,38 +3273,8 @@ export class Evaluator {
       });
     }
 
-    let code: string | null = null;
-    if (Evaluator.virtualFiles.has(normalizedPath)) {
-      code = Evaluator.virtualFiles.get(normalizedPath)!;
-    } else {
-      try {
-        const fs = require('fs');
-        const path = require('path');
-        const candidatePaths = [
-          normalizedPath,
-          path.resolve(process.cwd(), normalizedPath),
-          path.resolve(process.cwd(), 'documents', normalizedPath),
-          path.resolve(process.cwd(), 'src', normalizedPath),
-        ];
-        for (const cp of candidatePaths) {
-          if (fs.existsSync(cp)) {
-            code = fs.readFileSync(cp, 'utf-8');
-            break;
-          }
-        }
-      } catch {}
-    }
-
-    if (code === null) {
-      throw createError(`Cannot find module '${importPath}'`, node.span, {
-        expected: 'an existing .ax file',
-        suggestion: `Ensure '${importPath}' exists in the current directory or documents folder`,
-        source: this.source,
-      });
-    }
-
     const modEnv = createInitialEnvironment();
-    (modEnv as any).__importStack__ = [...importStack, normalizedPath];
+    (modEnv as any).__importStack__ = [...importStack, canonicalPath];
 
     // Evaluate module statements
     const parsedAST = parseProgram(code);
@@ -3215,7 +3301,7 @@ export class Evaluator {
       }
     }
 
-    // Propagate units, operators, kinds, rules
+    // Propagate units, operators, kinds, rules, views
     if ((modEnv as any).__units__) {
       for (const [k, v] of (modEnv as any).__units__.entries()) {
         this.declaredUnits.set(k, v);
@@ -3244,8 +3330,15 @@ export class Evaluator {
         (currentEnv as any).__rules__.push(r);
       }
     }
+    if ((modEnv as any).__views__) {
+      for (const [k, v] of (modEnv as any).__views__.entries()) {
+        this.declaredViews.set(k, v);
+        if (!(currentEnv as any).__views__) (currentEnv as any).__views__ = new Map();
+        (currentEnv as any).__views__.set(k, v);
+      }
+    }
 
-    const modName = (modEnv as any).__moduleName__ || normalizedPath.replace(/^.*[\\/]/, '').replace(/\.(ax|axine|math)$/, '');
+    const modName = (modEnv as any).__moduleName__ || canonicalPath.replace(/^.*[\\/]/, '').replace(/\.(ax|axine|math)$/, '');
 
     if (node.importedSymbols && node.importedSymbols.length > 0) {
       for (const sym of node.importedSymbols) {
@@ -4025,3 +4118,5 @@ export function analyzeAndParse(source: string, env: Environment): ASTNode {
 
   return parse(source, { knownFunctions: knownFuncs, knownVariables: knownVars, source });
 }
+
+Evaluator.initVirtualFiles();
