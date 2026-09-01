@@ -1,0 +1,27 @@
+# linear.math — Linear Algebra domain library
+# Provides user-defined kinds, inner product space operations, projection and orthogonalization
+
+module linear
+
+kind InnerProductSpace(dim, field) extends VectorSpace(dim, field) {
+  operations: [dot_prod, norm_sq]
+  axioms: ["conjugate symmetry", "linearity in first argument", "positive definiteness"]
+}
+
+Basis := record { vectors, dimension }
+
+dot_prod(u, v) := u[0]*v[0] + u[1]*v[1] + u[2]*v[2]
+
+norm_sq(v) := dot_prod(v, v)
+
+norm(v) := sqrt(norm_sq(v))
+
+proj_scalar(u, v) := dot_prod(u, v) / norm_sq(v)
+
+proj_vec(u, v) := (
+  (proj_scalar(u, v)) * v[0],
+  (proj_scalar(u, v)) * v[1],
+  (proj_scalar(u, v)) * v[2]
+)
+
+export InnerProductSpace, Basis, dot_prod, norm_sq, norm, proj_scalar, proj_vec

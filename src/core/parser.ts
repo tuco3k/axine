@@ -448,7 +448,7 @@ export class Parser {
     if (this.peek().type === 'EXPORT') {
       const expToken = this.advance();
       const symbols: string[] = [];
-      while (this.peek().type === 'IDENTIFIER') {
+      while (this.peek().type === 'IDENTIFIER' || this.isContextualKeyword(this.peek().type)) {
         symbols.push(this.advance().value);
         if (this.peek().type === 'COMMA') this.advance();
         else break;
@@ -1273,8 +1273,15 @@ export class Parser {
       this.expect('LBRACE', '{');
       const fields: string[] = [];
       while (this.peek().type !== 'RBRACE' && this.peek().type !== 'EOF') {
-        const fieldToken = this.expect('IDENTIFIER', 'field name');
-        fields.push(fieldToken.value);
+        const nextTok = this.peek();
+        let fieldName = '';
+        if (nextTok.type === 'IDENTIFIER' || this.isContextualKeyword(nextTok.type)) {
+          fieldName = this.advance().value;
+        } else {
+          const fieldToken = this.expect('IDENTIFIER', 'field name');
+          fieldName = fieldToken.value;
+        }
+        fields.push(fieldName);
         if (this.peek().type === 'COMMA') {
           this.advance();
         } else {
@@ -2531,29 +2538,16 @@ export class Parser {
       return false;
     }
     if (left && token.span.line > left.span.line) {
-      // Check if token on next line begins a new statement or assignment
-      if ([
-        'MODULE', 'EXPORT', 'IMPORT', 'FROM', 'DIMENSION', 'UNIT',
-        'OPERATOR', 'KIND', 'RULE', 'CLAIM', 'IF'
-      ].includes(token.type)) {
-        return false;
-      }
-      if (token.type === 'IDENTIFIER') {
-        if (this.peek(1).type === 'ASSIGN' || this.peek(1).type === 'GLOBAL_ASSIGN') {
-          return false;
-        }
-        if (this.peek(1).type === 'LPAREN') {
-          let q = 2;
-          while (this.peek(q).type !== 'RPAREN' && this.peek(q).type !== 'EOF') {
-            q++;
-          }
-          if (this.peek(q).type === 'RPAREN' && (this.peek(q + 1).type === 'ASSIGN' || this.peek(q + 1).type === 'GLOBAL_ASSIGN')) {
-            return false;
-          }
-        }
-      }
+      return false;
     }
     return this.canBeginExpression(token.type);
+  }
+
+  private isContextualKeyword(type: TokenType): boolean {
+    return [
+      'DIMENSION', 'UNIT', 'MODULE', 'EXPORT', 'IMPORT', 'FROM', 'AS', 'KIND',
+      'STEP', 'WITH', 'RECORD', 'IS', 'EXTENDS', 'OPERATIONS', 'AXIOMS', 'RULE', 'REQUIRES'
+    ].includes(type);
   }
 
   private isBinderToken(token: Token): boolean {

@@ -1,0 +1,23 @@
+# statistics.math — Statistics domain library
+# Provides distribution representations, densities, and hypothesis testing structures
+
+module statistics
+
+NormalDist := record { mean, variance }
+UniformDist := record { a, b }
+HypothesisTest := record { null_val, sample_mean, sample_size, std_dev, z_stat }
+
+pdf_normal(d, x) := (1 / sqrt(2 * pi * d.variance)) * exp(- (x - d.mean)^2 / (2 * d.variance))
+
+mean_normal(d) := d.mean
+var_normal(d) := d.variance
+
+z_test(null_val, x_bar, s, n) := HypothesisTest(
+  null_val: null_val,
+  sample_mean: x_bar,
+  sample_size: n,
+  std_dev: s,
+  z_stat: (x_bar - null_val) / (s / sqrt(n))
+)
+
+export NormalDist, UniformDist, HypothesisTest, pdf_normal, mean_normal, var_normal, z_test

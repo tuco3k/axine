@@ -3353,9 +3353,17 @@ export class Evaluator {
     if (v.type === 'float') return `${v.value}`;
     if (v.type === 'boolean') return `${v.value}`;
     if (v.type === 'none') return 'none';
+    if (v.type === 'string') return `"${v.value}"`;
     if (v.type === 'tuple') return `(${v.elements.map(e => this.serializeValueForMemo(e)).join(',')})`;
     if (v.type === 'list') return `[${v.elements.map(e => this.serializeValueForMemo(e)).join(',')}]`;
-    return 'obj';
+    if (v.type === 'record') {
+      const fieldKeys = Object.keys(v.fields).sort();
+      return `record:${v.typeName}{${fieldKeys.map(k => `${k}:${this.serializeValueForMemo(v.fields[k])}`).join(',')}}`;
+    }
+    if (v.type === 'quantity') {
+      return `quantity(${this.serializeValueForMemo(v.magnitude)},${v.unit})`;
+    }
+    return Math.random().toString();
   }
 
   public inferKindOfAST(ast: ASTNode, env: Environment): MathKind {

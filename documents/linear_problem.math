@@ -1,0 +1,39 @@
+---
+title: Gram-Schmidt Orthogonalization and Vector Projection
+course: MATH 220
+author: Noah Slayton
+date: 2026-09-01
+---
+
+# Linear algebra worked problem: Constructing an orthogonal basis using Gram-Schmidt
+
+import "linear.math"
+
+# Initial non-orthogonal basis vectors in R^3
+v1 := (1, 1, 0)
+v2 := (1, 0, 2)
+
+# First orthogonal vector
+u1 := v1
+
+# Second orthogonal vector: u2 := v2 - proj_{u1}(v2)
+p21 := proj_vec(v2, u1)
+u2 := (v2[0] - p21[0], v2[1] - p21[1], v2[2] - p21[2])
+
+# Verify orthogonality: dot_prod(u1, u2) must be 0
+orthogonality_check := dot_prod(u1, u2)
+
+# Compute norms of orthogonal basis vectors
+u1_length := norm(u1)
+u2_length := norm(u2)
+
+# Construct orthogonal basis record
+ortho_basis := Basis(vectors: [u1, u2], dimension: 2)
+
+u1
+p21
+u2
+orthogonality_check
+u1_length
+u2_length
+ortho_basis

@@ -1,0 +1,41 @@
+---
+title: Two-Particle Inelastic Collision and Kinetic Energy Loss
+course: PHYS 101
+author: Noah Slayton
+date: 2026-09-01
+---
+
+# Physics worked problem: Collision of two particles and energy accounting
+
+import "physics.math"
+
+# Define two colliding particles
+p1 := Particle(mass: 2, position: (0, 0, 0), velocity: (10, 0, 0))
+p2 := Particle(mass: 3, position: (5, 0, 0), velocity: (-5, 0, 0))
+
+# Initial individual and total momenta
+p1_mom := momentum(p1)
+p2_mom := momentum(p2)
+total_initial_momentum := (p1_mom[0] + p2_mom[0], p1_mom[1] + p2_mom[1], p1_mom[2] + p2_mom[2])
+
+# Initial kinetic energies
+ke1 := kinetic_energy(p1)
+ke2 := kinetic_energy(p2)
+total_initial_ke := ke1 + ke2
+
+# Completely inelastic collision: merged particle
+merged_mass := p1.mass + p2.mass
+merged_vx := total_initial_momentum[0] / merged_mass
+merged_particle := Particle(mass: merged_mass, position: (5, 0, 0), velocity: (merged_vx, 0, 0))
+
+# Final momentum and kinetic energy
+final_mom := momentum(merged_particle)
+final_ke := kinetic_energy(merged_particle)
+ke_lost := total_initial_ke - final_ke
+
+total_initial_momentum
+total_initial_ke
+merged_particle
+final_mom
+final_ke
+ke_lost

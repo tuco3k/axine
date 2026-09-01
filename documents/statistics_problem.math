@@ -1,0 +1,31 @@
+---
+title: One-Sample Hypothesis Testing and Normal PDF Evaluation
+course: STAT 200
+author: Noah Slayton
+date: 2026-09-01
+---
+
+# Statistics worked problem: Evaluating hypothesis test z-statistic and distribution densities
+
+import "statistics.math"
+
+# Standard normal distribution and shifted distribution
+std_norm := NormalDist(mean: 0, variance: 1)
+test_dist := NormalDist(mean: 100, variance: 225)
+
+# Density at mean and at 1 standard deviation
+density_at_mean := pdf_normal(std_norm, 0)
+density_at_1sd := pdf_normal(std_norm, 1)
+
+# Hypothesis test on sample of size n=36, sample mean=105, known std_dev=15 against H0: mu=100
+test_result := z_test(100, 105, 15, 36)
+
+# Access test components
+null_hypothesis_value := test_result.null_val
+observed_z := test_result.z_stat
+
+density_at_mean
+density_at_1sd
+test_result
+null_hypothesis_value
+observed_z

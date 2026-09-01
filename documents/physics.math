@@ -1,0 +1,20 @@
+# physics.math — Physics domain library
+# Provides dimensional units, particle state records, energy and momentum calculations
+
+module physics
+
+dimension length, time, mass
+
+unit meter : length
+unit second : time
+unit kilogram : mass
+unit newton = kilogram * meter / second^2
+unit joule = newton * meter
+
+Particle := record { mass, position, velocity }
+
+kinetic_energy(p) := 0.5 * p.mass * (p.velocity[0]^2 + p.velocity[1]^2 + p.velocity[2]^2)
+
+momentum(p) := (p.mass * p.velocity[0], p.mass * p.velocity[1], p.mass * p.velocity[2])
+
+export Particle, kinetic_energy, momentum
