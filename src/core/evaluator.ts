@@ -175,6 +175,11 @@ export class Evaluator {
         this.declaredUnits.set(k, v);
       }
     }
+    if ((env as any).__operators__) {
+      for (const [k, v] of (env as any).__operators__.entries()) {
+        this.userOperators.set(k, v);
+      }
+    }
   }
 
   public evaluate(ast: ASTNode): Value {
@@ -256,6 +261,16 @@ export class Evaluator {
         });
       }
       case 'UnaryOp': {
+        const userOp = this.userOperators.get(node.op) || (currentEnv as any).__operators__?.get(node.op) || (this.env as any).__operators__?.get(node.op);
+        if (userOp && userOp.fixity === 'prefix') {
+          const operandVal = this.evalNode(node.operand, currentEnv);
+          const callEnv: Environment = {
+            ...userOp.env,
+            ...currentEnv,
+            [userOp.params[0]]: operandVal,
+          };
+          return this.evalNode(userOp.body, callEnv);
+        }
         const operand = this.evalNode(node.operand, currentEnv);
         if (operand.type === 'unknown') return operand;
         if (node.op === 'not') {
@@ -273,6 +288,18 @@ export class Evaluator {
         throw createError(`Unknown unary operator '${node.op}'`, node.span);
       }
       case 'BinaryOp': {
+        const userOp = this.userOperators.get(node.op) || (currentEnv as any).__operators__?.get(node.op) || (this.env as any).__operators__?.get(node.op);
+        if (userOp && userOp.fixity === 'infix') {
+          const left = this.evalNode(node.left, currentEnv);
+          const right = this.evalNode(node.right, currentEnv);
+          const callEnv: Environment = {
+            ...userOp.env,
+            ...currentEnv,
+            [userOp.params[0]]: left,
+            [userOp.params[1]]: right,
+          };
+          return this.evalNode(userOp.body, callEnv);
+        }
         if (node.op === 'and') {
           const left = this.evalNode(node.left, currentEnv);
           if (left.type === 'boolean' && !left.value) {
@@ -349,7 +376,7 @@ export class Evaluator {
           case '>=':
             return compareValues(node.op, left, right, node.span);
         }
-        break;
+        throw createError(`Unknown binary operator '${node.op}'`, node.span);
       }
       case 'If': {
         const condVal = this.evalNode(node.condition, currentEnv);
@@ -360,6 +387,16 @@ export class Evaluator {
         }
       }
       case 'PostfixOp': {
+        const userOp = this.userOperators.get(node.op) || (currentEnv as any).__operators__?.get(node.op) || (this.env as any).__operators__?.get(node.op);
+        if (userOp && userOp.fixity === 'postfix') {
+          const operandVal = this.evalNode(node.operand, currentEnv);
+          const callEnv: Environment = {
+            ...userOp.env,
+            ...currentEnv,
+            [userOp.params[0]]: operandVal,
+          };
+          return this.evalNode(userOp.body, callEnv);
+        }
         const operand = this.evalNode(node.operand, currentEnv);
         if (node.op === '!') {
           return factorialValue(operand, node.span);
@@ -368,7 +405,7 @@ export class Evaluator {
           const exp = node.exponent ?? 2n;
           return powValues(operand, { type: 'rational', n: exp, d: 1n }, node.span);
         }
-        break;
+        throw createError(`Unknown postfix operator '${node.op}'`, node.span);
       }
       case 'Tuple': {
         const elements = node.elements.map(el => this.evalNode(el, currentEnv));
@@ -550,7 +587,7 @@ export class Evaluator {
         return { type: 'none' };
       }
       case 'OperatorDecl': {
-        this.userOperators.set(node.op, {
+        const opRecord = {
           op: node.op,
           fixity: node.fixity,
           params: node.params,
@@ -558,7 +595,16 @@ export class Evaluator {
           precedence: node.precedence ?? 45,
           associativity: node.associativity ?? 'left',
           env: currentEnv,
-        });
+        };
+        this.userOperators.set(node.op, opRecord);
+        if (!(currentEnv as any).__operators__) {
+          (currentEnv as any).__operators__ = (this.env as any).__operators__ || new Map();
+        }
+        (currentEnv as any).__operators__.set(node.op, opRecord);
+        if (currentEnv !== this.env) {
+          if (!(this.env as any).__operators__) (this.env as any).__operators__ = new Map();
+          (this.env as any).__operators__.set(node.op, opRecord);
+        }
         return { type: 'none' };
       }
       case 'KindDecl': {
@@ -1076,7 +1122,7 @@ export class Evaluator {
       }
     }
 
-    throw createError(`Cannot evaluate AST node`, node.span);
+    throw createError(`Cannot evaluate AST node`, (node as any).span);
   }
 
   private evalFunctionCall(node: FunctionCallNode, currentEnv: Environment): Value {

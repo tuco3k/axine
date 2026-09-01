@@ -105,6 +105,7 @@ export type TokenType =
   | 'IMPORT'
   | 'FROM'
   | 'AS'
+  | 'CUSTOM_OP'
   | 'EOF';
 
 export interface Token {
@@ -273,14 +274,14 @@ export interface IdentifierNode {
 
 export interface UnaryOpNode {
   type: 'UnaryOp';
-  op: '-' | '+' | '\u221a' | 'not';
+  op: '-' | '+' | '\u221a' | 'not' | string;
   operand: ASTNode;
   span: Span;
 }
 
 export interface BinaryOpNode {
   type: 'BinaryOp';
-  op: '+' | '-' | '*' | '/' | '%' | '^' | '=' | '==' | '!=' | '<' | '<=' | '>' | '>=' | 'in' | 'and' | 'or';
+  op: '+' | '-' | '*' | '/' | '%' | '^' | '=' | '==' | '!=' | '<' | '<=' | '>' | '>=' | 'in' | 'and' | 'or' | string;
   left: ASTNode;
   right: ASTNode;
   isImplicit?: boolean;
@@ -289,7 +290,7 @@ export interface BinaryOpNode {
 
 export interface PostfixOpNode {
   type: 'PostfixOp';
-  op: '!' | 'superscript';
+  op: '!' | 'superscript' | string;
   operand: ASTNode;
   exponent?: bigint;
   span: Span;

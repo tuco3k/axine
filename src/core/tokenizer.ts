@@ -475,6 +475,9 @@ export class Tokenizer {
           if (this.isIdentStart(char)) {
             const token = this.readIdentifier(startPos, startLine, startCol, leadingWhitespace);
             tokens.push(token);
+          } else if (this.isCustomOpChar(char)) {
+            this.advance();
+            tokens.push(this.makeToken('CUSTOM_OP', char, startPos, startLine, startCol, leadingWhitespace));
           } else {
             const span: Span = {
               start: startPos,
@@ -790,6 +793,27 @@ export class Tokenizer {
       char === '\u2124' ||
       char === '\u211a' ||
       char === '\u2115'
+    );
+  }
+
+  private isCustomOpChar(char: string): boolean {
+    if (!char) return false;
+    const code = char.codePointAt(0) ?? 0;
+    return (
+      (code >= 0x2200 && code <= 0x22ff) ||
+      (code >= 0x2a00 && code <= 0x2aff) ||
+      (code >= 0x27c0 && code <= 0x27ef) ||
+      (code >= 0x2980 && code <= 0x29ff) ||
+      (code >= 0x2190 && code <= 0x21ff) ||
+      code === 0x00b0 || // °
+      code === 0x00d7 || // ×
+      code === 0x00f7 || // ÷
+      char === '@' ||
+      char === '~' ||
+      char === '#' ||
+      char === '$' ||
+      char === '&' ||
+      char === '?'
     );
   }
 

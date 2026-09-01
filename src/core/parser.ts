@@ -768,6 +768,46 @@ export class Parser {
         continue;
       }
 
+      // Check for postfix CUSTOM_OP (e.g. ° or trailing custom operator)
+      if (this.peek().type === 'CUSTOM_OP') {
+        const opTok = this.peek();
+        const nextTok = this.peek(1);
+        const isPostfix =
+          opTok.value === '°' ||
+          nextTok.type === 'EOF' ||
+          nextTok.type === 'COMMA' ||
+          nextTok.type === 'RPAREN' ||
+          nextTok.type === 'RBRACKET' ||
+          nextTok.type === 'RBRACE' ||
+          nextTok.type === 'SEMICOLON' ||
+          nextTok.type === 'EQ' ||
+          nextTok.type === 'NEQ' ||
+          nextTok.type === 'LT' ||
+          nextTok.type === 'LTE' ||
+          nextTok.type === 'GT' ||
+          nextTok.type === 'GTE' ||
+          nextTok.type === 'PLUS' ||
+          nextTok.type === 'MINUS' ||
+          nextTok.type === 'STAR' ||
+          nextTok.type === 'SLASH';
+
+        if (isPostfix && precedence < PREC_POSTFIX) {
+          this.advance();
+          left = {
+            type: 'PostfixOp',
+            op: opTok.value,
+            operand: left,
+            span: {
+              start: left.span.start,
+              end: opTok.span.end,
+              line: left.span.line,
+              col: left.span.col,
+            },
+          };
+          continue;
+        }
+      }
+
       // Check for implicit multiplication before other infix ops
       if (this.canBeginImplicitMultiplication()) {
         const nextPrec = PREC_IMPLICIT_MUL;
@@ -1215,6 +1255,23 @@ export class Parser {
       token.type === 'CEIL_L'
     ) {
       return this.parseBracketOp();
+    }
+
+    // Custom prefix operator
+    if (token.type === 'CUSTOM_OP') {
+      const opTok = this.advance();
+      const operand = this.parseExpression(PREC_UNARY);
+      return {
+        type: 'UnaryOp',
+        op: opTok.value,
+        operand,
+        span: {
+          start: opTok.span.start,
+          end: operand.span.end,
+          line: opTok.span.line,
+          col: opTok.span.col,
+        },
+      };
     }
 
     // Quantifiers: forall, exists, exists_unique
@@ -2485,6 +2542,8 @@ export class Parser {
         return PREC_EXPLICIT_MUL;
       case 'CARET':
         return PREC_POW;
+      case 'CUSTOM_OP':
+        return 45;
       default:
         return PREC_NONE;
     }
@@ -2492,6 +2551,7 @@ export class Parser {
 
   private tokenToBinaryOp(token: Token): BinaryOpNode['op'] {
     switch (token.type) {
+      case 'CUSTOM_OP': return token.value;
       case 'PLUS': return '+';
       case 'MINUS': return '-';
       case 'STAR': return '*';

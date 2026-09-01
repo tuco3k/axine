@@ -166,12 +166,17 @@ function formatNode(node: ASTNode, parentPrec: number): string {
         const operandStr = formatNode(node.operand, PREC_POSTFIX);
         return `${operandStr}!`;
       }
+      if (node.op === '°') {
+        const operandStr = formatNode(node.operand, PREC_POSTFIX);
+        return `${operandStr}°`;
+      }
       if (node.op === 'superscript') {
         const operandStr = formatNode(node.operand, PREC_POSTFIX);
         const expStr = toSuperscript(node.exponent?.toString() ?? '2');
         return `${operandStr}${expStr}`;
       }
-      return formatNode(node.operand, PREC_POSTFIX);
+      const operandStr = formatNode(node.operand, PREC_POSTFIX);
+      return `${operandStr} ${node.op}`;
     }
     case 'UnaryOp': {
       if (node.op === 'not') {
@@ -185,7 +190,8 @@ function formatNode(node: ASTNode, parentPrec: number): string {
         return `-(${formatNode(node.operand, PREC_NONE)})`;
       }
       const operandStr = formatNode(node.operand, myPrec);
-      const res = `${node.op}${operandStr}`;
+      const space = (node.op.length > 1 || /^[a-zA-Z]/.test(node.op)) ? ' ' : '';
+      const res = `${node.op}${space}${operandStr}`;
       if (parentPrec > myPrec) {
         return `(${res})`;
       }
@@ -213,8 +219,8 @@ function formatNode(node: ASTNode, parentPrec: number): string {
     case 'OperatorDecl': {
       const fixStr = node.fixity !== 'infix' ? `${node.fixity} ` : '';
       let res = `operator ${fixStr}${node.op} (${node.params.join(', ')}) := ${formatNode(node.body, PREC_NONE)}`;
-      if (node.precedence !== undefined) res += `\n  precedence: ${node.precedence}`;
-      if (node.associativity) res += `\n  associativity: ${node.associativity}`;
+      if (node.precedence !== undefined) res += ` precedence: ${node.precedence}`;
+      if (node.associativity) res += ` associativity: ${node.associativity}`;
       return res;
     }
     case 'KindDecl': {
