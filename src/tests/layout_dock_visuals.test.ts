@@ -489,4 +489,27 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
     const expandedRow = container.querySelector('.doc-gutter-row[data-line="0"]');
     expect(expandedRow?.querySelector('.doc-inline-canvas')).toBeTruthy();
   });
+
+  it('asserts the editor pane rendered line count matches the loaded document line count', () => {
+    const multiLineDoc = [
+      '# Line 1',
+      'a := 10',
+      'b := 20',
+      'c := a + b',
+      'd := c * 2',
+      'graph(2x)',
+      'd',
+    ].join('\n');
+
+    editor = new DocumentEditor(container as any, multiLineDoc);
+
+    const lineNumElements = container.querySelectorAll('.doc-line-num');
+    expect(lineNumElements.length).toBe(7);
+
+    const statsBadge = container.querySelector('#doc-stats-badge');
+    expect(statsBadge?.textContent).toContain('7 lines');
+
+    const textarea = container.querySelector('#doc-textarea') as any;
+    expect(textarea?.value.split('\n').length).toBe(7);
+  });
 });

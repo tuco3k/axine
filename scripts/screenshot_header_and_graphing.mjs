@@ -36,36 +36,31 @@ async function main() {
   console.log('Editor pane innerHTML length:', editorHTML.length);
   const textareaVal = await page.$eval('#doc-textarea', el => (el).value);
   console.log('Textarea value length:', textareaVal.length);
-  const lineNumbers = await page.$$('.doc-line-number');
+  const lineNumbers = await page.$$('.doc-line-num');
   console.log('Line numbers count:', lineNumbers.length);
   const overlayLines = await page.$$('.doc-typeset-line');
   console.log('Overlay lines count:', overlayLines.length);
 
-  // 4c: Test graph(2x)
-  console.log('Testing graph(2x)...');
-  await page.evaluate(() => {
-    (window).editor.setText('graph(2x)');
-  });
-  await page.waitForTimeout(500);
-  await page.click('#doc-run-btn');
+  // 4c: Test document containing BOTH graph(2x) and graph(sin x cos y, x in -3..3, y in -3..3)
+  console.log('Testing combined document with both graphs...');
+  const combinedDoc = 'graph(2x)\ngraph(sin x cos y, x in -3..3, y in -3..3)';
+  await page.evaluate((text) => {
+    (window).editor.setText(text);
+  }, combinedDoc);
   await page.waitForTimeout(600);
-
-  // Take screenshot with 2D graph
-  await page.screenshot({ path: path.join(ARTIFACT_DIR, 'graph_2x.png') });
-  console.log('Saved graph_2x.png');
-
-  // 4c: Test graph(sin x cos y, x in -3..3, y in -3..3)
-  console.log('Testing graph(sin x cos y, x in -3..3, y in -3..3)...');
-  await page.evaluate(() => {
-    (window).editor.setText('graph(sin x cos y, x in -3..3, y in -3..3)');
-  });
-  await page.waitForTimeout(500);
   await page.click('#doc-run-btn');
-  await page.waitForTimeout(600);
+  await page.waitForTimeout(800);
 
-  // Take screenshot with 3D graph
-  await page.screenshot({ path: path.join(ARTIFACT_DIR, 'graph_3d_surface.png') });
-  console.log('Saved graph_3d_surface.png');
+  // Take full screenshot with both graphs
+  await page.screenshot({ path: path.join(ARTIFACT_DIR, 'combined_both_graphs.png') });
+  console.log('Saved combined_both_graphs.png');
+
+  // Also screenshot the results panel specifically
+  const resultsPanel = await page.$('#doc-work-panel');
+  if (resultsPanel) {
+    await resultsPanel.screenshot({ path: path.join(ARTIFACT_DIR, 'results_panel_both_graphs.png') });
+    console.log('Saved results_panel_both_graphs.png');
+  }
 
   await browser.close();
   await server.close();

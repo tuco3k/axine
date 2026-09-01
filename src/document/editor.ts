@@ -77,16 +77,15 @@ export class DocumentEditor {
 
   constructor(container: HTMLElement, initialText?: string) {
     this.container = container;
-    this.state = new DocumentState();
+    const docText = initialText ?? (CORPUS_DOCUMENTS[0]?.content || '');
+    this.state = new DocumentState(docText);
     this.mathPopover = new MathPopover();
     this.loadDockLayout();
-    this.buildUI(initialText);
+    this.buildUI(docText);
     this.applyDockLayout();
     this.bindEvents();
     this.state.subscribe((records, isEvaluating) => this.renderWorkPanel(records, isEvaluating));
-    if (initialText !== undefined) {
-      this.state.setText(initialText);
-    }
+    this.state.setText(docText);
   }
 
   private loadDockLayout() {
@@ -297,6 +296,9 @@ export class DocumentEditor {
                 <button class="doc-tab-btn" data-tab="trace">Trace & Fuel</button>
                 <button class="doc-tab-btn" data-tab="frames">Frames</button>
               </div>
+            </div>
+            <div class="doc-dock-subbar">
+              <span class="doc-dock-label">Dock:</span>
               <div class="doc-dock-controls">
                 <button class="doc-dock-btn" data-edge="left" title="Dock Left">Left</button>
                 <button class="doc-dock-btn" data-edge="bottom" title="Dock Bottom">Bottom</button>
@@ -347,6 +349,7 @@ export class DocumentEditor {
     this.panelEl = this.container.querySelector('#doc-work-panel') as HTMLElement;
     this.edgeAffordanceEl = this.container.querySelector('#doc-panel-edge-affordance') as HTMLElement;
     this.textarea = this.container.querySelector('#doc-textarea') as HTMLTextAreaElement;
+    this.textarea.value = rawText;
     this.overlayEl = this.container.querySelector('#doc-typeset-overlay') as HTMLElement;
     this.caretEl = this.container.querySelector('#doc-caret') as HTMLElement;
     this.lineNumbersEl = this.container.querySelector('#doc-line-numbers') as HTMLElement;

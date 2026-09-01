@@ -567,6 +567,24 @@ html, body {
   font-weight: var(--font-weight-semibold);
 }
 
+.doc-dock-subbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 3px var(--space-sm);
+  background-color: var(--color-bg-base);
+  border-bottom: var(--border-width-default) solid var(--color-border-subtle);
+  flex-shrink: 0;
+}
+
+.doc-dock-label {
+  font-family: var(--font-family-ui);
+  font-size: var(--font-size-2xs);
+  color: var(--color-text-tertiary);
+  font-weight: var(--font-weight-medium);
+  user-select: none;
+}
+
 .doc-dock-controls {
   display: flex;
   align-items: center;
