@@ -45,7 +45,13 @@ describe('Large Rational Typesetting & Flattening Prevention', () => {
     const docText = BUNDLED_DOCUMENTS['integrator_comparison.ax'];
     const lines = docText.split('\n');
     const results: LineResultMessage[] = [];
-    processDocumentLines(1, lines, (msg: LineResultMessage) => results.push(msg));
+    processDocumentLines(1, lines, (msg: LineResultMessage) => results.push(msg), () => false, {
+      timeoutMs: 10000,
+      maxSteps: 100000000,
+      maxDepth: 5000,
+      maxBigIntDigits: 100000,
+      maxMemoryElements: 1000000,
+    });
 
     // Line with graph(E_euler_t, E_verlet_t, E_rk4_t)
     const graphRec = results.find((r: LineResultMessage) => r.result?.type === 'graph');

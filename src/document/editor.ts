@@ -12,6 +12,7 @@ import { valueToNumber } from '../core/numeric/tower';
 import { formatKind } from '../core/kinds';
 import { MathPopover } from './popover';
 import { ICONS } from '../styles/icons';
+import { FileManager, OpenFileResult, SaveFileResult } from './file_manager';
 
 function escapeHtml(str: string): string {
   return str
@@ -52,6 +53,14 @@ export class DocumentEditor {
   private workspaceEl!: HTMLElement;
   private panelEl!: HTMLElement;
   private edgeAffordanceEl!: HTMLElement;
+  private fileNameEl!: HTMLElement;
+  private dirtyBadgeEl!: HTMLElement;
+
+  private currentFileName: string = 'untitled.ax';
+  private currentFileHandle?: FileSystemFileHandle;
+  private savedContent: string = '';
+  private isDirty: boolean = false;
+  private autosaveDebounceTimer: any = null;
 
   private dockLayout: DockLayoutState = {
     edge: 'right',
@@ -81,6 +90,9 @@ export class DocumentEditor {
   constructor(container: HTMLElement, initialText?: string) {
     this.container = container;
     const docText = initialText ?? (CORPUS_DOCUMENTS[0]?.content || '');
+    this.currentFileName = initialText !== undefined ? 'untitled.ax' : (CORPUS_DOCUMENTS[0]?.id ? `${CORPUS_DOCUMENTS[0].id}.ax` : 'untitled.ax');
+    this.savedContent = docText;
+    this.isDirty = false;
     this.state = new DocumentState(docText);
     this.mathPopover = new MathPopover();
     this.loadDockLayout();
@@ -224,6 +236,144 @@ export class DocumentEditor {
     }
   }
 
+  public getDocumentName(): string {
+    return this.currentFileName;
+  }
+
+  public setDocumentName(name: string): void {
+    this.currentFileName = name;
+    this.updateFileInfo();
+  }
+
+  public getIsDirty(): boolean {
+    return this.isDirty;
+  }
+
+  public confirmDiscardChanges(): boolean {
+    if (!this.isDirty) return true;
+    if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+      return window.confirm(`You have unsaved changes in "${this.currentFileName}". Discard them?`);
+    }
+    return true;
+  }
+
+  public async openDocument(): Promise<OpenFileResult | null> {
+    if (!this.confirmDiscardChanges()) return null;
+    const res = await FileManager.openFile();
+    if (!res) return null;
+    this.currentFileName = res.name;
+    this.currentFileHandle = res.handle;
+    this.savedContent = res.recovered ? '' : res.content;
+    this.isDirty = res.isDirty;
+    this.setText(res.content);
+    this.updateFileInfo();
+    this.updateRecentFilesMenu();
+    return res;
+  }
+
+  public async saveDocument(): Promise<SaveFileResult> {
+    const text = this.textarea ? this.textarea.value : this.savedContent;
+    const res = await FileManager.saveFile(this.currentFileName, text, this.currentFileHandle);
+    if (res.success) {
+      this.currentFileName = res.name;
+      this.currentFileHandle = res.handle;
+      this.savedContent = text;
+      this.isDirty = false;
+      this.updateFileInfo();
+      this.updateRecentFilesMenu();
+    }
+    return res;
+  }
+
+  public async saveDocumentAs(): Promise<SaveFileResult> {
+    const text = this.textarea ? this.textarea.value : this.savedContent;
+    const res = await FileManager.saveFileAs(this.currentFileName, text);
+    if (res.success) {
+      this.currentFileName = res.name;
+      this.currentFileHandle = res.handle;
+      this.savedContent = text;
+      this.isDirty = false;
+      this.updateFileInfo();
+      this.updateRecentFilesMenu();
+    }
+    return res;
+  }
+
+  public newDocument(): void {
+    if (!this.confirmDiscardChanges()) return;
+    this.currentFileName = 'untitled.ax';
+    this.currentFileHandle = undefined;
+    this.savedContent = '';
+    this.isDirty = false;
+    this.setText('');
+    this.updateFileInfo();
+  }
+
+  public updateDirtyIndicator(): void {
+    if (this.dirtyBadgeEl) {
+      this.dirtyBadgeEl.classList.toggle('hidden', !this.isDirty);
+    }
+    if (typeof document !== 'undefined') {
+      document.title = `${this.isDirty ? '* ' : ''}${this.currentFileName} - Axine`;
+    }
+  }
+
+  public updateFileInfo(): void {
+    if (this.fileNameEl) {
+      this.fileNameEl.textContent = this.currentFileName;
+    }
+    this.updateDirtyIndicator();
+  }
+
+  private scheduleAutosave(): void {
+    if (this.autosaveDebounceTimer) {
+      clearTimeout(this.autosaveDebounceTimer);
+    }
+    this.autosaveDebounceTimer = setTimeout(() => {
+      if (this.textarea) {
+        FileManager.saveAutosave(this.currentFileName, this.textarea.value);
+      }
+    }, 1000);
+  }
+
+  private updateRecentFilesMenu(): void {
+    const listEl = this.container.querySelector('#doc-recent-files-list');
+    if (!listEl) return;
+    const recents = FileManager.getRecentFiles();
+    if (recents.length === 0) {
+      listEl.innerHTML = '<div style="font-size:11px; color:var(--color-text-tertiary); padding:4px 8px;">(No recent files)</div>';
+      return;
+    }
+    listEl.innerHTML = recents.map(r => `
+      <button class="doc-file-menu-item doc-recent-file-btn" data-name="${escapeHtml(r.name)}" title="Last opened: ${new Date(r.lastOpened).toLocaleString()}">
+        <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px;">${escapeHtml(r.name)}</span>
+        <span style="font-size:10px; color:var(--color-text-tertiary);">${new Date(r.lastOpened).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+      </button>
+    `).join('');
+
+    const recentBtns = listEl.querySelectorAll('.doc-recent-file-btn');
+    recentBtns.forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const name = (btn as HTMLElement).getAttribute('data-name');
+        if (name) {
+          const dropdown = this.container.querySelector('#doc-file-dropdown');
+          dropdown?.classList.add('hidden');
+          const autosave = FileManager.getAutosave(name);
+          if (autosave) {
+            if (!this.confirmDiscardChanges()) return;
+            this.currentFileName = autosave.fileName;
+            this.savedContent = autosave.content;
+            this.isDirty = false;
+            this.setText(autosave.content);
+            this.updateFileInfo();
+          } else {
+            this.openDocument();
+          }
+        }
+      });
+    });
+  }
+
   private buildUI(initialText?: string) {
     const rawText = initialText ?? (CORPUS_DOCUMENTS[0]?.content || '');
     this.container.innerHTML = `
@@ -232,6 +382,38 @@ export class DocumentEditor {
           <div class="doc-brand">
             <span class="doc-logo">&int;dx</span>
             <span class="doc-app-title">Axine</span>
+          </div>
+
+          <div class="doc-file-menu-wrapper">
+            <button id="doc-file-menu-btn" class="doc-btn" title="File Menu (New, Open, Save)">
+              File
+              <svg width="8" height="8" viewBox="0 0 12 12" fill="currentColor"><path d="M2 4L6 8L10 4Z" /></svg>
+            </button>
+            <div id="doc-file-dropdown" class="doc-file-dropdown hidden">
+              <button id="doc-new-file-btn" class="doc-file-menu-item">
+                <span>New File</span>
+              </button>
+              <button id="doc-open-file-btn" class="doc-file-menu-item">
+                <span>Open...</span>
+                <span class="doc-file-menu-shortcut">Cmd+O</span>
+              </button>
+              <button id="doc-save-file-btn" class="doc-file-menu-item">
+                <span>Save</span>
+                <span class="doc-file-menu-shortcut">Cmd+S</span>
+              </button>
+              <button id="doc-save-as-file-btn" class="doc-file-menu-item">
+                <span>Save As...</span>
+                <span class="doc-file-menu-shortcut">Shift+Cmd+S</span>
+              </button>
+              <div class="doc-file-menu-divider"></div>
+              <div class="doc-file-menu-section-title">Recent Files</div>
+              <div id="doc-recent-files-list"></div>
+            </div>
+          </div>
+
+          <div class="doc-file-info" title="Current document">
+            <span id="doc-file-name" class="doc-file-name">${escapeHtml(this.currentFileName)}</span>
+            <span id="doc-dirty-badge" class="doc-dirty-badge ${this.isDirty ? '' : 'hidden'}" title="Unsaved changes"><span class="doc-dirty-dot"></span></span>
           </div>
 
           <div class="doc-corpus-select-wrapper">
@@ -382,15 +564,21 @@ export class DocumentEditor {
     this.statsBadge = this.container.querySelector('#doc-stats-badge') as HTMLElement;
     this.scopePanelEl = this.container.querySelector('#doc-scope-list') as HTMLElement;
     this.framesPanelEl = this.container.querySelector('#doc-frames-list') as HTMLElement;
+    this.fileNameEl = this.container.querySelector('#doc-file-name') as HTMLElement;
+    this.dirtyBadgeEl = this.container.querySelector('#doc-dirty-badge') as HTMLElement;
 
     this.updateTypesetOverlay();
     this.updateCaret();
+    this.updateFileInfo();
   }
 
   private bindEvents() {
     this.textarea.addEventListener('input', () => {
       this.updateTypesetOverlay();
       this.updateCaret();
+      this.isDirty = this.textarea.value !== this.savedContent;
+      this.updateDirtyIndicator();
+      this.scheduleAutosave();
       this.state.setText(this.textarea.value);
     });
 
@@ -403,6 +591,9 @@ export class DocumentEditor {
         this.textarea.selectionStart = this.textarea.selectionEnd = start + 2;
         this.updateTypesetOverlay();
         this.updateCaret();
+        this.isDirty = this.textarea.value !== this.savedContent;
+        this.updateDirtyIndicator();
+        this.scheduleAutosave();
         this.state.setText(this.textarea.value);
       }
     });
@@ -420,6 +611,46 @@ export class DocumentEditor {
     this.textarea.addEventListener('focus', () => this.updateCaret());
     this.textarea.addEventListener('blur', () => this.updateCaret());
     this.textarea.addEventListener('select', () => this.updateCaret());
+
+    // File Menu dropdown toggle
+    const fileMenuBtn = this.container.querySelector('#doc-file-menu-btn');
+    const fileDropdown = this.container.querySelector('#doc-file-dropdown');
+    if (fileMenuBtn && fileDropdown) {
+      fileMenuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.updateRecentFilesMenu();
+        fileDropdown.classList.toggle('hidden');
+      });
+      document.addEventListener('click', (e) => {
+        if (!fileDropdown.contains(e.target as Node) && e.target !== fileMenuBtn) {
+          fileDropdown.classList.add('hidden');
+        }
+      });
+    }
+
+    const newBtn = this.container.querySelector('#doc-new-file-btn');
+    newBtn?.addEventListener('click', () => {
+      fileDropdown?.classList.add('hidden');
+      this.newDocument();
+    });
+
+    const openBtn = this.container.querySelector('#doc-open-file-btn');
+    openBtn?.addEventListener('click', () => {
+      fileDropdown?.classList.add('hidden');
+      this.openDocument();
+    });
+
+    const saveBtn = this.container.querySelector('#doc-save-file-btn');
+    saveBtn?.addEventListener('click', () => {
+      fileDropdown?.classList.add('hidden');
+      this.saveDocument();
+    });
+
+    const saveAsBtn = this.container.querySelector('#doc-save-as-file-btn');
+    saveAsBtn?.addEventListener('click', () => {
+      fileDropdown?.classList.add('hidden');
+      this.saveDocumentAs();
+    });
 
     // Work Panel Tabs Switcher
     const tabButtons = this.container.querySelectorAll('.doc-tab-btn');
@@ -480,6 +711,21 @@ export class DocumentEditor {
 
     // Global keyboard shortcuts
     window.addEventListener('keydown', (e: KeyboardEvent) => {
+      // Cmd+O / Ctrl+O : Open File
+      if ((e.key === 'o' || e.key === 'O') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        e.preventDefault();
+        this.openDocument();
+      }
+      // Cmd+S / Ctrl+S : Save File
+      if ((e.key === 's' || e.key === 'S') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        e.preventDefault();
+        this.saveDocument();
+      }
+      // Cmd+Shift+S / Ctrl+Shift+S : Save As File
+      if ((e.key === 's' || e.key === 'S') && ((e.metaKey && e.shiftKey) || (e.ctrlKey && e.shiftKey))) {
+        e.preventDefault();
+        this.saveDocumentAs();
+      }
       // Cmd+B / Ctrl+B / Cmd+\ / Ctrl+\ : Toggle collapse
       if ((e.key === 'b' || e.key === 'B' || e.key === '\\') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
         e.preventDefault();
@@ -492,15 +738,30 @@ export class DocumentEditor {
       }
     });
 
+    window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
+      if (this.isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    });
+
     // Corpus selector
     const selectEl = this.container.querySelector('#corpus-select') as HTMLSelectElement;
-    selectEl.addEventListener('change', () => {
+    selectEl?.addEventListener('change', () => {
       const doc = CORPUS_DOCUMENTS.find(d => d.id === selectEl.value);
       if (doc) {
-        this.textarea.value = doc.content;
-        this.updateTypesetOverlay();
-        this.updateCaret();
-        this.state.setText(doc.content);
+        if (!this.confirmDiscardChanges()) {
+          // Restore previous select value
+          const prevDoc = CORPUS_DOCUMENTS.find(d => `${d.id}.ax` === this.currentFileName || d.id === this.currentFileName);
+          if (prevDoc) selectEl.value = prevDoc.id;
+          return;
+        }
+        this.currentFileName = `${doc.id}.ax`;
+        this.currentFileHandle = undefined;
+        this.savedContent = doc.content;
+        this.isDirty = false;
+        this.setText(doc.content);
+        this.updateFileInfo();
       }
     });
 

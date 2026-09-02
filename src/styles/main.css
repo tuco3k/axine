@@ -127,6 +127,116 @@ html, body {
   border-color: var(--color-accent);
 }
 
+/* Document File Info & Menu */
+.doc-file-info {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  font-family: var(--font-family-ui);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  background: var(--color-bg-base);
+  padding: 2px 8px;
+  border-radius: var(--border-radius-sm);
+  border: var(--border-width-default) solid var(--color-border-subtle);
+}
+
+.doc-file-name {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-dirty-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  transition: opacity var(--duration-fast);
+}
+
+.doc-dirty-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--color-accent);
+}
+
+.doc-dirty-badge.hidden {
+  display: none !important;
+}
+
+.doc-file-menu-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.doc-file-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background-color: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-sm);
+  padding: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+}
+
+.doc-file-dropdown.hidden {
+  display: none !important;
+}
+
+.doc-file-menu-item {
+  background: transparent;
+  border: none;
+  border-radius: var(--border-radius-xs);
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-ui);
+  font-size: var(--font-size-xs);
+  padding: 5px 8px;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  transition: all var(--duration-fast);
+}
+
+.doc-file-menu-item:hover {
+  background-color: var(--color-bg-surface-hover);
+  color: var(--color-text-primary);
+}
+
+.doc-file-menu-shortcut {
+  font-size: var(--font-size-2xs);
+  color: var(--color-text-tertiary);
+}
+
+.doc-file-menu-divider {
+  height: 1px;
+  background-color: var(--color-border-subtle);
+  margin: 4px 0;
+}
+
+.doc-file-menu-section-title {
+  font-size: var(--font-size-2xs);
+  color: var(--color-text-tertiary);
+  padding: 4px 8px 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 .doc-header-actions {
   display: flex;
   align-items: center;
