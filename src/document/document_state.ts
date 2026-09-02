@@ -31,9 +31,39 @@ export class DocumentState {
   private evaluationStartTime: number = 0;
   private lastEvaluationDuration: number = 0;
 
+  private diskFiles: Record<string, string> = {};
+  private baseDir: string = '';
+
   constructor(initialText: string = '') {
     this.initWorkers();
     this.setText(initialText);
+  }
+
+  public setDiskFiles(files: Record<string, string>) {
+    this.diskFiles = { ...files };
+    if (this.ambientWorker) {
+      this.ambientWorker.postMessage({ type: 'SET_DISK_FILES', files });
+    }
+    if (this.invokedWorker) {
+      this.invokedWorker.postMessage({ type: 'SET_DISK_FILES', files });
+    }
+    this.scheduleEvaluation();
+  }
+
+  public clearDiskFiles() {
+    this.diskFiles = {};
+    if (this.ambientWorker) {
+      this.ambientWorker.postMessage({ type: 'SET_DISK_FILES', files: {} });
+    }
+    if (this.invokedWorker) {
+      this.invokedWorker.postMessage({ type: 'SET_DISK_FILES', files: {} });
+    }
+    this.scheduleEvaluation();
+  }
+
+  public setBaseDir(dir: string) {
+    this.baseDir = dir;
+    this.scheduleEvaluation();
   }
 
   public initWorkers() {
@@ -44,12 +74,18 @@ export class DocumentState {
         this.ambientWorker.onmessage = (e: MessageEvent<WorkerOutMessage>) => {
           this.handleAmbientWorkerMessage(e.data);
         };
+        if (Object.keys(this.diskFiles).length > 0) {
+          this.ambientWorker.postMessage({ type: 'SET_DISK_FILES', files: this.diskFiles });
+        }
 
         if (this.invokedWorker) this.invokedWorker.terminate();
         this.invokedWorker = new Worker(new URL('../core/worker.ts', import.meta.url), { type: 'module' });
         this.invokedWorker.onmessage = (e: MessageEvent<WorkerOutMessage>) => {
           this.handleInvokedWorkerMessage(e.data);
         };
+        if (Object.keys(this.diskFiles).length > 0) {
+          this.invokedWorker.postMessage({ type: 'SET_DISK_FILES', files: this.diskFiles });
+        }
       } catch (err) {
         console.warn('Worker initialization failed, falling back to direct synchronous evaluation', err);
         this.ambientWorker = null;
@@ -134,6 +170,8 @@ export class DocumentState {
         type: 'EVALUATE',
         id: evalId,
         lines: this.lines,
+        diskFiles: this.diskFiles,
+        baseDir: this.baseDir,
       };
       this.ambientWorker.postMessage(msg);
     } else {
@@ -170,6 +208,8 @@ export class DocumentState {
         id: evalId,
         lines: this.lines,
         budgetLimits,
+        diskFiles: this.diskFiles,
+        baseDir: this.baseDir,
       };
       this.invokedWorker.postMessage(msg);
     } else {

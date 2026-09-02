@@ -1,5 +1,5 @@
 import { classifyLine, LineClassification } from './classifier';
-import { createInitialEnvironment, evaluate, BudgetTracker } from './evaluator';
+import { createInitialEnvironment, evaluate, BudgetTracker, Evaluator } from './evaluator';
 import { BudgetLimits, DEFAULT_BUDGET_LIMITS, Environment, Value } from './types';
 import { MathDiagnostic, MathError } from './errors';
 
@@ -8,6 +8,13 @@ export interface EvaluateRequest {
   id: number;
   lines: string[];
   budgetLimits?: BudgetLimits;
+  diskFiles?: Record<string, string>;
+  baseDir?: string;
+}
+
+export interface SetDiskFilesMessage {
+  type: 'SET_DISK_FILES';
+  files: Record<string, string>;
 }
 
 export interface LineResultMessage {
@@ -29,7 +36,7 @@ export interface CompleteMessage {
   totalDurationMs: number;
 }
 
-export type WorkerInMessage = EvaluateRequest;
+export type WorkerInMessage = EvaluateRequest | SetDiskFilesMessage;
 export type WorkerOutMessage = LineResultMessage | CompleteMessage;
 
 let currentEvalId = 0;
@@ -239,7 +246,15 @@ export function processDocumentLines(
 if (typeof self !== 'undefined' && typeof (self as any).postMessage === 'function' && typeof window === 'undefined') {
   self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
     const msg = e.data;
-    if (msg.type === 'EVALUATE') {
+    if (msg.type === 'SET_DISK_FILES') {
+      Evaluator.setDiskFiles(msg.files);
+    } else if (msg.type === 'EVALUATE') {
+      if (msg.diskFiles) {
+        Evaluator.setDiskFiles(msg.diskFiles);
+      }
+      if (msg.baseDir) {
+        Evaluator.setBaseDir(msg.baseDir);
+      }
       currentEvalId = msg.id;
       const targetId = msg.id;
 

@@ -299,6 +299,14 @@ export class DocumentEditor {
     return res;
   }
 
+  public setDiskFiles(files: Record<string, string>): void {
+    this.state.setDiskFiles(files);
+  }
+
+  public clearDiskFiles(): void {
+    this.state.clearDiskFiles();
+  }
+
   public newDocument(): void {
     if (!this.confirmDiscardChanges()) return;
     this.currentFileName = 'untitled.ax';

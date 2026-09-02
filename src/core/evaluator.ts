@@ -161,82 +161,144 @@ export class BudgetTracker {
   }
 }
 
+export interface ModuleResolutionFailure {
+  diskSearched: string[];
+  stdlibSearched: string[];
+  searchedPaths: string[];
+}
+
 export function resolveModuleCode(
-  importPath: string
-): { code: string; canonicalPath: string } | { searchedPaths: string[] } {
+  importPath: string,
+  baseDir: string = Evaluator.currentBaseDir
+): { code: string; canonicalPath: string } | ModuleResolutionFailure {
   const normPath = importPath.replace(/\\/g, '/');
   const cleanPath = normPath.replace(/^(\.\/|\/)/, '');
   const fileName = cleanPath.replace(/^.*[\\/]/, '');
   const withAx = (p: string) => (p.endsWith('.ax') ? p : p + '.ax');
 
-  const candidatePaths: string[] = [];
-  const addCandidate = (p: string) => {
-    const norm = p.replace(/\\/g, '/');
-    if (!candidatePaths.includes(norm)) {
-      candidatePaths.push(norm);
-    }
-  };
+  const diskSearched: string[] = [];
+  const stdlibSearched: string[] = [];
 
-  addCandidate(importPath);
-  addCandidate(normPath);
-  addCandidate(cleanPath);
-  addCandidate(fileName);
-  addCandidate(withAx(normPath));
-  addCandidate(withAx(cleanPath));
-  addCandidate(withAx(fileName));
-  addCandidate(`documents/${withAx(cleanPath)}`);
-  addCandidate(`documents/${withAx(fileName)}`);
-  addCandidate(`/documents/${withAx(cleanPath)}`);
-  addCandidate(`/documents/${withAx(fileName)}`);
-  addCandidate(`./${withAx(fileName)}`);
+  // =========================================================================
+  // STEP 1: Relative to the current file's directory (disk)
+  // =========================================================================
+  const diskCandidates = [
+    importPath,
+    normPath,
+    cleanPath,
+    fileName,
+    withAx(normPath),
+    withAx(cleanPath),
+    withAx(fileName),
+    `./${withAx(fileName)}`,
+  ];
 
-  // 1. Check in-memory virtualFiles first
-  for (const cp of candidatePaths) {
-    if (Evaluator.virtualFiles.has(cp)) {
-      return { code: Evaluator.virtualFiles.get(cp)!, canonicalPath: withAx(fileName) };
+  for (const dc of diskCandidates) {
+    if (!diskSearched.includes(dc)) diskSearched.push(dc);
+    if (Evaluator.diskFiles.has(dc)) {
+      return { code: Evaluator.diskFiles.get(dc)!, canonicalPath: withAx(fileName) };
     }
   }
 
-  // 2. Check build-time bundled documents
-  for (const cp of candidatePaths) {
-    if (BUNDLED_DOCUMENTS[cp]) {
-      return { code: BUNDLED_DOCUMENTS[cp], canonicalPath: withAx(fileName) };
-    }
-  }
-  const baseAx = withAx(fileName);
-  if (BUNDLED_DOCUMENTS[baseAx]) {
-    return { code: BUNDLED_DOCUMENTS[baseAx], canonicalPath: baseAx };
-  }
-
-  // 3. In Node environment, check physical filesystem
-  try {
-    if (typeof process !== 'undefined' && (process.versions as any)?.node) {
+  // Check physical filesystem in Node environment (relative to baseDir or cwd)
+  if (typeof process !== 'undefined' && (process.versions as any)?.node) {
+    try {
       const fs = require('fs');
       const path = require('path');
-      const fsPaths = [
-        normPath,
-        cleanPath,
-        path.resolve(process.cwd(), cleanPath),
-        path.resolve(process.cwd(), 'documents', cleanPath),
-        path.resolve(process.cwd(), 'documents', withAx(fileName)),
-        path.resolve(process.cwd(), 'src', cleanPath),
+      const searchDirs = [
+        baseDir || process.cwd(),
+        process.cwd(),
       ];
-      for (const fp of fsPaths) {
-        addCandidate(fp);
-        if (fs.existsSync(fp) && fs.statSync(fp).isFile()) {
-          const code = fs.readFileSync(fp, 'utf-8');
-          Evaluator.virtualFiles.set(withAx(fileName), code);
-          return { code, canonicalPath: withAx(fileName) };
+      for (const dir of searchDirs) {
+        if (!dir) continue;
+        const fsPaths = [
+          path.resolve(dir, importPath),
+          path.resolve(dir, withAx(importPath)),
+          path.resolve(dir, cleanPath),
+          path.resolve(dir, withAx(cleanPath)),
+          path.resolve(dir, fileName),
+          path.resolve(dir, withAx(fileName)),
+        ];
+        for (const fp of fsPaths) {
+          const normFp = fp.replace(/\\/g, '/');
+          if (!diskSearched.includes(normFp)) {
+            diskSearched.push(normFp);
+          }
+          if (fs.existsSync(fp) && fs.statSync(fp).isFile()) {
+            const code = fs.readFileSync(fp, 'utf-8');
+            return { code, canonicalPath: withAx(fileName) };
+          }
         }
       }
-    }
-  } catch {}
+    } catch {}
+  }
 
-  return { searchedPaths: candidatePaths };
+  // =========================================================================
+  // STEP 2: The bundled virtual filesystem (stdlib)
+  // =========================================================================
+  const stdlibCandidates = [
+    withAx(fileName),
+    fileName,
+    withAx(cleanPath),
+    cleanPath,
+    importPath,
+    `documents/${withAx(cleanPath)}`,
+    `documents/${withAx(fileName)}`,
+    `/documents/${withAx(cleanPath)}`,
+    `/documents/${withAx(fileName)}`,
+  ];
+
+  for (const sc of stdlibCandidates) {
+    if (!stdlibSearched.includes(sc)) stdlibSearched.push(sc);
+    if (Evaluator.virtualFiles.has(sc)) {
+      return { code: Evaluator.virtualFiles.get(sc)!, canonicalPath: withAx(fileName) };
+    }
+    if (BUNDLED_DOCUMENTS[sc]) {
+      return { code: BUNDLED_DOCUMENTS[sc], canonicalPath: withAx(fileName) };
+    }
+  }
+
+  // =========================================================================
+  // STEP 3: Fail, listing every path searched
+  // =========================================================================
+  const searchedPaths = [
+    ...diskSearched.map(p => `[disk] ${p}`),
+    ...stdlibSearched.map(p => `[stdlib] ${p}`),
+  ];
+
+  return {
+    diskSearched,
+    stdlibSearched,
+    searchedPaths,
+  };
 }
 
 export class Evaluator {
   public static virtualFiles: Map<string, string> = new Map();
+  public static diskFiles: Map<string, string> = new Map();
+  public static currentBaseDir: string = '';
+
+  public static setBaseDir(dir: string): void {
+    Evaluator.currentBaseDir = dir;
+  }
+
+  public static setDiskFiles(files: Map<string, string> | Record<string, string>): void {
+    Evaluator.diskFiles.clear();
+    if (files instanceof Map) {
+      for (const [k, v] of files.entries()) {
+        Evaluator.diskFiles.set(k, v);
+      }
+    } else if (typeof files === 'object') {
+      for (const [k, v] of Object.entries(files)) {
+        Evaluator.diskFiles.set(k, v);
+      }
+    }
+  }
+
+  public static clearDiskFiles(): void {
+    Evaluator.diskFiles.clear();
+    Evaluator.currentBaseDir = '';
+  }
 
   public static initVirtualFiles(): void {
     for (const [filename, content] of Object.entries(BUNDLED_DOCUMENTS)) {
@@ -252,6 +314,8 @@ export class Evaluator {
 
   public static resetVirtualFiles(): void {
     Evaluator.virtualFiles.clear();
+    Evaluator.diskFiles.clear();
+    Evaluator.currentBaseDir = '';
     Evaluator.initVirtualFiles();
   }
 
@@ -3243,7 +3307,7 @@ export class Evaluator {
     const resolved = resolveModuleCode(importPath);
 
     if ('searchedPaths' in resolved) {
-      const available = Array.from(
+      const availableStdlib = Array.from(
         new Set([
           ...Object.keys(BUNDLED_DOCUMENTS),
           ...Array.from(Evaluator.virtualFiles.keys()).map(k => k.replace(/^.*[\\/]/, '')),
@@ -3252,12 +3316,15 @@ export class Evaluator {
         .filter(k => k.endsWith('.ax'))
         .sort();
 
+      const diskList = resolved.diskSearched.map(p => `'${p}'`).join(', ');
+      const stdlibList = resolved.stdlibSearched.map(p => `'${p}'`).join(', ');
+
       throw createError(
-        `Cannot find module '${importPath}'. Looked for: ${resolved.searchedPaths.map(p => `'${p}'`).join(', ')}`,
+        `Cannot find module '${importPath}'. Looked for: ${resolved.searchedPaths.map(p => `'${p}'`).join(', ')}\nResolution failed:\n  1. Disk (relative to file directory): ${diskList}\n  2. Stdlib (bundled virtual filesystem): ${stdlibList}`,
         node.span,
         {
-          expected: 'an existing .ax module',
-          suggestion: `Available modules: ${available.join(', ') || '(none)'}`,
+          expected: 'an existing .ax module on disk or in the bundled stdlib',
+          suggestion: `Available stdlib modules: ${availableStdlib.join(', ') || '(none)'}`,
           source: this.source,
         }
       );
