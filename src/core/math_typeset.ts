@@ -547,12 +547,15 @@ export function typesetStringExpression(expr: string, options: TypesetOptions = 
 function isWrappedInMatchingParens(str: string): boolean {
   if (!str.startsWith('(') || !str.endsWith(')')) return false;
   let depth = 0;
+  let hasTopLevelComma = false;
   for (let i = 0; i < str.length - 1; i++) {
-    if (str[i] === '(') depth++;
-    else if (str[i] === ')') depth--;
+    const ch = str[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') depth--;
+    else if (depth === 1 && ch === ',') hasTopLevelComma = true;
     if (depth === 0) return false;
   }
-  return true;
+  return !hasTopLevelComma;
 }
 
 function findTopLevelRelation(str: string): { index: number; length: number; op: string } | null {
@@ -590,14 +593,26 @@ function findTopLevelFrac(str: string): number {
 }
 
 function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
-  const tokenRegex = /(-?\b\d+\s*\/\s*\d+\b)|(\b[a-zA-Z]{2,}(?:_[a-zA-Z0-9]+)+\b)|(sqrt\((?:[^()]+|\([^()]*\))*\))|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(_(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b(?:sin|cos|tan|ln|exp|det|sqrt|pi|inf)\b)|(\b[a-zA-Z][a-zA-Z0-9]*\b)|([()[\],'{}:])/g;
+  const tokenRegex = /(\s+)|("[^"]*"|'[^']*')|(-?\b\d+\s*\/\s*\d+\b)|(\.\.)|(\b[a-zA-Z]_(?:\{[^}]*\}|\([^)]*\)|[a-zA-Z0-9]+))|(sqrt\((?:[^()]+|\([^()]*\))*\))|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(_(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b(?:sin|cos|tan|ln|exp|det|sqrt|pi|inf)\b)|(\b[a-zA-Z][a-zA-Z0-9_]*\b)|([()\[\],'{}:.])/g;
 
   let out = '';
   let match: RegExpExecArray | null;
   while ((match = tokenRegex.exec(str)) !== null) {
-    const [, fracTok, multiIdentTok, sqrtTok, supTok, subTok, deltaTok, entityTok, relTok, binTok, numTok, fnTok, identTok, puncTok] = match;
+    const [, wsTok, strTok, fracTok, dotDotTok, subVarTok, sqrtTok, supTok, subTok, deltaTok, entityTok, relTok, binTok, numTok, fnTok, identTok, puncTok] = match;
 
-    if (fracTok) {
+    if (wsTok) {
+      out += wsTok;
+    } else if (strTok) {
+      out += `<span class="tm-string">${escapeHtml(strTok)}</span>`;
+    } else if (dotDotTok) {
+      out += `<span class="tm-op">..</span>`;
+    } else if (subVarTok) {
+      const uIdx = subVarTok.indexOf('_');
+      const base = subVarTok.slice(0, uIdx);
+      let sub = subVarTok.slice(uIdx + 1);
+      if ((sub.startsWith('(') && sub.endsWith(')')) || (sub.startsWith('{') && sub.endsWith('}'))) sub = sub.slice(1, -1);
+      out += `<span class="tm-var">${escapeHtml(base)}</span><sub class="tm-sub">${typesetStringExpression(sub, options)}</sub>`;
+    } else if (fracTok) {
       const [numRaw, denRaw] = fracTok.split('/').map(s => s.trim());
       if (/^-?\d+$/.test(numRaw) && /^\d+$/.test(denRaw)) {
         if (numRaw.replace('-', '').length > 12 || denRaw.length > 12) {
@@ -607,13 +622,6 @@ function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
         }
       } else {
         out += escapeHtml(fracTok);
-      }
-    } else if (multiIdentTok) {
-      if (multiIdentTok.startsWith('Delta_') || multiIdentTok.startsWith('Delta')) {
-        const sub = multiIdentTok.replace(/^Delta_?/, '');
-        out += `<span class="tm-var">&Delta;${escapeHtml(sub)}</span>`;
-      } else {
-        out += `<span class="tm-var">${escapeHtml(multiIdentTok)}</span>`;
       }
     } else if (sqrtTok) {
       const inside = sqrtTok.replace(/^sqrt\(/, '').replace(/\)$/, '');

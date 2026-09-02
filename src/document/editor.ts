@@ -634,6 +634,26 @@ export class DocumentEditor {
         continue;
       }
 
+      const trimmed = raw.trim();
+
+      if (trimmed.startsWith('### ')) {
+        html += `<h3 class="doc-print-h3">${escapeHtml(trimmed.slice(4))}</h3>`;
+        continue;
+      }
+      if (trimmed.startsWith('## ')) {
+        html += `<h2 class="doc-print-h2">${escapeHtml(trimmed.slice(3))}</h2>`;
+        continue;
+      }
+      if (trimmed.startsWith('#')) {
+        const commentText = trimmed.replace(/^#+\s*/, '');
+        html += `<div class="doc-print-prose">${escapeHtml(commentText)}</div>`;
+        continue;
+      }
+      if (!trimmed) {
+        html += `<div class="doc-print-empty-line" style="height:8px;"></div>`;
+        continue;
+      }
+
       let resHtml = '';
       if (rec?.result) {
         if (rec.result.type === 'graph') {
@@ -649,9 +669,11 @@ export class DocumentEditor {
         resHtml = `<div class="doc-print-error" style="color:#d32f2f;">${escapeHtml(rec.error.message)}</div>`;
       }
 
+      const typesetSource = typesetMath(raw, { displayMode: false });
+
       html += `
         <div class="doc-print-line-row">
-          <div class="doc-print-source">${escapeHtml(raw) || '&nbsp;'}</div>
+          <div class="doc-print-source">${typesetSource}</div>
           ${resHtml ? `<div class="doc-print-result">${resHtml}</div>` : ''}
         </div>
       `;

@@ -76,14 +76,14 @@ export function renderSVGGraphToString(
   const bg = isDark ? '#18181b' : '#ffffff';
   const gridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
   const axisColor = isDark ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.3)';
-  const textColor = isDark ? '#a1a1aa' : '#71717a';
+  const textColor = isDark ? '#a1a1aa' : '#555555';
   const legendBg = isDark ? 'rgba(24, 24, 27, 0.85)' : 'rgba(255, 255, 255, 0.85)';
   const legendBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)';
 
-  const padLeft = 55;
-  const padRight = 20;
-  const padTop = 25;
-  const padBottom = 35;
+  const padLeft = 60;
+  const padRight = 24;
+  const padTop = 20;
+  const padBottom = 40;
 
   const plotW = width - padLeft - padRight;
   const plotH = height - padTop - padBottom;
@@ -143,7 +143,7 @@ export function renderSVGGraphToString(
     const dataX = xMin + frac * (xMax - xMin);
     const svgX = padLeft + frac * plotW;
     gridSvg += `<line x1="${svgX.toFixed(1)}" y1="${padTop}" x2="${svgX.toFixed(1)}" y2="${(padTop + plotH).toFixed(1)}" stroke="${gridColor}" stroke-width="1" />`;
-    gridSvg += `<text x="${svgX.toFixed(1)}" y="${(height - 12).toFixed(1)}" fill="${textColor}" font-size="10" font-family="monospace" text-anchor="middle">${dataX.toFixed(1)}</text>`;
+    gridSvg += `<text x="${svgX.toFixed(1)}" y="${(padTop + plotH + 15).toFixed(1)}" fill="${textColor}" font-size="10" font-family="monospace" text-anchor="middle">${dataX.toFixed(1)}</text>`;
   }
 
   for (let i = 0; i <= numYTicks; i++) {
@@ -187,19 +187,31 @@ export function renderSVGGraphToString(
     }
   }
 
-  // Draw Title
-  let titleSvg = '';
-  const titleText = (spec as any).title || (spec.series?.length === 1 ? spec.series[0].label : undefined);
-  if (titleText) {
-    titleSvg = `<text x="${(padLeft + plotW / 2).toFixed(1)}" y="${(padTop - 8).toFixed(1)}" fill="${textColor}" font-size="12" font-weight="600" font-family="sans-serif" text-anchor="middle">${escapeHtml(titleText)}</text>`;
+  // Determine Axis Labels
+  const xLabel = spec.xAxisLabel || (spec.domain?.var === 't' ? 't (s)' : (spec.domain?.var || 'x'));
+  const yLabel = spec.yAxisLabel || (spec.series?.length === 1 ? (spec.series[0].label || '') : '');
+
+  // X Axis Label
+  let xLabelSvg = `<text x="${(padLeft + plotW / 2).toFixed(1)}" y="${(height - 4).toFixed(1)}" fill="${textColor}" font-size="11" font-weight="500" font-family="system-ui, -apple-system, sans-serif" text-anchor="middle">${escapeHtml(xLabel)}</text>`;
+
+  // Y Axis Label (Rotated)
+  let yLabelSvg = '';
+  if (yLabel) {
+    yLabelSvg = `<text transform="rotate(-90)" x="${(-(padTop + plotH / 2)).toFixed(1)}" y="16" fill="${textColor}" font-size="11" font-weight="500" font-family="system-ui, -apple-system, sans-serif" text-anchor="middle">${escapeHtml(yLabel)}</text>`;
   }
 
-  // Draw Legend if multiple series
+  // Draw Title ONLY if explicitly provided and distinct from yLabel
+  let titleSvg = '';
+  if (spec.title && spec.title !== yLabel) {
+    titleSvg = `<text x="${(padLeft + plotW / 2).toFixed(1)}" y="${(padTop - 6).toFixed(1)}" fill="${textColor}" font-size="12" font-weight="600" font-family="system-ui, -apple-system, sans-serif" text-anchor="middle">${escapeHtml(spec.title)}</text>`;
+  }
+
+  // Draw Legend ONLY when there is MORE than 1 series
   let legendSvg = '';
-  if (legendItems.length > 1 || (legendItems.length === 1 && legendItems[0].name && legendItems[0].name !== 'Series 1')) {
+  if (legendItems.length > 1) {
     const legItemHeight = 16;
     const legH = legendItems.length * legItemHeight + 10;
-    const legW = 150;
+    const legW = 140;
     const legX = width - padRight - legW - 8;
     const legY = padTop + 8;
 
@@ -209,7 +221,7 @@ export function renderSVGGraphToString(
       const item = legendItems[i];
       const itemY = 14 + i * legItemHeight;
       legendSvg += `<line x1="8" y1="${itemY - 3}" x2="24" y2="${itemY - 3}" stroke="${item.color}" stroke-width="2" />`;
-      legendSvg += `<text x="28" y="${itemY}" fill="${textColor}" font-size="10" font-family="sans-serif">${escapeHtml(item.name)}</text>`;
+      legendSvg += `<text x="28" y="${itemY}" fill="${textColor}" font-size="10" font-family="system-ui, sans-serif">${escapeHtml(item.name)}</text>`;
     }
     legendSvg += `</g>`;
   }
@@ -219,6 +231,8 @@ export function renderSVGGraphToString(
     <g class="grid">${gridSvg}</g>
     <g class="axes">${axesSvg}</g>
     <g class="series">${seriesSvg}</g>
+    ${xLabelSvg}
+    ${yLabelSvg}
     ${titleSvg}
     ${legendSvg}
   </svg>`;
@@ -260,16 +274,40 @@ export function exportToHtml(
     `;
   }
 
+  let inFm = docText.split('\n')[0]?.trim() === '---';
+  let fmDone = !inFm;
+
   let linesHtml = '';
   for (let idx = 0; idx < records.length; idx++) {
     const rec = records[idx];
-    const lineNum = idx + 1;
     const rawLine = rec?.text ?? '';
 
     // Skip YAML frontmatter lines in body
-    if (idx === 0 && rawLine.trim() === '---') continue;
-    if (rawLine.trim() === '---' && idx < 10) continue;
-    if (frontMatter.title && Object.values(frontMatter).some(v => rawLine.includes(v!))) continue;
+    if (!fmDone) {
+      if (idx > 0 && rawLine.trim() === '---') fmDone = true;
+      continue;
+    }
+
+    const trimmed = rawLine.trim();
+
+    if (trimmed.startsWith('### ')) {
+      linesHtml += `<h3 class="export-prose-h3">${escapeHtml(trimmed.slice(4))}</h3>`;
+      continue;
+    }
+    if (trimmed.startsWith('## ')) {
+      linesHtml += `<h2 class="export-prose-h2">${escapeHtml(trimmed.slice(3))}</h2>`;
+      continue;
+    }
+    if (trimmed.startsWith('#')) {
+      const commentText = trimmed.replace(/^#+\s*/, '');
+      linesHtml += `<div class="export-prose-comment">${escapeHtml(commentText)}</div>`;
+      continue;
+    }
+
+    if (!trimmed) {
+      linesHtml += `<div class="export-empty-line"></div>`;
+      continue;
+    }
 
     let resultHtml = '';
     let isPlot = false;
@@ -278,7 +316,7 @@ export function exportToHtml(
       if (rec.result.type === 'graph') {
         isPlot = true;
         const spec = (rec.result as GraphValue).spec;
-        const svgStr = renderSVGGraphToString(spec, { width: 560, height: 260, theme });
+        const svgStr = renderSVGGraphToString(spec, { width: 580, height: 260, theme });
         resultHtml = `<div class="export-plot-container">${svgStr}</div>`;
       } else {
         const formatted = formatValue(rec.result);
@@ -289,13 +327,12 @@ export function exportToHtml(
       resultHtml = `<div class="export-error-result">${escapeHtml(rec.error.message)}</div>`;
     }
 
-    const hasResult = Boolean(resultHtml);
+    const typesetSource = typesetMath(rawLine, { displayMode: false });
 
     linesHtml += `
-      <div class="export-line-row ${isPlot ? 'plot-row' : ''} ${hasResult ? 'has-result' : ''}">
-        <div class="export-line-num">${lineNum}</div>
-        <div class="export-source-code">${escapeHtml(rawLine) || '&nbsp;'}</div>
-        <div class="export-line-result">${resultHtml}</div>
+      <div class="export-line-row ${isPlot ? 'plot-row' : ''}">
+        <div class="export-source-typeset">${typesetSource}</div>
+        ${resultHtml ? `<div class="export-line-result">${resultHtml}</div>` : ''}
       </div>
     `;
   }
@@ -316,23 +353,27 @@ export function exportToHtml(
       --code-bg: ${codeBg};
       --result-bg: ${resultBg};
     }
+    @page {
+      size: letter;
+      margin: 0.75in;
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       background-color: var(--bg);
       color: var(--text);
       line-height: 1.5;
-      padding: 32px;
-      max-width: 1200px;
+      padding: 36px 48px;
+      max-width: 900px;
       margin: 0 auto;
     }
     .export-header {
       margin-bottom: 28px;
       padding-bottom: 16px;
-      border-bottom: 1px solid var(--border);
+      border-bottom: 2px solid var(--border);
     }
     .export-title {
-      font-size: 24px;
+      font-size: 26px;
       font-weight: 700;
       color: var(--text);
       margin-bottom: 8px;
@@ -340,47 +381,64 @@ export function exportToHtml(
     .export-meta {
       display: flex;
       flex-wrap: wrap;
-      gap: 16px;
+      gap: 20px;
       font-size: 13px;
       color: var(--text-muted);
     }
+    .meta-item strong {
+      color: var(--text);
+      font-weight: 600;
+    }
     .hidden { display: none !important; }
+    .export-prose-h2 {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+      margin-top: 24px;
+      margin-bottom: 8px;
+      page-break-after: avoid;
+      break-after: avoid;
+    }
+    .export-prose-h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      margin-top: 18px;
+      margin-bottom: 6px;
+      page-break-after: avoid;
+      break-after: avoid;
+    }
+    .export-prose-comment {
+      font-family: Georgia, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, serif;
+      font-size: 14px;
+      font-style: italic;
+      color: var(--text-muted);
+      margin-top: 14px;
+      margin-bottom: 6px;
+      line-height: 1.4;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .export-empty-line {
+      height: 10px;
+    }
     .export-line-row {
-      display: grid;
-      grid-template-columns: 44px minmax(360px, 1fr) minmax(300px, 1.2fr);
-      gap: 20px;
-      align-items: baseline;
-      padding: 6px 0;
-      border-bottom: 1px solid rgba(128, 128, 128, 0.08);
+      margin: 6px 0;
+      padding: 2px 0;
       break-inside: avoid;
       page-break-inside: avoid;
     }
-    .export-line-row.plot-row {
-      grid-template-columns: 44px 1fr;
-      align-items: stretch;
-    }
-    .export-line-row.plot-row .export-line-result {
-      grid-column: 2 / -1;
-      margin-top: 8px;
-    }
-    .export-line-num {
-      color: var(--text-muted);
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 12px;
-      text-align: right;
-      user-select: none;
-      padding-right: 8px;
-    }
-    .export-source-code {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 13px;
-      white-space: pre-wrap;
-      word-break: break-word;
-      overflow-wrap: anywhere;
+    .export-source-typeset {
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--text);
     }
     .export-line-result {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      font-size: 13px;
+      margin-top: 4px;
+      margin-left: 20px;
+      padding-left: 10px;
+      border-left: 2px solid var(--border);
+      font-size: 13.5px;
       overflow-x: auto;
     }
     .export-math-result {
@@ -400,7 +458,7 @@ export function exportToHtml(
       white-space: pre-wrap;
     }
     .export-plot-container {
-      margin: 8px 0;
+      margin: 10px 0;
       background: var(--code-bg);
       border: 1px solid var(--border);
       border-radius: 6px;
@@ -408,12 +466,70 @@ export function exportToHtml(
       display: inline-block;
       max-width: 100%;
       overflow-x: auto;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    /* Typography formatting */
+    .tm-var {
+      font-style: italic;
+      font-family: "Times New Roman", Times, Georgia, serif;
+    }
+    .tm-num {
+      font-style: normal;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .tm-rel {
+      padding: 0 4px;
+      font-weight: 500;
+    }
+    .tm-bin {
+      padding: 0 2px;
+    }
+    .tm-string {
+      color: var(--accent);
+    }
+    .tm-op {
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+    .tm-fn {
+      font-style: normal;
+      font-weight: 500;
+    }
+    .tm-const {
+      font-style: normal;
     }
     /* Stacked fraction math formatting */
-    .tm-frac { display: inline-flex; flex-direction: column; vertical-align: middle; text-align: center; margin: 0 2px; }
-    .tm-num { border-bottom: 1px solid currentColor; padding: 0 2px 1px 2px; font-size: 0.9em; }
-    .tm-den { padding: 1px 2px 0 2px; font-size: 0.9em; }
-    .tm-frac-slash { display: none; }
+    .tm-frac {
+      display: inline-flex;
+      flex-direction: column;
+      vertical-align: -0.4em;
+      text-align: center;
+      font-size: 0.9em;
+      line-height: 1;
+      padding: 0 2px;
+      white-space: nowrap;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .tm-num-box {
+      display: block;
+      text-align: center;
+      border-bottom: 1px solid currentColor;
+      padding: 0 2px 1px 2px;
+      font-size: 0.9em;
+      line-height: 1;
+    }
+    .tm-den-box {
+      display: block;
+      text-align: center;
+      padding: 1px 2px 0 2px;
+      font-size: 0.9em;
+      line-height: 1;
+    }
+    .tm-frac-bar, .tm-frac-slash {
+      display: none;
+    }
     .tm-rational-exact-wrapper { display: inline-flex; align-items: center; gap: 4px; }
     .tm-large-rational { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
     .tm-approx-val { font-family: ui-monospace, Menlo, Consolas, monospace; }
@@ -441,10 +557,25 @@ export function exportToHtml(
       display: none !important;
     }
     @media print {
-      body { background: #ffffff !important; color: #111111 !important; padding: 0; }
-      .export-line-row { grid-template-columns: 32px 1fr !important; gap: 8px !important; }
-      .export-line-result { margin-top: 4px; padding-left: 8px; border-left: 2px solid #ddd; }
-      .export-plot-container { border: 1px solid #ddd; background: #ffffff; }
+      @page {
+        size: letter;
+        margin: 0.75in;
+      }
+      *, *:before, *:after {
+        background: transparent !important;
+        color: #111111 !important;
+        box-shadow: none !important;
+        text-shadow: none !important;
+      }
+      body { background: #ffffff !important; color: #111111 !important; padding: 0 !important; font-size: 11pt !important; }
+      .export-header { border-bottom: 2px solid #222222 !important; }
+      .export-title { color: #111111 !important; }
+      .export-meta { color: #444444 !important; }
+      .export-prose-comment { color: #333333 !important; }
+      .export-line-row { break-inside: avoid !important; page-break-inside: avoid !important; margin: 6px 0 !important; }
+      .export-line-result { margin-top: 4px !important; margin-left: 20px !important; padding-left: 10px !important; border-left: 2px solid #999999 !important; font-size: 11pt !important; }
+      .export-plot-container { border: 1px solid #cccccc !important; background: #ffffff !important; margin: 10px 0 !important; break-inside: avoid !important; page-break-inside: avoid !important; }
+      .tm-num-box { border-bottom: 1px solid #111111 !important; }
     }
   </style>
 </head>

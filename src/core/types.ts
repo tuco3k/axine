@@ -710,6 +710,9 @@ export interface GraphSpec {
   series: CurveSeries[];
   domain: { var: string; min: number; max: number; isDefault: boolean; step?: number };
   domainY?: { var: string; min: number; max: number; isDefault: boolean; step?: number };
+  title?: string;
+  xAxisLabel?: string;
+  yAxisLabel?: string;
   sharedAxisNote?: string;
   orbitData?: number[];
   pointCloudData?: [number, number, number][];

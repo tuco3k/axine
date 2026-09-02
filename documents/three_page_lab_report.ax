@@ -1,0 +1,69 @@
+---
+title: Classical Mechanics Laboratory Report
+course: PHYS 201 - Advanced Dynamics
+author: Noah Slayton
+date: 2026-09-02
+---
+
+## 1. Projectile Motion in 2D Gravity
+# Launch simulation of a spherical body under standard gravitational acceleration
+import "./physics.ax"
+
+g := 9.8
+m := 1.0
+ball0 := Body(mass: m, position: (0.0, 0.0), velocity: (10.0, 15.0))
+
+weight(b) := gravity_force(b, g)
+
+# Integrate trajectory using Verlet steps over 3 seconds
+traj := simulate(b -> verlet_step(b, weight, 0.05), ball0, t in 0..3, dt: 0.05)
+
+# Trajectory vertical position over time
+y_pos := map(b -> b.position[1], traj)
+graph(y_pos)
+
+# State of the projectile at t = 2.0s
+ball_at_2 := traj[2.0]
+KE_2 := kinetic_energy(ball_at_2)
+
+## 2. Harmonic Oscillator and Exact Energy Conservation
+# Consider a mass-spring system with unit mass and unit spring constant
+k := 1.0
+m_spring := 1.0
+b0 := Body(mass: m_spring, position: (1.0, 0.0), velocity: (0.0, 0.0))
+
+spring_force_fn(b) := (-k * b.position[0], 0.0)
+
+# Exact initial mechanical energy: E0 = 1/2 * k * x0^2
+E0 := (1/2) * k * (1.0^2)
+
+# Euler method integration (1st order)
+traj_euler := simulate(b -> euler_step(b, spring_force_fn, 0.1), b0, t in 0..10, dt: 0.1)
+
+# Verlet method integration (symplectic 2nd order)
+traj_verlet := simulate(b -> verlet_step(b, spring_force_fn, 0.1), b0, t in 0..10, dt: 0.1)
+
+# Runge-Kutta 4th order integration
+traj_rk4 := simulate(b -> rk4_step(b, spring_force_fn, 0.1), b0, t in 0..10, dt: 0.1)
+
+## 3. Total Energy Evolution across Integrators
+# Compute total mechanical energy trajectory for each method
+E_euler := map(b -> 0.5 * b.velocity[0]^2 + 0.5 * k * b.position[0]^2, traj_euler)
+E_verlet := map(b -> 0.5 * b.velocity[0]^2 + 0.5 * k * b.position[0]^2, traj_verlet)
+E_rk4 := map(b -> 0.5 * b.velocity[0]^2 + 0.5 * k * b.position[0]^2, traj_rk4)
+
+# Multi-series comparative plot of total energy over 10 seconds
+graph(E_euler, E_verlet, E_rk4)
+
+## 4. End-State Precision and Drift Comparison at t = 10.0s
+b_euler_end := traj_euler[10.0]
+b_verlet_end := traj_verlet[10.0]
+b_rk4_end := traj_rk4[10.0]
+
+E_euler_end := 0.5 * b_euler_end.velocity[0]^2 + 0.5 * k * b_euler_end.position[0]^2
+E_verlet_end := 0.5 * b_verlet_end.velocity[0]^2 + 0.5 * k * b_verlet_end.position[0]^2
+E_rk4_end := 0.5 * b_rk4_end.velocity[0]^2 + 0.5 * k * b_rk4_end.position[0]^2
+
+drift_euler := abs(E_euler_end - 0.5)
+drift_verlet := abs(E_verlet_end - 0.5)
+drift_rk4 := abs(E_rk4_end - 0.5)

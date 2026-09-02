@@ -79,18 +79,97 @@ plot(t, sin(t))
     expect(html).toContain('<strong>Course:</strong> PHYS 101');
     expect(html).toContain('<strong>Author:</strong> Noah Slayton');
 
-    // Assert embedded SVG plot
+    // Assert embedded SVG plot with axis labels and no duplicate legend for 1 series
     expect(html).toContain('<svg');
     expect(html).toContain('export-plot-container');
+    expect(html).toContain('t (s)');
+    expect(html).not.toContain('class="svg-legend"');
 
-    // Assert typeset math
+    // Assert typeset math and fraction separator
     expect(html).toContain('export-math-result');
     expect(html).toContain('tm-num');
-    expect(html).toContain('tm-den');
+    expect(html).toContain('tm-frac');
+    expect(html).toContain('aria-label="5 / 2"');
+    expect(html).toContain('tm-num-box');
+
+    // Assert source lines are typeset, not monospace
+    expect(html).toContain('export-source-typeset');
+    expect(html).toContain('tm-var');
+    expect(html).toContain('tm-rel');
+
+    // Assert comments render as prose
+    expect(html).toContain('export-prose-comment');
+    expect(html).toContain('Setup');
 
     // Assert zero external dependencies
     expect(html).not.toContain('<script src=');
     expect(html).not.toContain('<link rel="stylesheet" href=');
+  });
+
+  it('preserves whitespace and proper word separation in exported results and records', () => {
+    const records: DocumentLineRecord[] = [
+      {
+        lineIndex: 0,
+        text: 'import "physics.ax"',
+        classification: { state: 'COMPLETE' } as any,
+        result: {
+          type: 'module',
+          name: 'physics',
+          exports: { Body: {}, Particle: {}, gravity_force: {} },
+        } as any,
+        durationMs: 1,
+      },
+      {
+        lineIndex: 1,
+        text: 'b := Body(mass: 1, position: (0, 0), velocity: (10, 15))',
+        classification: { state: 'COMPLETE' } as any,
+        result: {
+          type: 'record',
+          typeName: 'Body',
+          fields: {
+            mass: { type: 'rational', n: 1n, d: 1n },
+            position: { type: 'tuple', elements: [{ type: 'rational', n: 0n, d: 1n }, { type: 'rational', n: 0n, d: 1n }] },
+            velocity: { type: 'tuple', elements: [{ type: 'rational', n: 10n, d: 1n }, { type: 'rational', n: 15n, d: 1n }] },
+          },
+        } as any,
+        durationMs: 1,
+      },
+      {
+        lineIndex: 2,
+        text: 'traj := simulate(b, 0..3)',
+        classification: { state: 'COMPLETE' } as any,
+        result: {
+          type: 'trajectory',
+          stateKind: 'Scalar',
+          tStart: 0,
+          tEnd: 3,
+          samples: new Array(61).fill({ t: 0, state: { type: 'rational', n: 0n, d: 1n } }),
+        } as any,
+        durationMs: 1,
+      },
+      {
+        lineIndex: 3,
+        text: 'p_exact := (20, 52/5)',
+        classification: { state: 'COMPLETE' } as any,
+        result: {
+          type: 'tuple',
+          elements: [{ type: 'rational', n: 20n, d: 1n }, { type: 'rational', n: 52n, d: 5n }],
+        } as any,
+        durationMs: 1,
+      },
+    ];
+
+    const html = exportToHtml('physics_test.ax', 'import "physics.ax"\nb\ntraj\np_exact\n', records, 'light');
+
+    // Assert word separation
+    const plainText = html.replace(/<[^>]+>/g, '');
+    expect(plainText).toContain('module physics { Body, Particle, gravity_force }');
+    expect(plainText).toContain('Body(mass: 1, position: (0, 0), velocity: (10, 15))');
+    expect(plainText).toContain('Trajectory(Scalar, 0..3, 61 samples)');
+
+    // Assert fraction inside tuple contains separator
+    expect(html).toContain('aria-label="52 / 5"');
+    expect(html).toContain('tm-num-box');
   });
 
   it('generates a clean Markdown export with front matter, code blocks, and linked plot assets', () => {

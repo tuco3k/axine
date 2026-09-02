@@ -2545,36 +2545,49 @@ html, body {
   border-radius: 4px;
 }
 
-/* =========================================================================
-   Phase 13 Part E.2: Dedicated Print Stylesheet for PDF Export
-   ========================================================================= */
+.doc-print-view {
+  display: none;
+}
+
+@page {
+  size: letter;
+  margin: 0.75in;
+}
+
 @media print {
   @page {
-    margin: 15mm 15mm 15mm 15mm;
-    size: auto;
+    size: letter;
+    margin: 0.75in;
   }
 
   *, *:before, *:after {
+    box-sizing: border-box !important;
     background: transparent !important;
     color: #111111 !important;
     box-shadow: none !important;
     text-shadow: none !important;
   }
 
-  html, body {
+  html, body, #app, .doc-app-shell, .doc-workspace, .doc-pane-left, .doc-editor-surface, .doc-editor-container {
     background-color: #ffffff !important;
     color: #111111 !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
     font-size: 11pt !important;
-    line-height: 1.4 !important;
+    line-height: 1.5 !important;
     width: 100% !important;
     height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
     overflow: visible !important;
     margin: 0 !important;
     padding: 0 !important;
+    border: none !important;
+    outline: none !important;
   }
 
-  /* 2. Hide all chrome, header actions, work panel, dock menus, dock affordances, buttons */
+  /* Hide all interactive chrome, dock menus, tabs, and buttons */
   .doc-header,
+  .doc-session-tab-bar,
   .doc-work-panel,
   .doc-panel-edge-affordance,
   .doc-file-menu-wrapper,
@@ -2590,88 +2603,105 @@ html, body {
     display: none !important;
   }
 
-  /* 3. Main layout expands to full page width */
-  .doc-app-shell {
-    height: auto !important;
-    overflow: visible !important;
-  }
-
-  .doc-workspace {
-    display: block !important;
-    height: auto !important;
-    overflow: visible !important;
-    width: 100% !important;
-  }
-
-  .doc-editor-container {
-    display: block !important;
-    height: auto !important;
-    overflow: visible !important;
-    width: 100% !important;
-  }
-
-  /* 4. Hide interactive textarea and line numbers gutter in print, show clean document flow */
   .doc-textarea,
   .doc-line-numbers,
   .doc-typeset-overlay,
-  .doc-gutter {
+  .doc-gutter,
+  .doc-splitter {
     display: none !important;
   }
 
-  /* 5. Print view formatting: Front matter as header, results inline BENEATH source lines */
   .doc-print-view {
     display: block !important;
     width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
   .doc-print-header {
     display: block !important;
     margin-bottom: 24px !important;
     padding-bottom: 12px !important;
-    border-bottom: 1px solid #cccccc !important;
+    border-bottom: 2px solid #222222 !important;
     page-break-after: avoid !important;
     break-after: avoid !important;
   }
 
   .doc-print-title {
-    font-size: 20pt !important;
-    font-weight: bold !important;
+    font-size: 22pt !important;
+    font-weight: 700 !important;
     margin-bottom: 6px !important;
+    color: #111111 !important;
   }
 
   .doc-print-meta {
     font-size: 10pt !important;
     color: #444444 !important;
     display: flex !important;
-    gap: 16px !important;
+    flex-wrap: wrap !important;
+    gap: 20px !important;
+  }
+
+  .doc-print-h2 {
+    font-size: 15pt !important;
+    font-weight: 700 !important;
+    margin-top: 18px !important;
+    margin-bottom: 6px !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+
+  .doc-print-h3 {
+    font-size: 12.5pt !important;
+    font-weight: 600 !important;
+    margin-top: 14px !important;
+    margin-bottom: 4px !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+
+  .doc-print-prose {
+    font-family: Georgia, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, serif !important;
+    font-size: 10.5pt !important;
+    color: #333333 !important;
+    margin-top: 10px !important;
+    margin-bottom: 4px !important;
+    line-height: 1.4 !important;
+    font-style: italic !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
   .doc-print-line-row {
     display: block !important;
+    margin-top: 6px !important;
     margin-bottom: 8px !important;
     page-break-inside: avoid !important;
     break-inside: avoid !important;
   }
 
   .doc-print-source {
-    font-family: ui-monospace, Menlo, Monaco, "Courier New", monospace !important;
-    font-size: 10pt !important;
+    font-size: 11pt !important;
     color: #111111 !important;
-    white-space: pre-wrap !important;
+    line-height: 1.5 !important;
   }
 
   .doc-print-result {
     display: block !important;
-    margin-top: 3px !important;
-    margin-left: 16px !important;
-    padding-left: 8px !important;
-    border-left: 2px solid #999999 !important;
-    font-size: 10.5pt !important;
+    margin-top: 4px !important;
+    margin-left: 20px !important;
+    padding-left: 10px !important;
+    border-left: 2px solid #888888 !important;
+    font-size: 11pt !important;
+    color: #222222 !important;
     page-break-inside: avoid !important;
     break-inside: avoid !important;
   }
 
-  /* 6. Page breaks never split a derivation or a plot */
+  /* Non-breaking derivations and plots */
   .doc-print-derivation,
   .doc-print-plot,
   .export-plot-container,
@@ -2682,8 +2712,54 @@ html, body {
     max-width: 100% !important;
   }
 
-  .tm-frac { display: inline-flex !important; flex-direction: column !important; vertical-align: middle !important; }
-  .tm-num { border-bottom: 1px solid #111111 !important; padding: 0 1px !important; }
-  .tm-den { padding: 1px 1px 0 1px !important; }
+  /* Typography */
+  .tm-var {
+    font-style: italic !important;
+    font-family: "Times New Roman", Times, Georgia, serif !important;
+  }
+
+  .tm-num {
+    font-style: normal !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  }
+
+  .tm-rel, .tm-bin {
+    padding: 0 3px !important;
+  }
+
+  .tm-frac {
+    display: inline-flex !important;
+    flex-direction: column !important;
+    vertical-align: -0.4em !important;
+    text-align: center !important;
+    font-size: 0.9em !important;
+    line-height: 1 !important;
+    padding: 0 2px !important;
+    white-space: nowrap !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .tm-num-box {
+    display: block !important;
+    text-align: center !important;
+    border-bottom: 1px solid #111111 !important;
+    padding: 0 2px 1px 2px !important;
+    font-size: 0.9em !important;
+    line-height: 1 !important;
+  }
+
+  .tm-den-box {
+    display: block !important;
+    text-align: center !important;
+    padding: 1px 2px 0 2px !important;
+    font-size: 0.9em !important;
+    line-height: 1 !important;
+  }
+
+  .tm-frac-bar, .tm-frac-slash {
+    display: none !important;
+  }
+
   .tm-exact-marker { border: 1px solid #111111 !important; padding: 0 3px !important; font-size: 8pt !important; }
 }
