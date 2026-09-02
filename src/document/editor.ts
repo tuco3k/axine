@@ -39,6 +39,23 @@ export interface DockLayoutState {
   };
 }
 
+export interface DocumentSession {
+  id: string;
+  name: string;
+  handle?: FileSystemFileHandle;
+  state: DocumentState;
+  savedContent: string;
+  isDirty: boolean;
+  scrollPosition: { scrollTop: number; scrollLeft: number };
+  caretPosition: { selectionStart: number; selectionEnd: number; selectionDirection: 'forward' | 'backward' | 'none' };
+  dockLayout: DockLayoutState;
+  activeTab: 'results' | 'scope' | 'trace' | 'frames';
+  pinnedLines: Set<number>;
+  collapsedLines: Set<number>;
+  expandedPlots: Set<number>;
+  diskFiles?: Record<string, string>;
+}
+
 export class DocumentEditor {
   private container: HTMLElement;
   private state: DocumentState;
@@ -56,6 +73,10 @@ export class DocumentEditor {
   private edgeAffordanceEl!: HTMLElement;
   private fileNameEl!: HTMLElement;
   private dirtyBadgeEl!: HTMLElement;
+
+  private sessions: Map<string, DocumentSession> = new Map();
+  private sessionOrder: string[] = [];
+  private activeSessionId: string = '';
 
   private currentFileName: string = 'untitled.ax';
   private currentFileHandle?: FileSystemFileHandle;
@@ -97,10 +118,36 @@ export class DocumentEditor {
     this.state = new DocumentState(docText);
     this.mathPopover = new MathPopover();
     this.loadDockLayout();
+
+    const initialSessionId = 'sess_' + Math.random().toString(36).substring(2, 9);
+    const initialSession: DocumentSession = {
+      id: initialSessionId,
+      name: this.currentFileName,
+      handle: undefined,
+      state: this.state,
+      savedContent: docText,
+      isDirty: false,
+      scrollPosition: { scrollTop: 0, scrollLeft: 0 },
+      caretPosition: { selectionStart: 0, selectionEnd: 0, selectionDirection: 'none' },
+      dockLayout: JSON.parse(JSON.stringify(this.dockLayout)),
+      activeTab: 'results',
+      pinnedLines: new Set(),
+      collapsedLines: new Set(this.collapsedLines),
+      expandedPlots: new Set(),
+    };
+    this.sessions.set(initialSessionId, initialSession);
+    this.sessionOrder.push(initialSessionId);
+    this.activeSessionId = initialSessionId;
+
     this.buildUI(docText);
     this.applyDockLayout();
     this.bindEvents();
-    this.state.subscribe((records, isEvaluating) => this.renderWorkPanel(records, isEvaluating));
+    this.state.subscribe((records, isEvaluating) => {
+      if (this.activeSessionId === initialSessionId) {
+        this.renderWorkPanel(records, isEvaluating);
+      }
+    });
+    this.updateSessionTabs();
     this.state.setText(docText);
   }
 
@@ -228,12 +275,210 @@ export class DocumentEditor {
     this.setDockEdge(nextEdge);
   }
 
+  public getSessions(): DocumentSession[] {
+    return this.sessionOrder.map(id => this.sessions.get(id)!).filter(Boolean);
+  }
+
+  public getActiveSession(): DocumentSession | undefined {
+    return this.sessions.get(this.activeSessionId);
+  }
+
+  public createSession(name: string, content: string, handle?: FileSystemFileHandle, diskFiles?: Record<string, string>): DocumentSession {
+    const id = 'sess_' + Math.random().toString(36).substring(2, 9);
+    const state = new DocumentState(content);
+    if (diskFiles) {
+      state.setDiskFiles(diskFiles);
+    }
+    const session: DocumentSession = {
+      id,
+      name,
+      handle,
+      state,
+      savedContent: content,
+      isDirty: false,
+      scrollPosition: { scrollTop: 0, scrollLeft: 0 },
+      caretPosition: { selectionStart: 0, selectionEnd: 0, selectionDirection: 'none' },
+      dockLayout: JSON.parse(JSON.stringify(this.dockLayout)),
+      activeTab: 'results',
+      pinnedLines: new Set(),
+      collapsedLines: new Set(this.collapsedLines),
+      expandedPlots: new Set(),
+      diskFiles,
+    };
+    state.subscribe((records, isEvaluating) => {
+      if (this.activeSessionId === id) {
+        this.renderWorkPanel(records, isEvaluating);
+      }
+    });
+    this.sessions.set(id, session);
+    this.sessionOrder.push(id);
+    this.updateSessionTabs();
+    return session;
+  }
+
+  public openSession(name: string, content: string, handle?: FileSystemFileHandle, diskFiles?: Record<string, string>): DocumentSession {
+    const sess = this.createSession(name, content, handle, diskFiles);
+    this.switchToSession(sess.id);
+    return sess;
+  }
+
+  public switchToSession(sessionId: string): void {
+    if (sessionId === this.activeSessionId) return;
+    const prev = this.sessions.get(this.activeSessionId);
+    if (prev) {
+      prev.savedContent = this.savedContent;
+      prev.isDirty = this.isDirty;
+      prev.scrollPosition = {
+        scrollTop: this.textarea ? this.textarea.scrollTop : 0,
+        scrollLeft: this.textarea ? this.textarea.scrollLeft : 0,
+      };
+      prev.caretPosition = {
+        selectionStart: this.textarea ? this.textarea.selectionStart : 0,
+        selectionEnd: this.textarea ? this.textarea.selectionEnd : 0,
+        selectionDirection: this.textarea ? this.textarea.selectionDirection : 'none',
+      };
+      prev.dockLayout = JSON.parse(JSON.stringify(this.dockLayout));
+      prev.activeTab = this.activeTab;
+      prev.pinnedLines = new Set(this.pinnedLines);
+      prev.collapsedLines = new Set(this.collapsedLines);
+      prev.expandedPlots = new Set(this.expandedPlots);
+    }
+
+    const next = this.sessions.get(sessionId);
+    if (!next) return;
+
+    this.activeSessionId = sessionId;
+    this.state = next.state;
+    this.currentFileName = next.name;
+    this.currentFileHandle = next.handle;
+    this.savedContent = next.savedContent;
+    this.isDirty = next.isDirty;
+    this.pinnedLines = new Set(next.pinnedLines);
+    this.collapsedLines = new Set(next.collapsedLines);
+    this.expandedPlots = new Set(next.expandedPlots);
+    this.dockLayout = JSON.parse(JSON.stringify(next.dockLayout));
+    this.activeTab = next.activeTab;
+
+    // Update work panel tab buttons
+    this.container.querySelectorAll('.doc-tab-btn').forEach(b => {
+      b.classList.toggle('active', b.getAttribute('data-tab') === next.activeTab);
+    });
+    this.container.querySelectorAll('.doc-tab-content').forEach(c => {
+      c.classList.toggle('active', c.id === `tab-${next.activeTab}-panel`);
+    });
+
+    this.applyDockLayout();
+
+    if (this.textarea) {
+      this.textarea.value = next.state.getText();
+      this.updateTypesetOverlay();
+      this.textarea.setSelectionRange(
+        next.caretPosition.selectionStart,
+        next.caretPosition.selectionEnd,
+        next.caretPosition.selectionDirection
+      );
+      this.textarea.scrollTop = next.scrollPosition.scrollTop;
+      this.textarea.scrollLeft = next.scrollPosition.scrollLeft;
+      if (this.overlayEl) {
+        this.overlayEl.scrollTop = next.scrollPosition.scrollTop;
+        this.overlayEl.scrollLeft = next.scrollPosition.scrollLeft;
+      }
+      if (this.lineNumbersEl) {
+        this.lineNumbersEl.scrollTop = next.scrollPosition.scrollTop;
+      }
+      if (this.gutterEl) {
+        this.gutterEl.scrollTop = next.scrollPosition.scrollTop;
+      }
+      this.updateCaret();
+    }
+
+    this.updateFileInfo();
+    this.updateSessionTabs();
+
+    // Render work panel immediately from cached state without re-evaluating from scratch
+    this.renderWorkPanel(next.state.getRecords(), next.state.getIsEvaluating());
+  }
+
+  public closeSession(sessionId: string): boolean {
+    const sess = this.sessions.get(sessionId);
+    if (!sess) return false;
+    if (sess.isDirty) {
+      if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+        if (!window.confirm(`Save changes to "${sess.name}" before closing?`)) {
+          return false;
+        }
+      }
+    }
+    sess.state.dispose();
+    this.sessions.delete(sessionId);
+    const idx = this.sessionOrder.indexOf(sessionId);
+    if (idx !== -1) {
+      this.sessionOrder.splice(idx, 1);
+    }
+
+    if (this.activeSessionId === sessionId) {
+      if (this.sessionOrder.length > 0) {
+        const nextIdx = Math.min(idx, this.sessionOrder.length - 1);
+        this.switchToSession(this.sessionOrder[nextIdx]);
+      } else {
+        const newSess = this.createSession('untitled.ax', '');
+        this.switchToSession(newSess.id);
+      }
+    } else {
+      this.updateSessionTabs();
+    }
+    return true;
+  }
+
+  public updateSessionTabs(): void {
+    const tabContainer = this.container.querySelector('#doc-session-tabs');
+    if (!tabContainer) return;
+
+    tabContainer.innerHTML = this.sessionOrder.map(id => {
+      const sess = this.sessions.get(id);
+      if (!sess) return '';
+      const isActive = id === this.activeSessionId;
+      const dirty = (id === this.activeSessionId ? this.isDirty : sess.isDirty);
+      return `
+        <div class="doc-session-tab ${isActive ? 'active' : ''}" data-session-id="${id}" title="${escapeHtml(sess.name)}">
+          <span class="doc-session-tab-title">${escapeHtml(sess.name)}</span>
+          <span class="doc-session-tab-dirty-dot ${dirty ? '' : 'hidden'}" title="Unsaved changes"></span>
+          <button class="doc-session-tab-close-btn" data-close-session-id="${id}" title="Close tab">&times;</button>
+        </div>
+      `;
+    }).join('');
+
+    tabContainer.querySelectorAll('.doc-session-tab').forEach(tabEl => {
+      tabEl.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).closest('.doc-session-tab-close-btn')) return;
+        const sessId = (tabEl as HTMLElement).getAttribute('data-session-id');
+        if (sessId) {
+          this.switchToSession(sessId);
+        }
+      });
+    });
+
+    tabContainer.querySelectorAll('.doc-session-tab-close-btn').forEach(closeBtn => {
+      closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const sessId = (closeBtn as HTMLElement).getAttribute('data-close-session-id');
+        if (sessId) {
+          this.closeSession(sessId);
+        }
+      });
+    });
+  }
+
   public setText(text: string): void {
     if (this.textarea) {
       this.textarea.value = text;
       this.updateTypesetOverlay();
       this.updateCaret();
       this.state.setText(text);
+      const curr = this.sessions.get(this.activeSessionId);
+      if (curr) {
+        curr.savedContent = text;
+      }
     }
   }
 
@@ -243,7 +488,12 @@ export class DocumentEditor {
 
   public setDocumentName(name: string): void {
     this.currentFileName = name;
+    const curr = this.sessions.get(this.activeSessionId);
+    if (curr) {
+      curr.name = name;
+    }
     this.updateFileInfo();
+    this.updateSessionTabs();
   }
 
   public getIsDirty(): boolean {
@@ -259,15 +509,30 @@ export class DocumentEditor {
   }
 
   public async openDocument(): Promise<OpenFileResult | null> {
-    if (!this.confirmDiscardChanges()) return null;
     const res = await FileManager.openFile();
     if (!res) return null;
-    this.currentFileName = res.name;
-    this.currentFileHandle = res.handle;
-    this.savedContent = res.recovered ? '' : res.content;
-    this.isDirty = res.isDirty;
-    this.setText(res.content);
-    this.updateFileInfo();
+
+    const curr = this.sessions.get(this.activeSessionId);
+    if (curr && curr.name === 'untitled.ax' && !curr.isDirty && curr.state.getText().trim() === '') {
+      curr.name = res.name;
+      curr.handle = res.handle;
+      curr.savedContent = res.recovered ? '' : res.content;
+      curr.isDirty = res.isDirty;
+      this.currentFileName = res.name;
+      this.currentFileHandle = res.handle;
+      this.savedContent = curr.savedContent;
+      this.isDirty = curr.isDirty;
+      this.setText(res.content);
+      this.updateFileInfo();
+      this.updateRecentFilesMenu();
+      this.updateSessionTabs();
+      return res;
+    }
+
+    const sess = this.createSession(res.name, res.content, res.handle);
+    sess.savedContent = res.recovered ? '' : res.content;
+    sess.isDirty = res.isDirty;
+    this.switchToSession(sess.id);
     this.updateRecentFilesMenu();
     return res;
   }
@@ -280,8 +545,16 @@ export class DocumentEditor {
       this.currentFileHandle = res.handle;
       this.savedContent = text;
       this.isDirty = false;
+      const curr = this.sessions.get(this.activeSessionId);
+      if (curr) {
+        curr.name = res.name;
+        curr.handle = res.handle;
+        curr.savedContent = text;
+        curr.isDirty = false;
+      }
       this.updateFileInfo();
       this.updateRecentFilesMenu();
+      this.updateSessionTabs();
     }
     return res;
   }
@@ -294,28 +567,39 @@ export class DocumentEditor {
       this.currentFileHandle = res.handle;
       this.savedContent = text;
       this.isDirty = false;
+      const curr = this.sessions.get(this.activeSessionId);
+      if (curr) {
+        curr.name = res.name;
+        curr.handle = res.handle;
+        curr.savedContent = text;
+        curr.isDirty = false;
+      }
       this.updateFileInfo();
       this.updateRecentFilesMenu();
+      this.updateSessionTabs();
     }
     return res;
   }
 
   public setDiskFiles(files: Record<string, string>): void {
+    const curr = this.sessions.get(this.activeSessionId);
+    if (curr) {
+      curr.diskFiles = { ...files };
+    }
     this.state.setDiskFiles(files);
   }
 
   public clearDiskFiles(): void {
+    const curr = this.sessions.get(this.activeSessionId);
+    if (curr) {
+      curr.diskFiles = undefined;
+    }
     this.state.clearDiskFiles();
   }
 
   public newDocument(): void {
-    if (!this.confirmDiscardChanges()) return;
-    this.currentFileName = 'untitled.ax';
-    this.currentFileHandle = undefined;
-    this.savedContent = '';
-    this.isDirty = false;
-    this.setText('');
-    this.updateFileInfo();
+    const sess = this.createSession('untitled.ax', '');
+    this.switchToSession(sess.id);
   }
 
   public preparePrintView(): void {
@@ -577,6 +861,11 @@ export class DocumentEditor {
           </div>
         </header>
 
+        <div class="doc-session-tab-bar" id="doc-session-tab-bar">
+          <div class="doc-session-tabs" id="doc-session-tabs"></div>
+          <button id="doc-session-new-tab-btn" class="doc-session-new-tab-btn" title="New Document Tab (Cmd+T)">+</button>
+        </div>
+
         <main id="doc-workspace" class="doc-workspace" data-dock="right">
           <div class="doc-pane-left">
             <div id="doc-print-view" class="doc-print-view"></div>
@@ -703,7 +992,12 @@ export class DocumentEditor {
       this.updateTypesetOverlay();
       this.updateCaret();
       this.isDirty = this.textarea.value !== this.savedContent;
+      const curr = this.sessions.get(this.activeSessionId);
+      if (curr) {
+        curr.isDirty = this.isDirty;
+      }
       this.updateDirtyIndicator();
+      this.updateSessionTabs();
       this.scheduleAutosave();
       this.state.setText(this.textarea.value);
     });
@@ -718,7 +1012,12 @@ export class DocumentEditor {
         this.updateTypesetOverlay();
         this.updateCaret();
         this.isDirty = this.textarea.value !== this.savedContent;
+        const curr = this.sessions.get(this.activeSessionId);
+        if (curr) {
+          curr.isDirty = this.isDirty;
+        }
         this.updateDirtyIndicator();
+        this.updateSessionTabs();
         this.scheduleAutosave();
         this.state.setText(this.textarea.value);
       }
@@ -737,6 +1036,12 @@ export class DocumentEditor {
     this.textarea.addEventListener('focus', () => this.updateCaret());
     this.textarea.addEventListener('blur', () => this.updateCaret());
     this.textarea.addEventListener('select', () => this.updateCaret());
+
+    // New Tab Button
+    const newTabBtn = this.container.querySelector('#doc-session-new-tab-btn');
+    newTabBtn?.addEventListener('click', () => {
+      this.newDocument();
+    });
 
     // File Menu dropdown toggle
     const fileMenuBtn = this.container.querySelector('#doc-file-menu-btn');
@@ -804,6 +1109,10 @@ export class DocumentEditor {
         btn.classList.add('active');
         const tab = (btn as HTMLElement).getAttribute('data-tab') as any;
         this.activeTab = tab;
+        const curr = this.sessions.get(this.activeSessionId);
+        if (curr) {
+          curr.activeTab = tab;
+        }
         this.container.querySelectorAll('.doc-tab-content').forEach(p => p.classList.remove('active'));
         const panel = this.container.querySelector(`#tab-${tab}-panel`);
         if (panel) panel.classList.add('active');
@@ -855,6 +1164,26 @@ export class DocumentEditor {
 
     // Global keyboard shortcuts
     window.addEventListener('keydown', (e: KeyboardEvent) => {
+      // Cmd+W / Ctrl+W : Close Tab
+      if ((e.key === 'w' || e.key === 'W') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        e.preventDefault();
+        this.closeSession(this.activeSessionId);
+      }
+      // Cmd+T / Ctrl+T or Cmd+N / Ctrl+N : New Document Tab
+      if (((e.key === 't' || e.key === 'T') || (e.key === 'n' || e.key === 'N')) && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        e.preventDefault();
+        this.newDocument();
+      }
+      // Ctrl+Tab / Ctrl+Shift+Tab : Cycle Document Tabs
+      if (e.key === 'Tab' && e.ctrlKey) {
+        e.preventDefault();
+        if (this.sessionOrder.length > 1) {
+          const currentIdx = this.sessionOrder.indexOf(this.activeSessionId);
+          const delta = e.shiftKey ? -1 : 1;
+          const nextIdx = (currentIdx + delta + this.sessionOrder.length) % this.sessionOrder.length;
+          this.switchToSession(this.sessionOrder[nextIdx]);
+        }
+      }
       // Cmd+O / Ctrl+O : Open File
       if ((e.key === 'o' || e.key === 'O') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
         e.preventDefault();

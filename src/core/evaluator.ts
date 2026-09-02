@@ -32,6 +32,7 @@ import {
   ModuleValue,
   TrajectoryValue,
   TrajectorySample,
+  DEFAULT_INVOKED_FUEL,
 } from './types';
 import { BUNDLED_DOCUMENTS } from '../document/virtual_documents';
 import { getTrajectoryStateAt, mapTrajectory, exportTrajectory } from './simulation/trajectory';
@@ -4202,7 +4203,7 @@ export class Evaluator {
 export function evaluate(
   source: string,
   env: Environment = createInitialEnvironment(),
-  budget: BudgetTracker = new BudgetTracker()
+  budget: BudgetTracker = new BudgetTracker(DEFAULT_INVOKED_FUEL)
 ): { ast: ASTNode; value: Value } {
   const ast = analyzeAndParse(source, env);
   const evaluator = new Evaluator(env, source, budget);
