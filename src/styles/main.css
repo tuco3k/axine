@@ -2433,6 +2433,147 @@ html, body {
   font-size: 0.75rem;
   padding: 2px 6px;
   border-radius: 4px;
-  cursor: pointer;
 }
 
+/* =========================================================================
+   Phase 13 Part E.2: Dedicated Print Stylesheet for PDF Export
+   ========================================================================= */
+@media print {
+  @page {
+    margin: 15mm 15mm 15mm 15mm;
+    size: auto;
+  }
+
+  *, *:before, *:after {
+    background: transparent !important;
+    color: #111111 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  html, body {
+    background-color: #ffffff !important;
+    color: #111111 !important;
+    font-size: 11pt !important;
+    line-height: 1.4 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* 2. Hide all chrome, header actions, work panel, dock menus, dock affordances, buttons */
+  .doc-header,
+  .doc-work-panel,
+  .doc-panel-edge-affordance,
+  .doc-file-menu-wrapper,
+  .doc-corpus-select-wrapper,
+  .doc-header-actions,
+  .doc-budget-selector,
+  .doc-popover,
+  .doc-caret,
+  .doc-tab-switcher,
+  .doc-dock-menu-wrapper,
+  .doc-btn,
+  button {
+    display: none !important;
+  }
+
+  /* 3. Main layout expands to full page width */
+  .doc-app-shell {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .doc-workspace {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+    width: 100% !important;
+  }
+
+  .doc-editor-container {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+    width: 100% !important;
+  }
+
+  /* 4. Hide interactive textarea and line numbers gutter in print, show clean document flow */
+  .doc-textarea,
+  .doc-line-numbers,
+  .doc-typeset-overlay,
+  .doc-gutter {
+    display: none !important;
+  }
+
+  /* 5. Print view formatting: Front matter as header, results inline BENEATH source lines */
+  .doc-print-view {
+    display: block !important;
+    width: 100% !important;
+  }
+
+  .doc-print-header {
+    display: block !important;
+    margin-bottom: 24px !important;
+    padding-bottom: 12px !important;
+    border-bottom: 1px solid #cccccc !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+
+  .doc-print-title {
+    font-size: 20pt !important;
+    font-weight: bold !important;
+    margin-bottom: 6px !important;
+  }
+
+  .doc-print-meta {
+    font-size: 10pt !important;
+    color: #444444 !important;
+    display: flex !important;
+    gap: 16px !important;
+  }
+
+  .doc-print-line-row {
+    display: block !important;
+    margin-bottom: 8px !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .doc-print-source {
+    font-family: ui-monospace, Menlo, Monaco, "Courier New", monospace !important;
+    font-size: 10pt !important;
+    color: #111111 !important;
+    white-space: pre-wrap !important;
+  }
+
+  .doc-print-result {
+    display: block !important;
+    margin-top: 3px !important;
+    margin-left: 16px !important;
+    padding-left: 8px !important;
+    border-left: 2px solid #999999 !important;
+    font-size: 10.5pt !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* 6. Page breaks never split a derivation or a plot */
+  .doc-print-derivation,
+  .doc-print-plot,
+  .export-plot-container,
+  svg,
+  canvas {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    max-width: 100% !important;
+  }
+
+  .tm-frac { display: inline-flex !important; flex-direction: column !important; vertical-align: middle !important; }
+  .tm-num { border-bottom: 1px solid #111111 !important; padding: 0 1px !important; }
+  .tm-den { padding: 1px 1px 0 1px !important; }
+  .tm-exact-marker { border: 1px solid #111111 !important; padding: 0 3px !important; font-size: 8pt !important; }
+}

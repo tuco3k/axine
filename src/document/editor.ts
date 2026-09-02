@@ -13,6 +13,7 @@ import { formatKind } from '../core/kinds';
 import { MathPopover } from './popover';
 import { ICONS } from '../styles/icons';
 import { FileManager, OpenFileResult, SaveFileResult } from './file_manager';
+import { exportToHtml, exportToMarkdown, parseFrontMatter, renderSVGGraphToString } from './exporter';
 
 function escapeHtml(str: string): string {
   return str
@@ -317,6 +318,110 @@ export class DocumentEditor {
     this.updateFileInfo();
   }
 
+  public preparePrintView(): void {
+    const printView = this.container.querySelector('#doc-print-view');
+    if (!printView) return;
+    const text = this.textarea ? this.textarea.value : '';
+    const records = this.state.getRecords();
+    const { frontMatter } = parseFrontMatter(text);
+
+    let html = '';
+    if (Object.keys(frontMatter).length > 0) {
+      html += `
+        <div class="doc-print-header">
+          ${frontMatter.title ? `<div class="doc-print-title">${escapeHtml(frontMatter.title)}</div>` : ''}
+          <div class="doc-print-meta">
+            ${frontMatter.course ? `<span><strong>Course:</strong> ${escapeHtml(frontMatter.course)}</span>` : ''}
+            ${frontMatter.author ? `<span><strong>Author:</strong> ${escapeHtml(frontMatter.author)}</span>` : ''}
+            ${frontMatter.date ? `<span><strong>Date:</strong> ${escapeHtml(frontMatter.date)}</span>` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    let inFm = text.split('\n')[0]?.trim() === '---';
+    let fmDone = !inFm;
+
+    for (let i = 0; i < records.length; i++) {
+      const rec = records[i];
+      const raw = rec?.text ?? '';
+      if (!fmDone) {
+        if (i > 0 && raw.trim() === '---') fmDone = true;
+        continue;
+      }
+
+      let resHtml = '';
+      if (rec?.result) {
+        if (rec.result.type === 'graph') {
+          const spec = (rec.result as GraphValue).spec;
+          const svg = renderSVGGraphToString(spec, { width: 580, height: 260, theme: 'light' });
+          resHtml = `<div class="doc-print-plot">${svg}</div>`;
+        } else {
+          const formatted = this.formatValue(rec.result);
+          const typeset = typesetMath(formatted, { displayMode: false });
+          resHtml = `<div class="doc-print-math">${typeset}</div>`;
+        }
+      } else if (rec?.error) {
+        resHtml = `<div class="doc-print-error" style="color:#d32f2f;">${escapeHtml(rec.error.message)}</div>`;
+      }
+
+      html += `
+        <div class="doc-print-line-row">
+          <div class="doc-print-source">${escapeHtml(raw) || '&nbsp;'}</div>
+          ${resHtml ? `<div class="doc-print-result">${resHtml}</div>` : ''}
+        </div>
+      `;
+    }
+
+    printView.innerHTML = html;
+  }
+
+  public exportHtml(): void {
+    const text = this.textarea ? this.textarea.value : '';
+    const records = this.state.getRecords();
+    const currentTheme = (typeof document !== 'undefined' && document.documentElement?.getAttribute('data-theme') === 'light') ? 'light' : 'dark';
+    const html = exportToHtml(this.currentFileName, text, records, currentTheme);
+    const exportName = this.currentFileName.replace(/\.ax$/, '') + '.html';
+
+    if (typeof document !== 'undefined' && typeof Blob !== 'undefined' && typeof URL !== 'undefined') {
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = exportName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  public exportMarkdown(): void {
+    const text = this.textarea ? this.textarea.value : '';
+    const records = this.state.getRecords();
+    const { markdown } = exportToMarkdown(this.currentFileName, text, records);
+    const exportName = this.currentFileName.replace(/\.ax$/, '') + '.md';
+
+    if (typeof document !== 'undefined' && typeof Blob !== 'undefined' && typeof URL !== 'undefined') {
+      const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = exportName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  public printPdf(): void {
+    this.preparePrintView();
+    if (typeof window !== 'undefined' && typeof window.print === 'function') {
+      window.print();
+    }
+  }
+
   public updateDirtyIndicator(): void {
     if (this.dirtyBadgeEl) {
       this.dirtyBadgeEl.classList.toggle('hidden', !this.isDirty);
@@ -414,6 +519,18 @@ export class DocumentEditor {
                 <span class="doc-file-menu-shortcut">Shift+Cmd+S</span>
               </button>
               <div class="doc-file-menu-divider"></div>
+              <div class="doc-file-menu-section-title">Export</div>
+              <button id="doc-export-html-btn" class="doc-file-menu-item">
+                <span>Export HTML...</span>
+              </button>
+              <button id="doc-export-pdf-btn" class="doc-file-menu-item">
+                <span>Print / PDF...</span>
+                <span class="doc-file-menu-shortcut">Cmd+P</span>
+              </button>
+              <button id="doc-export-md-btn" class="doc-file-menu-item">
+                <span>Export Markdown...</span>
+              </button>
+              <div class="doc-file-menu-divider"></div>
               <div class="doc-file-menu-section-title">Recent Files</div>
               <div id="doc-recent-files-list"></div>
             </div>
@@ -462,6 +579,7 @@ export class DocumentEditor {
 
         <main id="doc-workspace" class="doc-workspace" data-dock="right">
           <div class="doc-pane-left">
+            <div id="doc-print-view" class="doc-print-view"></div>
             <div id="doc-line-numbers" class="doc-line-numbers"></div>
             <div class="doc-editor-surface">
               <div id="doc-typeset-overlay" class="doc-typeset-overlay"></div>
@@ -660,6 +778,24 @@ export class DocumentEditor {
       this.saveDocumentAs();
     });
 
+    const exportHtmlBtn = this.container.querySelector('#doc-export-html-btn');
+    exportHtmlBtn?.addEventListener('click', () => {
+      fileDropdown?.classList.add('hidden');
+      this.exportHtml();
+    });
+
+    const exportPdfBtn = this.container.querySelector('#doc-export-pdf-btn');
+    exportPdfBtn?.addEventListener('click', () => {
+      fileDropdown?.classList.add('hidden');
+      this.printPdf();
+    });
+
+    const exportMdBtn = this.container.querySelector('#doc-export-md-btn');
+    exportMdBtn?.addEventListener('click', () => {
+      fileDropdown?.classList.add('hidden');
+      this.exportMarkdown();
+    });
+
     // Work Panel Tabs Switcher
     const tabButtons = this.container.querySelectorAll('.doc-tab-btn');
     tabButtons.forEach(btn => {
@@ -733,6 +869,11 @@ export class DocumentEditor {
       if ((e.key === 's' || e.key === 'S') && ((e.metaKey && e.shiftKey) || (e.ctrlKey && e.shiftKey))) {
         e.preventDefault();
         this.saveDocumentAs();
+      }
+      // Cmd+P / Ctrl+P : Print / PDF Export
+      if ((e.key === 'p' || e.key === 'P') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        e.preventDefault();
+        this.printPdf();
       }
       // Cmd+B / Ctrl+B / Cmd+\ / Ctrl+\ : Toggle collapse
       if ((e.key === 'b' || e.key === 'B' || e.key === '\\') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
@@ -2101,88 +2242,7 @@ export class DocumentEditor {
   }
 
   public formatValue(val: Value): string {
-    switch (val.type) {
-      case 'rational':
-        if (val.d === 1n) return val.n.toString();
-        return `${val.n}/${val.d}`;
-      case 'float': {
-        const v = Math.abs(val.value) < 1e-12 ? 0 : val.value;
-        return Number.isInteger(v) ? v.toString() : v.toFixed(6).replace(/\.?0+$/, '');
-      }
-      case 'boolean':
-        return val.value ? 'true' : 'false';
-      case 'none':
-        return 'none';
-      case 'unknown':
-        return `unknown(${val.reason}${val.detail ? `, "${val.detail}"` : ''})`;
-      case 'claim':
-        return `[Claim ${(val as any).name}: ${(val as any).verified ? 'Verified' : 'Unverified'}]`;
-      case 'derivation': {
-        if (val.specialCase === 'no-solution') return 'no solution';
-        if (val.specialCase === 'all-real') return 'all real numbers (identity)';
-        if (val.roots.length === 1) return `${val.targetVar} = ${this.formatValue(val.roots[0])}`;
-        if (val.roots.length > 1) return `${val.targetVar} = ${val.roots.map(r => this.formatValue(r)).join(' or ')}`;
-        return `[Derivation: ${val.steps.length} steps]`;
-      }
-      case 'solve_trace':
-        return `${val.method === 'newton' ? "Newton's" : 'Bisection'} root \u2248 ${this.formatValue(val.root)} (${val.iterations.length} iterations)`;
-      case 'matrix':
-        return `[${val.data.map(row => '[' + row.map(cell => this.formatValue(cell)).join(', ') + ']').join(', ')}]`;
-      case 'tuple':
-        return `(${val.elements.map(e => this.formatValue(e)).join(', ')})`;
-      case 'list': {
-        if (val.elements.length > 8) {
-          const head = val.elements.slice(0, 4).map(e => this.formatValue(e)).join(', ');
-          return `[${head}, ... ${val.elements.length} items]`;
-        }
-        return `[${val.elements.map(e => this.formatValue(e)).join(', ')}]`;
-      }
-      case 'function':
-        return `[Function ${val.name}(${val.params.join(', ')})]`;
-      case 'lambda':
-        return `[Lambda (${val.params.join(', ')})]`;
-      case 'expression':
-        return val.text;
-      case 'dimension': {
-        const entries = Object.entries(val.degrees).map(([k, v]) => `${k}: ${v}`).join(', ');
-        return entries ? `{ ${entries} } (${val.interpretation})` : `0 (${val.interpretation})`;
-      }
-      case 'check_result': {
-        if (val.isValid) return `Verified: ${val.targetQuantity}`;
-        return `Not ${val.targetQuantity}: ${val.messageLines[1]?.replace(/^\d+\.\s*/, '') || 'Dimension mismatch'}`;
-      }
-      case 'kind':
-        return formatKind(val.kind);
-      case 'described':
-        return `[Described: ${val.namedOperation || (val as any).operation || 'unevaluable'}]`;
-      case 'set_value':
-        if (val.standardName) return val.standardName;
-        if (val.isInfinite) return `Set(infinite, of=${formatKind(val.elementKind)})`;
-        return `Set(${(val.elements ?? []).map(e => this.formatValue(e)).join(', ')})`;
-      case 'record': {
-        const fieldsStr = Object.entries(val.fields)
-          .map(([k, v]) => `${k}: ${this.formatValue(v)}`)
-          .join(', ');
-        return `${val.typeName}(${fieldsStr})`;
-      }
-      case 'record_constructor':
-        return `record ${val.name} { ${val.fieldNames.join(', ')} }`;
-      case 'quantity':
-        return `${this.formatValue(val.magnitude)} ${val.unit}`;
-      case 'module': {
-        const keys = Object.keys(val.exports);
-        if (keys.length === 0) return `module ${val.name}`;
-        return `module ${val.name} { ${keys.join(', ')} }`;
-      }
-      case 'trajectory':
-        return `Trajectory(${val.stateKind}, ${val.tStart}..${val.tEnd}, ${val.samples.length} samples)`;
-      case 'drawing_primitive':
-        return `Primitive(${val.primitive})`;
-      case 'scene':
-        return `Scene(${val.primitives.length} primitives)`;
-      default:
-        return String((val as any).value ?? val.type);
-    }
+    return formatValue(val);
   }
 
   private resolveViewForState(state: Value): Value | null {
@@ -2213,6 +2273,91 @@ export class DocumentEditor {
     this.pinnedAnimationPlayers.clear();
     this.mathPopover.dispose();
     this.state.dispose();
+  }
+}
+
+export function formatValue(val: Value): string {
+  switch (val.type) {
+    case 'rational':
+      if (val.d === 1n) return val.n.toString();
+      return `${val.n}/${val.d}`;
+    case 'float': {
+      const v = Math.abs(val.value) < 1e-12 ? 0 : val.value;
+      return Number.isInteger(v) ? v.toString() : v.toFixed(6).replace(/\.?0+$/, '');
+    }
+    case 'boolean':
+      return val.value ? 'true' : 'false';
+    case 'none':
+      return 'none';
+    case 'unknown':
+      return `unknown(${val.reason}${val.detail ? `, "${val.detail}"` : ''})`;
+    case 'claim':
+      return `[Claim ${(val as any).name}: ${(val as any).verified ? 'Verified' : 'Unverified'}]`;
+    case 'derivation': {
+      if (val.specialCase === 'no-solution') return 'no solution';
+      if (val.specialCase === 'all-real') return 'all real numbers (identity)';
+      if (val.roots.length === 1) return `${val.targetVar} = ${formatValue(val.roots[0])}`;
+      if (val.roots.length > 1) return `${val.targetVar} = ${val.roots.map(r => formatValue(r)).join(' or ')}`;
+      return `[Derivation: ${val.steps.length} steps]`;
+    }
+    case 'solve_trace':
+      return `${val.method === 'newton' ? "Newton's" : 'Bisection'} root \u2248 ${formatValue(val.root)} (${val.iterations.length} iterations)`;
+    case 'matrix':
+      return `[${val.data.map(row => '[' + row.map(cell => formatValue(cell)).join(', ') + ']').join(', ')}]`;
+    case 'tuple':
+      return `(${val.elements.map(e => formatValue(e)).join(', ')})`;
+    case 'list': {
+      if (val.elements.length > 8) {
+        const head = val.elements.slice(0, 4).map(e => formatValue(e)).join(', ');
+        return `[${head}, ... ${val.elements.length} items]`;
+      }
+      return `[${val.elements.map(e => formatValue(e)).join(', ')}]`;
+    }
+    case 'function':
+      return `[Function ${val.name}(${val.params.join(', ')})]`;
+    case 'lambda':
+      return `[Lambda (${val.params.join(', ')})]`;
+    case 'expression':
+      return val.text;
+    case 'dimension': {
+      const entries = Object.entries(val.degrees).map(([k, v]) => `${k}: ${v}`).join(', ');
+      return entries ? `{ ${entries} } (${val.interpretation})` : `0 (${val.interpretation})`;
+    }
+    case 'check_result': {
+      if (val.isValid) return `Verified: ${val.targetQuantity}`;
+      return `Not ${val.targetQuantity}: ${val.messageLines[1]?.replace(/^\d+\.\s*/, '') || 'Dimension mismatch'}`;
+    }
+    case 'kind':
+      return formatKind(val.kind);
+    case 'described':
+      return `[Described: ${val.namedOperation || (val as any).operation || 'unevaluable'}]`;
+    case 'set_value':
+      if (val.standardName) return val.standardName;
+      if (val.isInfinite) return `Set(infinite, of=${formatKind(val.elementKind)})`;
+      return `Set(${(val.elements ?? []).map(e => formatValue(e)).join(', ')})`;
+    case 'record': {
+      const fieldsStr = Object.entries(val.fields)
+        .map(([k, v]) => `${k}: ${formatValue(v)}`)
+        .join(', ');
+      return `${val.typeName}(${fieldsStr})`;
+    }
+    case 'record_constructor':
+      return `record ${val.name} { ${val.fieldNames.join(', ')} }`;
+    case 'quantity':
+      return `${formatValue(val.magnitude)} ${val.unit}`;
+    case 'module': {
+      const keys = Object.keys(val.exports);
+      if (keys.length === 0) return `module ${val.name}`;
+      return `module ${val.name} { ${keys.join(', ')} }`;
+    }
+    case 'trajectory':
+      return `Trajectory(${val.stateKind}, ${val.tStart}..${val.tEnd}, ${val.samples.length} samples)`;
+    case 'drawing_primitive':
+      return `Primitive(${val.primitive})`;
+    case 'scene':
+      return `Scene(${val.primitives.length} primitives)`;
+    default:
+      return String((val as any).value ?? val.type);
   }
 }
 
