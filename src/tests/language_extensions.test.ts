@@ -326,13 +326,10 @@ describe('Core Language Extensions & Problem Corpus Features', () => {
       }
     });
 
-    it('parses indefinite integral and evaluates to unknown(requires-unavailable-theory)', () => {
+    it('parses indefinite integral and evaluates to unreduced expression under reduction model', () => {
       const env = createInitialEnvironment();
       const res = evaluate('\u222b x^2 dx', env);
-      expect(res.value.type).toBe('unknown');
-      if (res.value.type === 'unknown') {
-        expect(res.value.reason).toBe('requires-unavailable-theory');
-      }
+      expect(res.value.type).toBe('expression');
     });
 
     it('evaluates definite integral accurately', () => {

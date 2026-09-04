@@ -393,7 +393,7 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
     expect(workPanel?.style.display).toBe('flex');
   });
 
-  it('renders plots, derivations, described cards, and scalars inline in Results gutter', () => {
+  it('renders plots, derivations, standing expressions, and scalars inline in Results gutter', () => {
     const docText = [
       'a := 15',
       'graph(sin(x), x in 0..10)',
@@ -429,10 +429,10 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
     expect(derivTree).toBeTruthy();
     expect(rows[2].textContent).toContain('Derivation');
 
-    // Line 4: Inline Described Card
-    const descPane = rows[3].querySelector('.visual-described-pane');
-    expect(descPane).toBeTruthy();
-    expect(rows[3].textContent).toContain('needs-parameterization');
+    // Line 4: Inline Standing Expression
+    const exprVal = rows[3].querySelector('.doc-result-value');
+    expect(exprVal).toBeTruthy();
+    expect(rows[3].textContent).toContain('\u222c');
   });
 
   it('supports pinning visual items into top pinned slot and unpinning', () => {

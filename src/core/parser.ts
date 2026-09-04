@@ -931,6 +931,21 @@ export class Parser {
         continue;
       }
 
+      if (token.type === 'DAGGER') {
+        left = {
+          type: 'MatrixPostfix',
+          op: 'adjoint',
+          target: left,
+          span: {
+            start: left.span.start,
+            end: token.span.end,
+            line: left.span.line,
+            col: left.span.col,
+          },
+        };
+        continue;
+      }
+
       if (token.type === 'CARET') {
         // Check for ^T
         if (this.peek().type === 'IDENTIFIER' && (this.peek().value === 'T' || this.peek().value === 't')) {
@@ -1082,11 +1097,12 @@ export class Parser {
         continue;
       }
 
-      if (token.type === 'ISO' || token.type === 'HOMOTOPY' || token.type === 'EQUIV') {
+      if (token.type === 'ISO' || token.type === 'HOMOTOPY' || token.type === 'EQUIV' || token.type === 'CONGRUENT') {
         const relMap: Record<string, EquivalenceNode['relation']> = {
           ISO: 'iso',
           HOMOTOPY: 'homotopy',
           EQUIV: 'equiv',
+          CONGRUENT: 'equiv',
         };
         left = {
           type: 'Equivalence',
@@ -2050,10 +2066,15 @@ export class Parser {
       qTok.type === 'FORALL' ? 'forall' : qTok.type === 'EXISTS_UNIQUE' ? 'exists_unique' : 'exists';
 
     const varTok = this.expect('IDENTIFIER', 'quantified variable');
+    let domain: ASTNode = {
+      type: 'Identifier',
+      name: 'R',
+      span: varTok.span,
+    };
     if (this.peek().type === 'SET_IN' || this.peek().type === 'IN') {
       this.advance();
+      domain = this.parseExpression(PREC_COMPARE);
     }
-    const domain = this.parseExpression(PREC_COMPARE);
     if (this.peek().type === 'COMMA' || this.peek().type === 'COLON' || this.peek().type === 'BAR_SEP') {
       this.advance();
     }
@@ -2576,6 +2597,9 @@ export class Parser {
 
   private canBeginImplicitMultiplication(left?: ASTNode): boolean {
     const token = this.peek();
+    if (token.type === 'NORM_BAR') {
+      return false;
+    }
     if (this.parsingIntegrand && this.isBinderToken(token)) {
       return false;
     }
@@ -2614,6 +2638,19 @@ export class Parser {
       type === 'SIGMA' ||
       type === 'PI_PROD' ||
       type === 'INTEGRAL' ||
+      type === 'CONTOUR_INTEGRAL' ||
+      type === 'DOUBLE_INTEGRAL' ||
+      type === 'TRIPLE_INTEGRAL' ||
+      type === 'NABLA' ||
+      type === 'LAPLACIAN' ||
+      type === 'HODGE_STAR' ||
+      type === 'FORALL' ||
+      type === 'EXISTS' ||
+      type === 'EXISTS_UNIQUE' ||
+      type === 'LANGLE' ||
+      type === 'NORM_BAR' ||
+      type === 'FLOOR_L' ||
+      type === 'CEIL_L' ||
       type === 'CLAIM'
     );
   }
@@ -2658,6 +2695,7 @@ export class Parser {
       case 'WEDGE':
         return PREC_EXPLICIT_MUL;
       case 'CARET':
+      case 'DAGGER':
         return PREC_POW;
       case 'CUSTOM_OP':
         return 45;
@@ -2677,7 +2715,6 @@ export class Parser {
       case 'PERCENT': return '%';
       case 'CARET': return '^';
       case 'EQ': return token.value === '==' ? '==' : '=';
-      case 'CONGRUENT': return '==';
       case 'NEQ': return '!=';
       case 'LT': return '<';
       case 'LTE': return '<=';

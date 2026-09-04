@@ -612,12 +612,12 @@ function findTopLevelFrac(str: string): number {
 }
 
 function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
-  const tokenRegex = /(\s+)|("[^"]*"|'[^']*')|(-?\b\d+\s*\/\s*\d+\b)|(\.\.)|(\b[a-zA-Z]_(?:\{[^}]*\}|\([^)]*\)|[a-zA-Z0-9]+))|(sqrt\((?:[^()]+|\([^()]*\))*\))|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(_(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b(?:sin|cos|tan|ln|exp|det|sqrt|pi|inf)\b)|(\b[a-zA-Z][a-zA-Z0-9_]*\b)|([()\[\],'{}:.])/g;
+  const tokenRegex = /(\s+)|("[^"]*"|'[^']*')|(-?\b\d+\s*\/\s*\d+\b)|(\.\.)|(\b[a-zA-Z]_(?:\{[^}]*\}|\([^)]*\)|[a-zA-Z0-9]+))|(sqrt\((?:[^()]+|\([^()]*\))*\))|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(_(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b(?:sin|cos|tan|ln|exp|det|sqrt|pi|inf)\b)|(\b[a-zA-Z][a-zA-Z0-9_]*\b)|([()\[\],'{}:.])|([\u2200-\u22FF\u2A00-\u2AFF\u00B7\u2020])/g;
 
   let out = '';
   let match: RegExpExecArray | null;
   while ((match = tokenRegex.exec(str)) !== null) {
-    const [, wsTok, strTok, fracTok, dotDotTok, subVarTok, sqrtTok, supTok, subTok, deltaTok, entityTok, relTok, binTok, numTok, fnTok, identTok, puncTok] = match;
+    const [, wsTok, strTok, fracTok, dotDotTok, subVarTok, sqrtTok, supTok, subTok, deltaTok, entityTok, relTok, binTok, numTok, fnTok, identTok, puncTok, mathSymTok] = match;
 
     if (wsTok) {
       out += wsTok;
@@ -694,6 +694,8 @@ function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
       else if (puncTok === '(' || puncTok === ')') out += `<span class="tm-paren">${escapeHtml(puncTok)}</span>`;
       else if (puncTok === '[' || puncTok === ']') out += `<span class="tm-bracket">${escapeHtml(puncTok)}</span>`;
       else out += escapeHtml(puncTok);
+    } else if (mathSymTok) {
+      out += `<span class="tm-math-sym">${escapeHtml(mathSymTok)}</span>`;
     }
   }
 
@@ -743,12 +745,12 @@ function renderCodeShapedLine(rawLine: string): string {
 }
 
 function renderMathShapedLine(rawLine: string, options: TypesetOptions): string {
-  const tokenRegex = /(\s+)|("[^"]*"|'[^']*')|(d\/\/d[a-zA-Z][a-zA-Z0-9_]*|\b\u2202\/\/\u2202[a-zA-Z][a-zA-Z0-9_]*)|(-?\b\d+\s*(?:\/|\/\/)\s*\d+\b)|(\.\.)|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|\/\/|\/|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b[a-zA-Z][a-zA-Z0-9_]*\b)|([()\[\],'{}:.])/g;
+  const tokenRegex = /(\s+)|("[^"]*"|'[^']*')|(d\/\/d[a-zA-Z][a-zA-Z0-9_]*|\b\u2202\/\/\u2202[a-zA-Z][a-zA-Z0-9_]*)|(-?\b\d+\s*(?:\/|\/\/)\s*\d+\b)|(\.\.)|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|\/\/|\/|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b[a-zA-Z][a-zA-Z0-9_]*\b)|([()\[\],'{}:.])|([\u2200-\u22FF\u2A00-\u2AFF\u00B7\u2020])/g;
 
   let out = '';
   let match: RegExpExecArray | null;
   while ((match = tokenRegex.exec(rawLine)) !== null) {
-    const [, wsTok, strTok, diffTok, fracTok, dotDotTok, supTok, deltaTok, entityTok, relTok, binTok, numTok, identTok, puncTok] = match;
+    const [, wsTok, strTok, diffTok, fracTok, dotDotTok, supTok, deltaTok, entityTok, relTok, binTok, numTok, identTok, puncTok, mathSymTok] = match;
 
     if (wsTok) {
       out += wsTok;
@@ -804,6 +806,8 @@ function renderMathShapedLine(rawLine: string, options: TypesetOptions): string 
       else if (puncTok === '(' || puncTok === ')') out += `<span class="tm-paren">${escapeHtml(puncTok)}</span>`;
       else if (puncTok === '[' || puncTok === ']') out += `<span class="tm-bracket">${escapeHtml(puncTok)}</span>`;
       else out += escapeHtml(puncTok);
+    } else if (mathSymTok) {
+      out += `<span class="tm-math-sym">${escapeHtml(mathSymTok)}</span>`;
     }
   }
   return out || escapeHtml(rawLine);

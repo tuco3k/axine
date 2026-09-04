@@ -1,5 +1,6 @@
 import { ASTNode, Environment, FunctionValue, LambdaValue, NumberLiteralNode } from './types';
 import { FLOAT_CONSTANTS } from './numeric/float';
+import { OPERATIONS, REAL_HELPERS_CODE } from './operations';
 
 export type NumericCompiledFn = (...args: number[]) => number;
 
@@ -18,34 +19,6 @@ export interface CompileFailure {
 }
 
 export type CompileResult = CompileSuccess | CompileFailure;
-
-// Built-in transcendental and mathematical function code generators
-const BUILTIN_MATH_GENERATORS: Record<string, (argExprs: string[]) => string | null> = {
-  sin: args => args.length === 1 ? `Math.sin(${args[0]})` : null,
-  cos: args => args.length === 1 ? `Math.cos(${args[0]})` : null,
-  tan: args => args.length === 1 ? `Math.tan(${args[0]})` : null,
-  asin: args => args.length === 1 ? `Math.asin(${args[0]})` : null,
-  acos: args => args.length === 1 ? `Math.acos(${args[0]})` : null,
-  atan: args => args.length === 1 ? `Math.atan(${args[0]})` : null,
-  sinh: args => args.length === 1 ? `Math.sinh(${args[0]})` : null,
-  cosh: args => args.length === 1 ? `Math.cosh(${args[0]})` : null,
-  tanh: args => args.length === 1 ? `Math.tanh(${args[0]})` : null,
-  exp: args => args.length === 1 ? `Math.exp(${args[0]})` : null,
-  ln: args => args.length === 1 ? `Math.log(${args[0]})` : null,
-  log: args => {
-    if (args.length === 1) return `Math.log10(${args[0]})`;
-    if (args.length === 2) return `(Math.log(${args[0]}) / Math.log(${args[1]}))`;
-    return null;
-  },
-  log2: args => args.length === 1 ? `Math.log2(${args[0]})` : null,
-  sqrt: args => args.length === 1 ? `Math.sqrt(${args[0]})` : null,
-  abs: args => args.length === 1 ? `Math.abs(${args[0]})` : null,
-  floor: args => args.length === 1 ? `Math.floor(${args[0]})` : null,
-  ceil: args => args.length === 1 ? `Math.ceil(${args[0]})` : null,
-  round: args => args.length === 1 ? `Math.round(${args[0]})` : null,
-  min: args => args.length >= 1 ? `Math.min(${args.join(', ')})` : null,
-  max: args => args.length >= 1 ? `Math.max(${args.join(', ')})` : null,
-};
 
 // Compilation cache keyed by AST node identity and joined variable list
 const nodeCache = new WeakMap<ASTNode, Map<string, CompileResult>>();
@@ -147,22 +120,36 @@ function compileNode(
       const operandRes = compileNode(node.operand, { ...ctx, depth: ctx.depth + 1 });
       if (!operandRes.success) return operandRes;
 
-      switch (node.op) {
-        case '-':
-          return { success: true, code: `(-(${operandRes.code}))` };
-        case '+':
-          return { success: true, code: `(+(${operandRes.code}))` };
-        case 'not':
-          return { success: true, code: `((${operandRes.code}) === 0 ? 1 : 0)` };
-        case '\u221a':
-          return { success: true, code: `Math.sqrt(${operandRes.code})` };
-        default:
-          return {
-            success: false,
-            uncompilableNode: 'UnaryOp',
-            reason: `Unsupported unary operator '${node.op}'`,
-          };
+      if (node.op === '-' && OPERATIONS['neg']) {
+        return { success: true, code: OPERATIONS['neg'].compileJS([operandRes.code]) };
       }
+      if (node.op === '+' && OPERATIONS['pos']) {
+        return { success: true, code: OPERATIONS['pos'].compileJS([operandRes.code]) };
+      }
+      if (node.op === 'not' && OPERATIONS['not']) {
+        return { success: true, code: OPERATIONS['not'].compileJS([operandRes.code]) };
+      }
+      if ((node.op === '\u221a' || node.op === 'sqrt') && OPERATIONS['sqrt']) {
+        return { success: true, code: OPERATIONS['sqrt'].compileJS([operandRes.code]) };
+      }
+      return {
+        success: false,
+        uncompilableNode: 'UnaryOp',
+        reason: `Unsupported unary operator '${node.op}'`,
+      };
+    }
+
+    case 'PostfixOp': {
+      const operandRes = compileNode(node.operand, { ...ctx, depth: ctx.depth + 1 });
+      if (!operandRes.success) return operandRes;
+      if (node.op in OPERATIONS && OPERATIONS[node.op].kind === 'postfix') {
+        return { success: true, code: OPERATIONS[node.op].compileJS([operandRes.code]) };
+      }
+      return {
+        success: false,
+        uncompilableNode: 'PostfixOp',
+        reason: `Unsupported postfix operator '${node.op}' in numeric compiled closure`,
+      };
     }
 
     case 'BinaryOp': {
@@ -184,30 +171,17 @@ function compileNode(
 
       const op = node.op;
 
-      // Arithmetic
-      if (op === '+') return { success: true, code: `((${leftRes.code}) + (${rightRes.code}))` };
-      if (op === '-') return { success: true, code: `((${leftRes.code}) - (${rightRes.code}))` };
-      if (op === '*') return { success: true, code: `((${leftRes.code}) * (${rightRes.code}))` };
-      if (op === '/' || op === '//') return { success: true, code: `((${leftRes.code}) / (${rightRes.code}))` };
-      if (op === '%') return { success: true, code: `((${leftRes.code}) % (${rightRes.code}))` };
-      if (op === '^') return { success: true, code: `Math.pow(${leftRes.code}, ${rightRes.code})` };
-
       // Top-level relation equation L = R compiles to difference (L - R) for zero level-set finding
       if (isTopLevel && op === '=') {
         return { success: true, code: `((${leftRes.code}) - (${rightRes.code}))` };
       }
 
-      // Comparisons (returning 1 for true, 0 for false)
-      if (op === '=' || op === '==') return { success: true, code: `((${leftRes.code}) === (${rightRes.code}) ? 1 : 0)` };
-      if (op === '!=' || op === '\u2260') return { success: true, code: `((${leftRes.code}) !== (${rightRes.code}) ? 1 : 0)` };
-      if (op === '<') return { success: true, code: `((${leftRes.code}) < (${rightRes.code}) ? 1 : 0)` };
-      if (op === '<=' || op === '\u2264') return { success: true, code: `((${leftRes.code}) <= (${rightRes.code}) ? 1 : 0)` };
-      if (op === '>') return { success: true, code: `((${leftRes.code}) > (${rightRes.code}) ? 1 : 0)` };
-      if (op === '>=' || op === '\u2265') return { success: true, code: `((${leftRes.code}) >= (${rightRes.code}) ? 1 : 0)` };
+      // Canonicalize symbols if needed
+      const canonicalOp = op === '\u2260' ? '!=' : op === '\u2264' ? '<=' : op === '\u2265' ? '>=' : op;
 
-      // Boolean logic
-      if (op === 'and') return { success: true, code: `(((${leftRes.code}) !== 0 && (${rightRes.code}) !== 0) ? 1 : 0)` };
-      if (op === 'or') return { success: true, code: `(((${leftRes.code}) !== 0 || (${rightRes.code}) !== 0) ? 1 : 0)` };
+      if (canonicalOp in OPERATIONS && OPERATIONS[canonicalOp].kind === 'binary') {
+        return { success: true, code: OPERATIONS[canonicalOp].compileJS([leftRes.code, rightRes.code]) };
+      }
 
       return {
         success: false,
@@ -287,12 +261,31 @@ function compileFunctionCall(callee: string, args: ASTNode[], ctx: CompilerConte
     argCodes.push(argRes.code);
   }
 
-  // 2. Check built-in mathematical functions
-  if (callee in BUILTIN_MATH_GENERATORS) {
-    const gen = BUILTIN_MATH_GENERATORS[callee];
-    const code = gen(argCodes);
-    if (code !== null) {
-      return { success: true, code };
+  // 2. Check built-in mathematical functions via OPERATIONS table
+  if (callee in OPERATIONS && OPERATIONS[callee].kind === 'function') {
+    const op = OPERATIONS[callee];
+    if (callee === 'log') {
+      if (argCodes.length === 1 || argCodes.length === 2) {
+        return { success: true, code: op.compileJS(argCodes) };
+      }
+      return {
+        success: false,
+        uncompilableNode: 'FunctionCall',
+        reason: `Built-in function '${callee}' expects 1 or 2 arguments, got ${argCodes.length}`,
+      };
+    }
+    if (callee === 'min' || callee === 'max') {
+      if (argCodes.length >= 1) {
+        return { success: true, code: op.compileJS(argCodes) };
+      }
+      return {
+        success: false,
+        uncompilableNode: 'FunctionCall',
+        reason: `Built-in function '${callee}' expects at least 1 argument, got ${argCodes.length}`,
+      };
+    }
+    if (argCodes.length === 1) {
+      return { success: true, code: op.compileJS(argCodes) };
     }
     return {
       success: false,
@@ -415,8 +408,9 @@ export function compileRelation(
   } else {
     try {
       const code = `return (${genResult.code});`;
+      const fullCode = `${REAL_HELPERS_CODE}\n${code}`;
       // Create new Function with positional parameter arguments
-      const fn = new Function(...sanitizedParams, code) as NumericCompiledFn;
+      const fn = new Function(...sanitizedParams, fullCode) as NumericCompiledFn;
 
       result = {
         success: true,

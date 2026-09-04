@@ -17,6 +17,7 @@ import { BigFraction } from './rational';
 import { createError } from '../errors';
 import { inferKindOfValue, formatKind } from '../kinds';
 import { formatAST } from '../formatter';
+import { realPow } from '../operations';
 import {
   matrixAdd,
   matrixDet,
@@ -719,6 +720,24 @@ export function powValues(a: Value, b: Value, span?: Span): Value {
     }
 
     if (fA.n < 0n) {
+      if (fB.d % 2n !== 0n) {
+        // Odd root of negative number: e.g. (-8)^(1/3) = -2
+        const absN = -fA.n;
+        const absD = fA.d;
+        const rootD = Number(fB.d);
+        const numRoot = Math.round(Math.pow(Number(absN), 1 / rootD));
+        const denRoot = Math.round(Math.pow(Number(absD), 1 / rootD));
+        if (BigInt(numRoot) ** fB.d === absN && BigInt(denRoot) ** fB.d === absD) {
+          const fracRoot = new BigFraction(BigInt(numRoot), BigInt(denRoot), span);
+          const res = fracRoot.powInt(fB.n, span);
+          const sign = (fB.n % 2n !== 0n) ? -1n : 1n;
+          return { type: 'rational', n: sign * res.n, d: res.d };
+        }
+        const floatVal = realPow(fA.toNumber(), fB.toNumber());
+        if (Number.isFinite(floatVal)) {
+          return { type: 'float', value: floatVal };
+        }
+      }
       const nodeA = valueToASTNode(a, span);
       const nodeB = valueToASTNode(b, span);
       const newAst: ASTNode = {
@@ -740,13 +759,17 @@ export function powValues(a: Value, b: Value, span?: Span): Value {
 
     const baseNum = fA.toNumber();
     const expNum = fB.toNumber();
-    return { type: 'float', value: Math.pow(baseNum, expNum) };
+    return { type: 'float', value: realPow(baseNum, expNum) };
   }
 
   const nA = valueToNumber(a, span);
   const nB = valueToNumber(b, span);
 
   if (nA < 0 && !Number.isInteger(nB)) {
+    const floatVal = realPow(nA, nB);
+    if (Number.isFinite(floatVal)) {
+      return { type: 'float', value: floatVal };
+    }
     const nodeA = valueToASTNode(a, span);
     const nodeB = valueToASTNode(b, span);
     const newAst: ASTNode = {
@@ -759,7 +782,7 @@ export function powValues(a: Value, b: Value, span?: Span): Value {
     return { type: 'expression', ast: newAst, text: formatAST(newAst) };
   }
 
-  return { type: 'float', value: Math.pow(nA, nB) };
+  return { type: 'float', value: realPow(nA, nB) };
 }
 
 export function compareValues(op: '=' | '==' | '!=' | '<' | '<=' | '>' | '>=', a: Value, b: Value, span?: Span): BooleanValue | UnknownValue | NoneValue | ExpressionValue {

@@ -18,7 +18,6 @@ import {
   UnknownValue,
   Value,
   StepValue,
-  ObstructionReason,
   RecordDefNode,
   RecordConstructorValue,
   QuantityValue,
@@ -541,6 +540,7 @@ export class Evaluator {
         }
         const operand = this.evalNode(node.operand, currentEnv);
         if (operand.type === 'unknown') return operand;
+        if (operand.type === 'expression') return { type: 'expression', ast: node, text: formatAST(node) };
         if (node.op === 'not') {
           return { type: 'boolean', value: !this.isTruthy(operand) };
         }
@@ -550,7 +550,7 @@ export class Evaluator {
         if (node.op === '-') {
           return subValues({ type: 'rational', n: 0n, d: 1n }, operand, node.span);
         }
-        if (node.op === '\u221a') {
+        if (node.op === '\u221a' || node.op === 'sqrt') {
           return applyBuiltin('sqrt', [operand], node.span);
         }
         throw createError(`Unknown unary operator '${node.op}'`, node.span);
@@ -632,6 +632,7 @@ export class Evaluator {
           case '*':
             return mulValues(left, right, node.span);
           case '/':
+          case '//':
             return divValues(left, right, node.span);
           case '%':
             return modValues(left, right, node.span);
@@ -645,8 +646,9 @@ export class Evaluator {
           case '>':
           case '>=':
             return compareValues(node.op, left, right, node.span);
+          default:
+            throw createError(`Unknown binary operator '${node.op}'`, node.span);
         }
-        throw createError(`Unknown binary operator '${node.op}'`, node.span);
       }
       case 'If': {
         const condVal = this.evalNode(node.condition, currentEnv);
@@ -674,6 +676,9 @@ export class Evaluator {
         if (node.op === 'superscript') {
           const exp = node.exponent ?? 2n;
           return powValues(operand, { type: 'rational', n: exp, d: 1n }, node.span);
+        }
+        if (node.op === '\u2020' || node.op === 'dagger' || node.op === 'transpose') {
+          return { type: 'expression', ast: node, text: formatAST(node) };
         }
         throw createError(`Unknown postfix operator '${node.op}'`, node.span);
       }
@@ -1134,73 +1139,16 @@ export class Evaluator {
         return this.evalNode(node.value, currentEnv);
       }
       case 'RegionIntegral': {
-        const regionName = node.region.type === 'Identifier' ? node.region.name : 'S';
-        const namedOp = `${node.integralType} integral over ${regionName}`;
-        const meaningText = `Integration of ${node.differential} differential form over oriented manifold ${regionName}`;
-        return {
-          type: 'described',
-          kind: { name: 'Scalar', subtype: 'real' },
-          operation: namedOp,
-          namedOperation: namedOp,
-          meaning: meaningText,
-          meaningInWords: meaningText,
-          requires: 'Parameterization of region and coordinate basis for vector field',
-          canDo: ['Symbolic integral expansion', 'Application of Stokes theorem or Divergence theorem'],
-          related: ['Stokes theorem', 'Divergence theorem', 'Line integral', 'Surface integral'],
-          obstruction: 'needs-parameterization',
-        };
+        return { type: 'expression', ast: node, text: formatAST(node) };
       }
       case 'NablaOp': {
-        const isVectorOut = node.op === 'grad' || node.op === 'curl';
-        const kind: MathKind = isVectorOut
-          ? { name: 'VectorField', domain: 'R^3', dimension: 3 }
-          : { name: 'ScalarField', domain: 'R^3' };
-        const namedOp = `Vector differential operator: ${node.op}`;
-        const meaningText = `Differential calculus operator ${node.op} applied to spatial field`;
-        return {
-          type: 'described',
-          kind,
-          operation: namedOp,
-          namedOperation: namedOp,
-          meaning: meaningText,
-          meaningInWords: meaningText,
-          requires: 'Coordinate chart / orthonormal basis and field functional definitions',
-          canDo: ['Coordinate expansion in Cartesian / Cylindrical / Spherical coordinates', 'Vector identities check'],
-          related: ['Gradient theorem', 'Curl theorem', 'Helmholtz decomposition', 'Laplace operator'],
-          obstruction: 'needs-basis',
-        };
+        return { type: 'expression', ast: node, text: formatAST(node) };
       }
       case 'DifferentialFormOp': {
-        const namedOp = `Exterior algebra operation: ${node.op}`;
-        const meaningText = `Differential graded algebra operation ${node.op} on smooth differential forms`;
-        return {
-          type: 'described',
-          kind: { name: 'DifferentialForm', degree: node.op === 'wedge' ? 2 : 1, manifold: 'R^3' },
-          operation: namedOp,
-          namedOperation: namedOp,
-          meaning: meaningText,
-          meaningInWords: meaningText,
-          requires: 'Basis differential 1-forms (dx, dy, dz) and smooth manifold metric',
-          canDo: ['Cartan calculus identities (d^2 = 0)', 'Hodge duality pairings', 'Poincaré lemma'],
-          related: ['Exterior derivative', 'Wedge product', 'Hodge star', 'de Rham cohomology'],
-          obstruction: 'needs-basis',
-        };
+        return { type: 'expression', ast: node, text: formatAST(node) };
       }
       case 'TensorOp': {
-        const namedOp = `Algebraic composition: ${node.op}`;
-        const meaningText = `${node.op === 'tensor' ? 'Tensor product' : 'Direct sum'} of vector spaces or modules`;
-        return {
-          type: 'described',
-          kind: { name: 'Group', structureName: 'Module', carrierSet: 'V', axioms: [] },
-          operation: namedOp,
-          namedOperation: namedOp,
-          meaning: meaningText,
-          meaningInWords: meaningText,
-          requires: 'Explicit basis generators and ring/field scalars',
-          canDo: ['Universal property factorization', 'Dimension arithmetic', 'Dual module pairing'],
-          related: ['Tensor algebra', 'Direct sum', 'Bilinear forms', 'Module theory'],
-          obstruction: 'needs-basis',
-        };
+        return { type: 'expression', ast: node, text: formatAST(node) };
       }
       case 'BracketOp': {
         if (node.op === 'norm') {
@@ -1222,20 +1170,9 @@ export class Evaluator {
               }
             }
           } catch {
-            // Unbound operand -> describe
+            // Unbound operand -> stands
           }
-          return {
-            type: 'described',
-            kind: { name: 'Scalar', subtype: 'real' },
-            operation: 'Norm',
-            namedOperation: 'Norm',
-            meaning: 'Geometric length / magnitude in inner product space',
-            meaningInWords: 'Geometric length / magnitude in inner product space',
-            requires: 'Inner product metric or vector coordinates',
-            canDo: ['Euclidean length computation', 'Triangle inequality verification'],
-            related: ['Inner product', 'Metric space', 'Cauchy-Schwarz inequality'],
-            obstruction: 'needs-basis',
-          };
+          return { type: 'expression', ast: node, text: formatAST(node) };
         }
         if (node.op === 'inner_product') {
           try {
@@ -1264,86 +1201,47 @@ export class Evaluator {
               throw e;
             }
           }
-          return {
-            type: 'described',
-            kind: { name: 'Scalar', subtype: 'real' },
-            operation: 'Inner product',
-            namedOperation: 'Inner product',
-            meaning: 'Bilinear positive-definite symmetric form \u27e8u, v\u27e9',
-            meaningInWords: 'Bilinear positive-definite symmetric form \u27e8u, v\u27e9',
-            requires: 'Coordinates in orthonormal basis or explicit metric tensor',
-            canDo: ['Orthogonality test', 'Gram-Schmidt orthogonalization'],
-            related: ['Hilbert space', 'Riesz representation', 'Dot product'],
-            obstruction: 'needs-basis',
-          };
+          return { type: 'expression', ast: node, text: formatAST(node) };
         }
         if (node.op === 'floor' || node.op === 'ceil' || node.op === 'abs') {
-          const val = this.evalNode(node.operands[0], currentEnv);
-          if (val.type === 'rational') {
-            if (node.op === 'abs') {
-              return { type: 'rational', n: val.n < 0n ? -val.n : val.n, d: val.d };
+          try {
+            const val = this.evalNode(node.operands[0], currentEnv);
+            if (val.type === 'rational') {
+              if (node.op === 'abs') {
+                return { type: 'rational', n: val.n < 0n ? -val.n : val.n, d: val.d };
+              }
+              const num = Number(val.n) / Number(val.d);
+              const res = node.op === 'floor' ? Math.floor(num) : Math.ceil(num);
+              return { type: 'rational', n: BigInt(res), d: 1n };
             }
-            const num = Number(val.n) / Number(val.d);
-            const res = node.op === 'floor' ? Math.floor(num) : Math.ceil(num);
-            return { type: 'rational', n: BigInt(res), d: 1n };
-          }
-          if (val.type === 'float') {
-            const res = node.op === 'abs' ? Math.abs(val.value) : node.op === 'floor' ? Math.floor(val.value) : Math.ceil(val.value);
-            return { type: 'float', value: res };
+            if (val.type === 'float') {
+              const res = node.op === 'abs' ? Math.abs(val.value) : node.op === 'floor' ? Math.floor(val.value) : Math.ceil(val.value);
+              return { type: 'float', value: res };
+            }
+          } catch {
+            return { type: 'expression', ast: node, text: formatAST(node) };
           }
         }
         if (node.op === 'card') {
-          const val = this.evalNode(node.operands[0], currentEnv);
-          if (val.type === 'tuple' || val.type === 'list') {
-            return { type: 'rational', n: BigInt(val.elements.length), d: 1n };
-          }
-          if (val.type === 'set_value') {
-            if (val.isInfinite) {
-              return {
-                type: 'described',
-                kind: { name: 'Scalar', subtype: 'natural' },
-                operation: 'Cardinality',
-                namedOperation: 'Cardinality',
-                meaning: 'Cardinality of infinite set',
-                meaningInWords: 'Cardinality of infinite set',
-                requires: 'Transfinite cardinal arithmetic (Aleph numbers)',
-                canDo: ['Bijection verification', 'Cantor diagonal argument'],
-                related: ['Aleph null', 'Continuum hypothesis', 'Countability'],
-                obstruction: 'infinite-object',
-              };
+          try {
+            const val = this.evalNode(node.operands[0], currentEnv);
+            if (val.type === 'tuple' || val.type === 'list') {
+              return { type: 'rational', n: BigInt(val.elements.length), d: 1n };
             }
-            return { type: 'rational', n: BigInt((val.elements ?? []).length), d: 1n };
+            if (val.type === 'set_value') {
+              if (val.isInfinite) {
+                return { type: 'expression', ast: node, text: formatAST(node) };
+              }
+              return { type: 'rational', n: BigInt((val.elements ?? []).length), d: 1n };
+            }
+          } catch {
+            return { type: 'expression', ast: node, text: formatAST(node) };
           }
         }
-        const opName = `Bracket operator: ${node.op}`;
-        return {
-          type: 'described',
-          kind: { name: 'Scalar', subtype: 'real' },
-          operation: opName,
-          namedOperation: opName,
-          meaning: `Operation ${node.op} on mathematical expressions`,
-          meaningInWords: `Operation ${node.op} on mathematical expressions`,
-          requires: 'Concrete evaluation context',
-          canDo: ['Symbolic manipulation'],
-          related: ['Order theory', 'Metric spaces'],
-          obstruction: 'needs-basis',
-        };
+        return { type: 'expression', ast: node, text: formatAST(node) };
       }
       case 'Quantifier': {
-        const opName = `Quantified assertion: ${node.quantifier}`;
-        const meaningText = `First-order logic predicate quantified over variable ${node.variable}`;
-        return {
-          type: 'described',
-          kind: { name: 'UnknownKind' },
-          operation: opName,
-          namedOperation: opName,
-          meaning: meaningText,
-          meaningInWords: meaningText,
-          requires: 'Automated theorem proving or finite domain enumeration',
-          canDo: ['Proof search', 'Counterexample synthesis in finite models', 'Skolemization'],
-          related: ['Predicate logic', 'Gödel completeness theorem', 'Model checking'],
-          obstruction: 'undecidable',
-        };
+        return { type: 'expression', ast: node, text: formatAST(node) };
       }
       case 'SetOp': {
         try {
@@ -1374,125 +1272,53 @@ export class Evaluator {
             }
           }
         } catch {
-          // Unbound operands -> describe
+          // Unbound operands -> stands
         }
-        const opName = `Set operation: ${node.op}`;
-        return {
-          type: 'described',
-          kind: { name: 'Set', elementKind: { name: 'Scalar', subtype: 'real' } },
-          operation: opName,
-          namedOperation: opName,
-          meaning: `Set theory operation ${node.op} on sets`,
-          meaningInWords: `Set theory operation ${node.op} on sets`,
-          requires: 'Explicit element membership decider or finite enumeration',
-          canDo: ['Venn diagram computation', 'Subset inclusion checks'],
-          related: ['Zermelo-Fraenkel set theory', 'Boolean algebra of sets'],
-          obstruction: 'needs-basis',
-        };
+        return { type: 'expression', ast: node, text: formatAST(node) };
       }
       case 'SetBuilder': {
-        const opName = `Set-builder comprehension`;
-        const meaningText = `Set specified by predicate condition over domain`;
-        return {
-          type: 'described',
-          kind: { name: 'Set', elementKind: { name: 'Scalar', subtype: 'real' } },
-          operation: opName,
-          namedOperation: opName,
-          meaning: meaningText,
-          meaningInWords: meaningText,
-          requires: 'Explicit element membership decision procedure or bounding constraint',
-          canDo: ['Predicate verification on candidates', 'Subset inclusion checks'],
-          related: ['Axiom of specification', 'ZFC set theory', 'Characteristic function'],
-          obstruction: 'infinite-object',
-        };
+        return { type: 'expression', ast: node, text: formatAST(node) };
       }
       case 'Equivalence': {
-        const opName = `Equivalence relation: ${node.relation}`;
-        const meaningText = `Mathematical relation asserting ${node.relation} between objects`;
-        return {
-          type: 'described',
-          kind: { name: 'UnknownKind' },
-          operation: opName,
-          namedOperation: opName,
-          meaning: meaningText,
-          meaningInWords: meaningText,
-          requires: 'Isomorphism morphism construction or homotopy path',
-          canDo: ['Category theoretic diagram chasing', 'Topological invariant computation'],
-          related: ['Category theory', 'Homotopy type theory', 'Equivalence classes'],
-          obstruction: 'requires-proof',
-        };
+        return { type: 'expression', ast: node, text: formatAST(node) };
       }
       case 'DecoratedIdentifier': {
         if (node.name in currentEnv) {
           return this.evalNode({ type: 'Identifier', name: node.name, span: node.span }, currentEnv);
         }
-        const opName = `Decorated variable: ${node.name} with ${node.decoration}`;
-        const meaningText = `Symbol ${node.name} equipped with mathematical diacritic ${node.decoration}`;
-        return {
-          type: 'described',
-          kind: { name: 'Scalar', subtype: 'real' },
-          operation: opName,
-          namedOperation: opName,
-          meaning: meaningText,
-          meaningInWords: meaningText,
-          requires: 'Variable binding or state definition',
-          canDo: ['Symbolic equation solving', 'Time-derivative ODE formulation'],
-          related: ['Complex conjugate', 'Unit vector', 'Time derivatives (Newton notation)'],
-          obstruction: 'needs-basis',
-        };
+        return { type: 'expression', ast: node, text: formatAST(node) };
       }
       case 'MatrixPostfix': {
-        const targetVal = this.evalNode(node.target, currentEnv);
-        if (targetVal.type === 'list' && targetVal.elements.length > 0 && targetVal.elements[0].type === 'list') {
-          // Matrix value
-          if (node.op === 'transpose') {
-            const rows = targetVal.elements.length;
-            const cols = (targetVal.elements[0] as any).elements.length;
-            const transposed: Value[] = [];
-            for (let j = 0; j < cols; j++) {
-              const row: Value[] = [];
-              for (let i = 0; i < rows; i++) {
-                row.push((targetVal.elements[i] as any).elements[j]);
+        try {
+          const targetVal = this.evalNode(node.target, currentEnv);
+          if (targetVal.type === 'list' && targetVal.elements.length > 0 && targetVal.elements[0].type === 'list') {
+            // Matrix value
+            if (node.op === 'transpose') {
+              const rows = targetVal.elements.length;
+              const cols = (targetVal.elements[0] as any).elements.length;
+              const transposed: Value[] = [];
+              for (let j = 0; j < cols; j++) {
+                const row: Value[] = [];
+                for (let i = 0; i < rows; i++) {
+                  row.push((targetVal.elements[i] as any).elements[j]);
+                }
+                transposed.push({ type: 'list', elements: row });
               }
-              transposed.push({ type: 'list', elements: row });
+              return { type: 'list', elements: transposed };
             }
-            return { type: 'list', elements: transposed };
           }
+        } catch {
+          // Unbound operand -> stands
         }
-        const opName = `Matrix ${node.op}`;
-        const meaningText = `Linear algebra unary operation ${node.op} on linear map or matrix`;
-        return {
-          type: 'described',
-          kind: { name: 'Matrix', rows: 3, cols: 3, baseField: 'R' },
-          operation: opName,
-          namedOperation: opName,
-          meaning: meaningText,
-          meaningInWords: meaningText,
-          requires: 'Matrix entries or linear operator representation',
-          canDo: ['Spectral decomposition', 'Determinant and rank computation', 'SVD'],
-          related: ['Transpose', 'Conjugate transpose', 'Matrix inversion', 'Adjoint operator'],
-          obstruction: 'needs-basis',
-        };
+        return { type: 'expression', ast: node, text: formatAST(node) };
       }
       case 'Probability': {
-        const opName = `Probability ${node.op}`;
-        const meaningText = `Measure theoretic probability calculation for ${node.op}`;
-        return {
-          type: 'described',
-          kind: { name: 'Scalar', subtype: 'real' },
-          operation: opName,
-          namedOperation: opName,
-          meaning: meaningText,
-          meaningInWords: meaningText,
-          requires: 'Probability space (Ω, Σ, P) and random variable distributions',
-          canDo: ['Bayes theorem inversion', 'Moment generating function analysis', 'Monte Carlo sampling'],
-          related: ['Probability measure', 'Expected value', 'Variance', 'Conditional probability'],
-          obstruction: 'needs-parameterization',
-        };
+        return { type: 'expression', ast: node, text: formatAST(node) };
+      }
+      default: {
+        return { type: 'expression', ast: node, text: formatAST(node) };
       }
     }
-
-    throw createError(`Cannot evaluate AST node`, (node as any).span);
   }
 
   private evalFunctionCall(node: FunctionCallNode, currentEnv: Environment): Value {
@@ -1894,24 +1720,7 @@ export class Evaluator {
     }
 
     if (callee === 'div' || callee === 'curl' || callee === 'grad' || callee === 'laplacian') {
-      const isVectorOut = callee === 'grad' || callee === 'curl';
-      const kind: MathKind = isVectorOut
-        ? { name: 'VectorField', domain: 'R^3', dimension: 3 }
-        : { name: 'ScalarField', domain: 'R^3' };
-      const namedOp = `Vector differential operator: ${callee}`;
-      const meaningText = `Differential calculus operator ${callee} applied to spatial field`;
-      return {
-        type: 'described',
-        kind,
-        operation: namedOp,
-        namedOperation: namedOp,
-        meaning: meaningText,
-        meaningInWords: meaningText,
-        requires: 'Coordinate chart / orthonormal basis and field functional definitions',
-        canDo: ['Coordinate expansion in Cartesian / Cylindrical / Spherical coordinates', 'Vector identities check'],
-        related: ['Gradient theorem', 'Curl theorem', 'Helmholtz decomposition', 'Laplace operator'],
-        obstruction: 'needs-basis',
-      };
+      return { type: 'expression', ast: node, text: formatAST(node) };
     }
     if (callee === 'norm' || callee === 'inner') {
       return this.evalNode(
@@ -2623,38 +2432,29 @@ export class Evaluator {
 
   private evalBigOp(node: BigOpNode, currentEnv: Environment): Value {
     if (node.op === 'integral' && (!node.start || !node.end)) {
-      const exprStr = formatAST(node.body);
-      const compact = exprStr.replace(/\s+/g, '');
-      const isGaussian = compact.includes('e^(-x') || compact.includes('exp(-x') || compact.includes('e^-x') || compact.includes('e^-(x');
-      const isSpecialNonElementary = compact.includes('sin(x)/x') || compact.includes('1/ln(x)') || compact.includes('cos(x)/x') || compact.includes('ln(ln(x))');
-      if (isGaussian || isSpecialNonElementary) {
-        const obstruction: ObstructionReason = isGaussian ? 'not-elementary' : 'unimplemented-technique';
-        const namedOp = `Indefinite integral of ${exprStr} d${node.variable}`;
-        const meaningText = `Antiderivative function \u222b ${exprStr} d${node.variable}`;
-        return {
-          type: 'described',
-          kind: { name: 'Scalar', subtype: 'real' },
-          operation: namedOp,
-          namedOperation: namedOp,
-          meaning: meaningText,
-          meaningInWords: meaningText,
-          requires: isGaussian
-            ? 'Non-elementary special function representation (Error function erf(x))'
-            : 'Special function antiderivative representation (Sine integral Si(x) or Logarithmic integral li(x))',
-          canDo: ['Definite numerical quadrature on intervals', 'Taylor series expansion'],
-          related: ['Liouville theorem', 'Risch algorithm', 'Special functions'],
-          obstruction,
-        };
-      }
-      return {
-        type: 'unknown',
-        reason: 'requires-unavailable-theory',
-        detail: 'Indefinite integration is unsupported; try a definite integral with bounds, e.g. \u222b_a^b f(x) dx',
-      };
+      return { type: 'expression', ast: node, text: formatAST(node) };
     }
 
-    const startNum = node.start ? valueToNumber(this.evalNode(node.start, currentEnv), node.start.span) : 0;
-    const endNum = node.end ? valueToNumber(this.evalNode(node.end, currentEnv), node.end.span) : 0;
+    let startNum = 0;
+    let endNum = 0;
+    try {
+      if (node.start) {
+        const sVal = this.evalNode(node.start, currentEnv);
+        if (sVal.type === 'expression') return { type: 'expression', ast: node, text: formatAST(node) };
+        startNum = valueToNumber(sVal, node.start.span);
+      }
+      if (node.end) {
+        const eVal = this.evalNode(node.end, currentEnv);
+        if (eVal.type === 'expression') return { type: 'expression', ast: node, text: formatAST(node) };
+        endNum = valueToNumber(eVal, node.end.span);
+      }
+    } catch {
+      return { type: 'expression', ast: node, text: formatAST(node) };
+    }
+    if (Number.isNaN(startNum) || Number.isNaN(endNum)) {
+      return { type: 'expression', ast: node, text: formatAST(node) };
+    }
+
     const varName = node.variable;
 
     if (node.op === 'sum') {
@@ -2666,7 +2466,7 @@ export class Evaluator {
         localEnv[varName] = iVal;
         const term = this.evalNode(node.body, localEnv);
         total = addValues(total, term, node.span);
-        if (total.type === 'unknown') return total;
+        if (total.type === 'unknown' || total.type === 'expression') return total;
       }
       return total;
     }
@@ -2680,7 +2480,7 @@ export class Evaluator {
         localEnv[varName] = iVal;
         const term = this.evalNode(node.body, localEnv);
         total = mulValues(total, term, node.span);
-        if (total.type === 'unknown') return total;
+        if (total.type === 'unknown' || total.type === 'expression') return total;
       }
       return total;
     }
@@ -2701,7 +2501,7 @@ export class Evaluator {
       return { type: 'float', value: (h / 3) * sum };
     }
 
-    return { type: 'none' };
+    return { type: 'expression', ast: node, text: formatAST(node) };
   }
 
   private evalLimit(node: LimitNode, currentEnv: Environment): Value {
@@ -3609,18 +3409,7 @@ export class Evaluator {
 
     if (node.expr.type === 'BinaryOp' && (node.expr.op === '/' || (node.expr as any).op === '//')) {
       if (node.expr.right.type === 'NumberLiteral' && (node.expr.right.raw === '0' || node.expr.right.raw === '0.0')) {
-        return {
-          type: 'described',
-          kind: { name: 'Scalar', subtype: 'real' },
-          operation: 'Differentiation of ill-posed fraction',
-          namedOperation: 'Differentiation of ill-posed fraction',
-          meaning: 'Differentiation attempted on expression with division by zero',
-          meaningInWords: 'Differentiation attempted on expression with division by zero',
-          requires: 'Well-defined smooth function on open domain',
-          canDo: ['Singularity classification', 'Regularization'],
-          related: ['Poles and residues', 'Distribution theory', 'Dirac delta'],
-          obstruction: 'ill-posed',
-        };
+        return { type: 'expression', ast: node, text: formatAST(node) };
       }
     }
 
