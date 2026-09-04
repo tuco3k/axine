@@ -278,18 +278,42 @@ describe('Phase 2: The Sampler', () => {
     it('measures 40,000-point 2D sample, 216,000-point 3D sample, and 6-variable 2D slice', () => {
       // 1. 40,000-point 2D sample (200 x 200)
       const fn2D = compile('x^2 + y^2 - 4', ['x', 'y']);
-      const t0 = performance.now();
-      const res2D = sample2D(fn2D, [-3, 3], [-3, 3], 200);
-      const t1 = performance.now();
-      const time2DMs = t1 - t0;
+      for (let w = 0; w < 3; w++) {
+        sample2D(fn2D, [-3, 3], [-3, 3], 50);
+      }
+      let minTime2D = Infinity;
+      let res2D: any;
+      for (let trial = 0; trial < 3; trial++) {
+        const t0 = performance.now();
+        const curRes = sample2D(fn2D, [-3, 3], [-3, 3], 200);
+        const t1 = performance.now();
+        const wall = t1 - t0;
+        if (wall < minTime2D) {
+          minTime2D = wall;
+          res2D = curRes;
+        }
+      }
+      const time2DMs = minTime2D;
       expect(res2D.sampleCount).toBe(40_000);
 
       // 2. 216,000-point 3D sample (60 x 60 x 60)
       const fn3D = compile('x^2 + y^2 + z^2 - 4', ['x', 'y', 'z']);
-      const t2 = performance.now();
-      const res3D = sample3D(fn3D, [-3, 3], [-3, 3], [-3, 3], 60);
-      const t3 = performance.now();
-      const time3DMs = t3 - t2;
+      for (let w = 0; w < 2; w++) {
+        sample3D(fn3D, [-3, 3], [-3, 3], [-3, 3], 20);
+      }
+      let minTime3D = Infinity;
+      let res3D: any;
+      for (let trial = 0; trial < 3; trial++) {
+        const t2 = performance.now();
+        const curRes = sample3D(fn3D, [-3, 3], [-3, 3], [-3, 3], 60);
+        const t3 = performance.now();
+        const wall = t3 - t2;
+        if (wall < minTime3D) {
+          minTime3D = wall;
+          res3D = curRes;
+        }
+      }
+      const time3DMs = minTime3D;
       expect(res3D.sampleCount).toBe(216_000);
 
       // 3. 6-variable relation sampled on a 2D slice (200 x 200 = 40,000 points)

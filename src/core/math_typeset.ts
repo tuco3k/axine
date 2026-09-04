@@ -612,7 +612,7 @@ function findTopLevelFrac(str: string): number {
 }
 
 function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
-  const tokenRegex = /(\s+)|("[^"]*"|'[^']*')|(-?\b\d+\s*\/\s*\d+\b)|(\.\.)|(\b[a-zA-Z]_(?:\{[^}]*\}|\([^)]*\)|[a-zA-Z0-9]+))|(sqrt\((?:[^()]+|\([^()]*\))*\))|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(_(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b(?:sin|cos|tan|ln|exp|det|sqrt|pi|inf)\b)|(\b[a-zA-Z][a-zA-Z0-9_]*\b)|([()\[\],'{}:.])|([\u2200-\u22FF\u2A00-\u2AFF\u00B7\u2020])/g;
+  const tokenRegex = /(\s+)|("[^"]*"|'[^']*')|(-?\b\d+\s*\/\s*\d+\b)|(\.\.)|(\b[a-zA-Z]_(?:\{[^}]*\}|\([^)]*\)|[a-zA-Z0-9]+))|(sqrt\((?:[^()]+|\([^()]*\))*\))|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(_(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b(?:sin|cos|tan|ln|exp|det|sqrt|pi|inf)\b)|(\b[a-zA-Z][a-zA-Z0-9_]*\b)|([()\[\],'{}:.])|([\u2200-\u23FF\u27C0-\u27EF\u2980-\u2AFF\u2016\u2020\u00B7\u2100-\u214F\u0370-\u03FF])/g;
 
   let out = '';
   let match: RegExpExecArray | null;
@@ -745,7 +745,7 @@ function renderCodeShapedLine(rawLine: string): string {
 }
 
 function renderMathShapedLine(rawLine: string, options: TypesetOptions): string {
-  const tokenRegex = /(\s+)|("[^"]*"|'[^']*')|(d\/\/d[a-zA-Z][a-zA-Z0-9_]*|\b\u2202\/\/\u2202[a-zA-Z][a-zA-Z0-9_]*)|(-?\b\d+\s*(?:\/|\/\/)\s*\d+\b)|(\.\.)|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|\/\/|\/|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b[a-zA-Z][a-zA-Z0-9_]*\b)|([()\[\],'{}:.])|([\u2200-\u22FF\u2A00-\u2AFF\u00B7\u2020])/g;
+  const tokenRegex = /(\s+)|("[^"]*"|'[^']*')|(d\/\/d[a-zA-Z][a-zA-Z0-9_]*|\b\u2202\/\/\u2202[a-zA-Z][a-zA-Z0-9_]*)|(-?\b\d+\s*(?:\/|\/\/)\s*\d+\b)|(\.\.)|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|\/\/|\/|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b[a-zA-Z][a-zA-Z0-9_]*\b)|([()\[\],'{}:.])|([\u2200-\u23FF\u27C0-\u27EF\u2980-\u2AFF\u2016\u2020\u00B7\u2100-\u214F\u0370-\u03FF])/g;
 
   let out = '';
   let match: RegExpExecArray | null;
