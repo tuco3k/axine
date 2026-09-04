@@ -751,6 +751,31 @@ export interface GraphSpec {
   }[];
 }
 
+export interface SpatialEntity {
+  coordinates: string[];
+  ast: ASTNode;
+  compiledFn: (...coords: number[]) => number;
+  dimension: number;
+  source?: string;
+  color?: string;
+}
+
+export interface SliceSelector {
+  displayAxes: [string, string] | [string, string, string];
+  fixedCoords: Record<string, number>;
+}
+
+export interface SpaceValue {
+  type: 'space';
+  coordinates: string[];
+  dimension: number;
+  entities: SpatialEntity[];
+  nestedSpaces?: SpaceValue[];
+  bindings?: Record<string, Value>;
+  resultVal?: Value;
+  span?: Span;
+}
+
 export interface GraphValue {
   type: 'graph';
   spec: GraphSpec;
@@ -1011,6 +1036,7 @@ export type Value =
   | QuantityValue
   | ModuleValue
   | TrajectoryValue
+  | SpaceValue
   | DrawingPrimitiveValue
   | SceneValue;
 

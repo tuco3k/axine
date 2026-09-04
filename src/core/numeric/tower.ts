@@ -509,7 +509,7 @@ export function powValues(a: Value, b: Value, span?: Span): Value {
   return { type: 'float', value: Math.pow(nA, nB) };
 }
 
-export function compareValues(op: '=' | '==' | '!=' | '<' | '<=' | '>' | '>=', a: Value, b: Value, span?: Span): BooleanValue | UnknownValue {
+export function compareValues(op: '=' | '==' | '!=' | '<' | '<=' | '>' | '>=', a: Value, b: Value, span?: Span): BooleanValue | UnknownValue | NoneValue {
   // Handle 'unknown' value equality (identity)
   if (op === '=' || op === '==') {
     if (a.type === 'unknown' && b.type === 'unknown') return { type: 'boolean', value: true };
@@ -529,10 +529,7 @@ export function compareValues(op: '=' | '==' | '!=' | '<' | '<=' | '>' | '>=', a
     if (op === '!=') {
       return { type: 'boolean', value: !(a.type === 'none' && b.type === 'none') };
     }
-    throw createError(`Cannot compare ordering with 'none'`, span ?? { start: 0, end: 0, line: 1, col: 1 }, {
-      expected: '= or != comparison with none',
-      suggestion: 'Use = none or != none',
-    });
+    return { type: 'none' };
   }
 
   // Handle boolean values

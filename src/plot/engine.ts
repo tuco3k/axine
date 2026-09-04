@@ -1,7 +1,12 @@
 import { Environment, GraphSpec } from '../core/types';
+import { SpaceViewport } from './space_viewport';
+import type { SpaceViewportOptions } from './space_viewport';
 import { Canvas2DPlotter } from './canvas2d';
 import { HeatmapPlotter } from './heatmap';
 import { Surface3DPlotter } from './surface3d';
+
+export { SpaceViewport };
+export type { SpaceViewportOptions };
 
 export class GraphPlotEngine {
   private container: HTMLElement;
@@ -9,6 +14,7 @@ export class GraphPlotEngine {
   private spec: GraphSpec;
   private env: Environment;
   private currentMode: 'heatmap' | 'surface' = 'heatmap';
+  private plotter?: Canvas2DPlotter | HeatmapPlotter | Surface3DPlotter;
 
   constructor(container: HTMLElement, spec: GraphSpec, env: Environment) {
     this.container = container;
@@ -22,7 +28,7 @@ export class GraphPlotEngine {
     }
 
     this.canvas = document.createElement('canvas');
-    this.canvas.className = 'plot-canvas';
+    this.canvas.className = 'plot-canvas doc-inline-canvas';
     this.container.appendChild(this.canvas);
 
     this.render();
@@ -60,14 +66,26 @@ export class GraphPlotEngine {
   }
 
   public render(): void {
+    if (this.plotter && typeof (this.plotter as any).dispose === 'function') {
+      (this.plotter as any).dispose();
+    }
+
     if (this.spec.dimensionality === 2) {
       if (this.currentMode === 'heatmap') {
-        new HeatmapPlotter(this.canvas, this.spec, this.env).render();
+        this.plotter = new HeatmapPlotter(this.canvas, this.spec, this.env);
       } else {
-        new Surface3DPlotter(this.canvas, this.spec, this.env).render();
+        this.plotter = new Surface3DPlotter(this.canvas, this.spec, this.env);
       }
     } else {
-      new Canvas2DPlotter(this.canvas, this.spec, this.env).render();
+      this.plotter = new Canvas2DPlotter(this.canvas, this.spec, this.env);
     }
+    this.plotter.render();
+  }
+
+  public dispose(): void {
+    if (this.plotter && typeof (this.plotter as any).dispose === 'function') {
+      (this.plotter as any).dispose();
+    }
+    this.container.innerHTML = '';
   }
 }

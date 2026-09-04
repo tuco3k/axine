@@ -1,6 +1,7 @@
 import { DocumentLineRecord } from './document_state';
 import { typesetMath, typesetSourceLine } from '../core/math_typeset';
-import { GraphSpec, GraphValue, Value, DerivationValue, DerivationStep } from '../core/types';
+import { GraphSpec, GraphValue, Value, DerivationValue, DerivationStep, SpaceValue } from '../core/types';
+import { sample2D, sample3D, sampleSlice, Contour2DResult } from '../core/sampler';
 import { formatValue } from './editor';
 
 export interface FrontMatterData {
@@ -238,6 +239,277 @@ export function renderSVGGraphToString(
   </svg>`;
 }
 
+/**
+ * Render a SpaceValue directly into an SVG string without requiring browser DOM APIs.
+ */
+export function renderSVGSpaceToString(
+  space: SpaceValue,
+  options?: { width?: number; height?: number; theme?: 'dark' | 'light' }
+): string {
+  const width = options?.width ?? 580;
+  const height = options?.height ?? 260;
+  const isDark = options?.theme !== 'light';
+
+  const bg = isDark ? '#0f172a' : '#ffffff';
+  const gridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
+  const axisColor = isDark ? 'rgba(255, 255, 255, 0.35)' : 'rgba(0, 0, 0, 0.35)';
+  const textColor = isDark ? '#94a3b8' : '#64748b';
+  const badgeBg = isDark ? 'rgba(56, 189, 248, 0.15)' : 'rgba(2, 132, 199, 0.1)';
+  const badgeBorder = isDark ? 'rgba(56, 189, 248, 0.3)' : 'rgba(2, 132, 199, 0.2)';
+  const badgeText = isDark ? '#38bdf8' : '#0284c7';
+
+  const dim = space.dimension;
+  const coords = space.coordinates.length > 0 ? space.coordinates : ['x', 'y'];
+  const badgeStr = `${dim}D Space (${coords.join(', ')})`;
+
+  // Dimension 1: Number Line
+  if (dim === 1) {
+    const varName = coords[0] || 'x';
+    const axisY = height / 2;
+    const minX = -10;
+    const maxX = 10;
+    const padX = 50;
+    const mapX = (x: number) => padX + ((x - minX) / (maxX - minX)) * (width - 2 * padX);
+
+    let ticksSvg = '';
+    for (let t = minX; t <= maxX; t += 2) {
+      const sx = mapX(t);
+      ticksSvg += `<line x1="${sx.toFixed(1)}" y1="${axisY - 6}" x2="${sx.toFixed(1)}" y2="${axisY + 6}" stroke="${axisColor}" stroke-width="1.5" />`;
+      ticksSvg += `<text x="${sx.toFixed(1)}" y="${axisY + 22}" fill="${textColor}" font-size="11" font-family="monospace" text-anchor="middle">${t}</text>`;
+    }
+
+    let entitiesSvg = '';
+    const resolution = 200;
+    const step = (maxX - minX) / resolution;
+    for (let eIdx = 0; eIdx < space.entities.length; eIdx++) {
+      const entity = space.entities[eIdx];
+      const color = entity.color || DEFAULT_SERIES_COLORS[eIdx % DEFAULT_SERIES_COLORS.length];
+      let prevVal: number | null = null;
+      for (let i = 0; i <= resolution; i++) {
+        const xVal = minX + i * step;
+        let v: number;
+        try {
+          v = entity.compiledFn(xVal);
+        } catch {
+          continue;
+        }
+        if (prevVal !== null && Math.sign(prevVal) !== Math.sign(v)) {
+          const zeroX = xVal - step * (v / (v - prevVal || 1));
+          const sx = mapX(zeroX);
+          entitiesSvg += `<circle cx="${sx.toFixed(1)}" cy="${axisY}" r="6" fill="${color}" stroke="#ffffff" stroke-width="2" />`;
+          entitiesSvg += `<text x="${sx.toFixed(1)}" y="${axisY - 14}" fill="${color}" font-size="11" font-weight="bold" font-family="monospace" text-anchor="middle">${zeroX.toFixed(2)}</text>`;
+        }
+        prevVal = v;
+      }
+    }
+
+    return `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" style="background:${bg}; border-radius: 6px;">
+        <rect x="12" y="12" width="${badgeStr.length * 7 + 16}" height="22" rx="4" fill="${badgeBg}" stroke="${badgeBorder}" stroke-width="1" />
+        <text x="20" y="27" fill="${badgeText}" font-size="11" font-weight="600" font-family="sans-serif">${badgeStr}</text>
+        <line x1="${padX}" y1="${axisY}" x2="${width - padX}" y2="${axisY}" stroke="${axisColor}" stroke-width="2" />
+        <text x="${width - padX + 15}" y="${axisY + 4}" fill="${textColor}" font-size="13" font-weight="bold" font-family="sans-serif">${varName}</text>
+        ${ticksSvg}
+        ${entitiesSvg}
+      </svg>
+    `.trim();
+  }
+
+  // Dimension 3: 3D Wireframe / Shaded Triangles
+  if (dim === 3) {
+    const minX = -3, maxX = 3;
+    const minY = -3, maxY = 3;
+    const minZ = -3, maxZ = 3;
+    const cx = width / 2;
+    const cy = height / 2 + 10;
+    const scale = Math.min(width, height) / 10;
+
+    const angleX = Math.PI / 6;
+    const angleZ = Math.PI / 4;
+    const cosX = Math.cos(angleX), sinX = Math.sin(angleX);
+    const cosZ = Math.cos(angleZ), sinZ = Math.sin(angleZ);
+
+    const project3D = (x: number, y: number, z: number): [number, number, number] => {
+      const rx = x * cosZ - y * sinZ;
+      const ry = x * sinZ + y * cosZ;
+      const rz = z;
+      const rx2 = rx;
+      const ry2 = ry * cosX - rz * sinX;
+      const rz2 = ry * sinX + rz * cosX;
+      return [cx + rx2 * scale, cy - ry2 * scale, rz2];
+    };
+
+    const corners: [number, number, number][] = [
+      [minX, minY, minZ], [maxX, minY, minZ], [maxX, maxY, minZ], [minX, maxY, minZ],
+      [minX, minY, maxZ], [maxX, minY, maxZ], [maxX, maxY, maxZ], [minX, maxY, maxZ],
+    ];
+    const edges: [number, number][] = [
+      [0, 1], [1, 2], [2, 3], [3, 0],
+      [4, 5], [5, 6], [6, 7], [7, 4],
+      [0, 4], [1, 5], [2, 6], [3, 7],
+    ];
+
+    let boxSvg = '';
+    for (const [i1, i2] of edges) {
+      const p1 = project3D(corners[i1][0], corners[i1][1], corners[i1][2]);
+      const p2 = project3D(corners[i2][0], corners[i2][1], corners[i2][2]);
+      boxSvg += `<line x1="${p1[0].toFixed(1)}" y1="${p1[1].toFixed(1)}" x2="${p2[0].toFixed(1)}" y2="${p2[1].toFixed(1)}" stroke="${gridColor}" stroke-width="1" />`;
+    }
+
+    const origin = project3D(0, 0, 0);
+    const axX = project3D(maxX * 1.2, 0, 0);
+    const axY = project3D(0, maxY * 1.2, 0);
+    const axZ = project3D(0, 0, maxZ * 1.2);
+
+    let axesSvg = `
+      <line x1="${origin[0].toFixed(1)}" y1="${origin[1].toFixed(1)}" x2="${axX[0].toFixed(1)}" y2="${axX[1].toFixed(1)}" stroke="#ef4444" stroke-width="1.5" />
+      <text x="${(axX[0] + 4).toFixed(1)}" y="${axX[1].toFixed(1)}" fill="#ef4444" font-size="11" font-weight="bold" font-family="sans-serif">${coords[0] || 'x'}</text>
+      <line x1="${origin[0].toFixed(1)}" y1="${origin[1].toFixed(1)}" x2="${axY[0].toFixed(1)}" y2="${axY[1].toFixed(1)}" stroke="#10b981" stroke-width="1.5" />
+      <text x="${(axY[0] + 4).toFixed(1)}" y="${axY[1].toFixed(1)}" fill="#10b981" font-size="11" font-weight="bold" font-family="sans-serif">${coords[1] || 'y'}</text>
+      <line x1="${origin[0].toFixed(1)}" y1="${origin[1].toFixed(1)}" x2="${axZ[0].toFixed(1)}" y2="${axZ[1].toFixed(1)}" stroke="#38bdf8" stroke-width="1.5" />
+      <text x="${(axZ[0] + 4).toFixed(1)}" y="${axZ[1].toFixed(1)}" fill="#38bdf8" font-size="11" font-weight="bold" font-family="sans-serif">${coords[2] || 'z'}</text>
+    `;
+
+    let meshSvg = '';
+    const resolution3D = 24;
+    for (let eIdx = 0; eIdx < space.entities.length; eIdx++) {
+      const entity = space.entities[eIdx];
+      const mesh = sample3D(entity.compiledFn, [minX, maxX], [minY, maxY], [minZ, maxZ], resolution3D);
+      const projected = mesh.vertices.map(v => project3D(v[0], v[1], v[2]));
+
+      interface SvgTri {
+        p0: [number, number, number];
+        p1: [number, number, number];
+        p2: [number, number, number];
+        depth: number;
+        normalZ: number;
+      }
+      const tris: SvgTri[] = [];
+      for (const tri of mesh.triangles) {
+        const p0 = projected[tri[0]];
+        const p1 = projected[tri[1]];
+        const p2 = projected[tri[2]];
+        const depth = (p0[2] + p1[2] + p2[2]) / 3;
+        const ax = p1[0] - p0[0], ay = p1[1] - p0[1];
+        const bx = p2[0] - p0[0], by = p2[1] - p0[1];
+        const normalZ = ax * by - ay * bx;
+        tris.push({ p0, p1, p2, depth, normalZ });
+      }
+
+      tris.sort((a, b) => a.depth - b.depth);
+
+      for (const t of tris) {
+        const lighting = Math.min(1.0, Math.max(0.3, Math.abs(t.normalZ) * 0.00015 + 0.4));
+        const r = Math.round(56 * lighting);
+        const g = Math.round(189 * lighting);
+        const b = Math.round(248 * lighting);
+        const fill = `rgb(${r}, ${g}, ${b})`;
+        const pts = `${t.p0[0].toFixed(1)},${t.p0[1].toFixed(1)} ${t.p1[0].toFixed(1)},${t.p1[1].toFixed(1)} ${t.p2[0].toFixed(1)},${t.p2[1].toFixed(1)}`;
+        meshSvg += `<polygon points="${pts}" fill="${fill}" stroke="rgba(${r+20}, ${g+20}, ${b+20}, 0.5)" stroke-width="0.5" />`;
+      }
+    }
+
+    return `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" style="background:${bg}; border-radius: 6px;">
+        <rect x="12" y="12" width="${badgeStr.length * 7 + 16}" height="22" rx="4" fill="${badgeBg}" stroke="${badgeBorder}" stroke-width="1" />
+        <text x="20" y="27" fill="${badgeText}" font-size="11" font-weight="600" font-family="sans-serif">${badgeStr}</text>
+        ${boxSvg}
+        ${axesSvg}
+        ${meshSvg}
+      </svg>
+    `.trim();
+  }
+
+  // Dimension 2 or >= 4: 2D Cartesian Slice
+  const displayAxes: [string, string] = coords.length >= 2 ? [coords[0], coords[1]] : ['x', 'y'];
+  const fixedCoords: Record<string, number> = {};
+  for (const c of coords) {
+    if (!displayAxes.includes(c)) {
+      fixedCoords[c] = 0;
+    }
+  }
+
+  const minX = -5, maxX = 5;
+  const minY = -5, maxY = 5;
+  const padLeft = 40, padRight = 20, padTop = 30, padBottom = 30;
+  const plotW = width - padLeft - padRight;
+  const plotH = height - padTop - padBottom;
+
+  const mapX = (x: number) => padLeft + ((x - minX) / (maxX - minX)) * plotW;
+  const mapY = (y: number) => padTop + plotH - ((y - minY) / (maxY - minY)) * plotH;
+
+  const axisXPos = mapX(0);
+  const axisYPos = mapY(0);
+
+  let gridSvg = '';
+  for (let gx = -4; gx <= 4; gx += 2) {
+    const sx = mapX(gx);
+    gridSvg += `<line x1="${sx.toFixed(1)}" y1="${padTop}" x2="${sx.toFixed(1)}" y2="${padTop + plotH}" stroke="${gridColor}" stroke-width="1" />`;
+    gridSvg += `<text x="${sx.toFixed(1)}" y="${padTop + plotH + 15}" fill="${textColor}" font-size="10" font-family="monospace" text-anchor="middle">${gx}</text>`;
+  }
+  for (let gy = -4; gy <= 4; gy += 2) {
+    const sy = mapY(gy);
+    gridSvg += `<line x1="${padLeft}" y1="${sy.toFixed(1)}" x2="${padLeft + plotW}" y2="${sy.toFixed(1)}" stroke="${gridColor}" stroke-width="1" />`;
+    gridSvg += `<text x="${padLeft - 8}" y="${(sy + 3).toFixed(1)}" fill="${textColor}" font-size="10" font-family="monospace" text-anchor="end">${gy}</text>`;
+  }
+
+  let axesSvg = `
+    <line x1="${padLeft}" y1="${axisYPos.toFixed(1)}" x2="${padLeft + plotW}" y2="${axisYPos.toFixed(1)}" stroke="${axisColor}" stroke-width="1.5" />
+    <line x1="${axisXPos.toFixed(1)}" y1="${padTop}" x2="${axisXPos.toFixed(1)}" y2="${padTop + plotH}" stroke="${axisColor}" stroke-width="1.5" />
+    <text x="${(padLeft + plotW - 6).toFixed(1)}" y="${(axisYPos - 8).toFixed(1)}" fill="${textColor}" font-size="12" font-weight="bold" font-family="sans-serif" text-anchor="end">${displayAxes[0]}</text>
+    <text x="${(axisXPos + 8).toFixed(1)}" y="${(padTop + 14).toFixed(1)}" fill="${textColor}" font-size="12" font-weight="bold" font-family="sans-serif">${displayAxes[1]}</text>
+  `;
+
+  let contoursSvg = '';
+  const resolution = 140;
+
+  for (let eIdx = 0; eIdx < space.entities.length; eIdx++) {
+    const entity = space.entities[eIdx];
+    const color = entity.color || DEFAULT_SERIES_COLORS[eIdx % DEFAULT_SERIES_COLORS.length];
+
+    let contourResult: Contour2DResult;
+    if (dim >= 4 || (dim === 3)) {
+      contourResult = sampleSlice(
+        entity.compiledFn,
+        space.coordinates,
+        displayAxes,
+        fixedCoords,
+        [[minX, maxX], [minY, maxY]],
+        resolution
+      ) as Contour2DResult;
+    } else if (entity.coordinates.length === 1) {
+      const var0 = entity.coordinates[0];
+      const isAxisX = var0 === displayAxes[0];
+      const sliceFn = isAxisX
+        ? (x: number, _y: number) => entity.compiledFn(x)
+        : (_x: number, y: number) => entity.compiledFn(y);
+      contourResult = sample2D(sliceFn, [minX, maxX], [minY, maxY], resolution);
+    } else {
+      contourResult = sample2D(entity.compiledFn, [minX, maxX], [minY, maxY], resolution);
+    }
+
+    for (const poly of contourResult.polylines) {
+      if (poly.points.length < 2) continue;
+      let pathD = `M ${mapX(poly.points[0][0]).toFixed(1)} ${mapY(poly.points[0][1]).toFixed(1)}`;
+      for (let i = 1; i < poly.points.length; i++) {
+        pathD += ` L ${mapX(poly.points[i][0]).toFixed(1)} ${mapY(poly.points[i][1]).toFixed(1)}`;
+      }
+      if (poly.closed) pathD += ' Z';
+      contoursSvg += `<path d="${pathD}" fill="none" stroke="${color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />`;
+    }
+  }
+
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" style="background:${bg}; border-radius: 6px;">
+      <rect x="12" y="12" width="${badgeStr.length * 7 + 16}" height="22" rx="4" fill="${badgeBg}" stroke="${badgeBorder}" stroke-width="1" />
+      <text x="20" y="27" fill="${badgeText}" font-size="11" font-weight="600" font-family="sans-serif">${badgeStr}</text>
+      ${gridSvg}
+      ${axesSvg}
+      ${contoursSvg}
+    </svg>
+  `.trim();
+}
+
 function renderDerivationExportHtml(val: Value, options: { inlineFractions?: boolean, collapsed?: boolean }): string {
   if (options.collapsed) {
     const formatted = formatValue(val);
@@ -444,7 +716,22 @@ export function exportToHtml(
     let isPlot = false;
 
     if (rec?.result) {
-      if (rec.result.type === 'graph') {
+      if (rec.result.type === 'space') {
+        const spaceVal = rec.result as SpaceValue;
+        if (spaceVal.dimension === 0 && spaceVal.entities.length === 0 && (!spaceVal.nestedSpaces || spaceVal.nestedSpaces.length === 0)) {
+          if (spaceVal.resultVal && spaceVal.resultVal.type !== 'none') {
+            const formatted = formatValue(spaceVal.resultVal);
+            const typeset = typesetMath(formatted, { displayMode: false, inlineFractions: true });
+            resultHtml = `<div class="export-math-result">${typeset}</div>`;
+          } else {
+            resultHtml = `<div class="export-math-result">none</div>`;
+          }
+        } else {
+          isPlot = true;
+          const svgStr = renderSVGSpaceToString(spaceVal, { width: 580, height: 260, theme });
+          resultHtml = `<div class="export-plot-container">${svgStr}</div>`;
+        }
+      } else if (rec.result.type === 'graph') {
         isPlot = true;
         const spec = (rec.result as GraphValue).spec;
         const svgStr = renderSVGGraphToString(spec, { width: 580, height: 260, theme });
@@ -960,7 +1247,21 @@ export function exportToMarkdown(
     codeBlockLines.push(raw);
 
     if (rec?.result) {
-      if (rec.result.type === 'graph') {
+      if (rec.result.type === 'space') {
+        const spaceVal = rec.result as SpaceValue;
+        if (spaceVal.dimension === 0 && spaceVal.entities.length === 0 && (!spaceVal.nestedSpaces || spaceVal.nestedSpaces.length === 0)) {
+          if (spaceVal.resultVal && spaceVal.resultVal.type !== 'none') {
+            const formatted = formatValue(spaceVal.resultVal);
+            codeBlockLines.push(`// => ${formatted}`);
+          }
+        } else {
+          flushCodeBlock();
+          const plotFilename = `space_L${idx + 1}.svg`;
+          const svgStr = renderSVGSpaceToString(spaceVal, { width: 600, height: 300, theme: 'light' });
+          plotImages.push({ filename: plotFilename, svgString: svgStr });
+          md += `![Space Line ${idx + 1}](plots/${plotFilename})\n\n`;
+        }
+      } else if (rec.result.type === 'graph') {
         flushCodeBlock();
         const spec = (rec.result as GraphValue).spec;
         const plotFilename = `plot_L${idx + 1}.svg`;

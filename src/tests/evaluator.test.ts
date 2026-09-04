@@ -30,46 +30,47 @@ describe('Evaluator', () => {
     expect(value).toEqual({ type: 'float', value: 0 });
   });
 
-  it('evaluates graph with 1 free variable', () => {
+  it('evaluates relation with 1 free variable into 1D space', () => {
     const env = createInitialEnvironment();
-    const { value } = evaluate('graph(2x)', env);
-    expect(value.type).toBe('graph');
-    if (value.type === 'graph') {
-      expect(value.spec.dimensionality).toBe(1);
-      expect(value.spec.series.length).toBe(1);
-      expect(value.spec.domain.var).toBe('x');
+    const { value } = evaluate('x = 0', env);
+    expect(value.type).toBe('space');
+    if (value.type === 'space') {
+      expect(value.dimension).toBe(1);
+      expect(value.coordinates).toEqual(['x']);
+      expect(value.entities.length).toBe(1);
     }
   });
 
-  it('evaluates graph with multiple free variables across series and generates note', () => {
+  it('evaluates relation with 2 free variables into 2D space', () => {
     const env = createInitialEnvironment();
-    const { value } = evaluate('graph(2x, y, 9z)', env);
-    expect(value.type).toBe('graph');
-    if (value.type === 'graph') {
-      expect(value.spec.dimensionality).toBe(1);
-      expect(value.spec.series.length).toBe(3);
-      expect(value.spec.sharedAxisNote).toContain('Variables');
-      expect(value.spec.sharedAxisNote).toContain('were each mapped to the same horizontal axis');
+    const { value } = evaluate('y = x^2', env);
+    expect(value.type).toBe('space');
+    if (value.type === 'space') {
+      expect(value.dimension).toBe(2);
+      expect(value.coordinates).toEqual(['x', 'y']);
+      expect(value.entities.length).toBe(1);
     }
   });
 
-  it('evaluates graph with 2 free variables into heatmap/surface', () => {
+  it('evaluates 3D relation into 3D space', () => {
     const env = createInitialEnvironment();
-    const { value } = evaluate('graph(sin x cos y)', env);
-    expect(value.type).toBe('graph');
-    if (value.type === 'graph') {
-      expect(value.spec.dimensionality).toBe(2);
-      expect(value.spec.kind).toBe('heatmap');
+    const { value } = evaluate('x^2 + y^2 + z^2 = 4', env);
+    expect(value.type).toBe('space');
+    if (value.type === 'space') {
+      expect(value.dimension).toBe(3);
+      expect(value.coordinates).toEqual(['x', 'y', 'z']);
+      expect(value.entities.length).toBe(1);
     }
   });
 
-  it('evaluates parametric graph', () => {
+  it('evaluates block with 4 free variables into 4D space', () => {
     const env = createInitialEnvironment();
-    const { value } = evaluate('graph((cos t, sin t), t in 0..tau)', env);
-    expect(value.type).toBe('graph');
-    if (value.type === 'graph') {
-      expect(value.spec.kind).toBe('parametric');
-      expect(value.spec.domain.var).toBe('t');
+    const { value } = evaluate('{\n  y = x^2\n  v = u^2\n}', env);
+    expect(value.type).toBe('space');
+    if (value.type === 'space') {
+      expect(value.dimension).toBe(4);
+      expect(value.coordinates).toEqual(['u', 'v', 'x', 'y']);
+      expect(value.entities.length).toBe(2);
     }
   });
 

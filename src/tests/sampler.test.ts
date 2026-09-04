@@ -296,6 +296,10 @@ describe('Phase 2: The Sampler', () => {
       // Space: R^6, Equation: x^2 + y^2 + z^2 + u^2 + v^2 + w^2 = 16
       // Sliced at: z = 1, u = 1, v = 1, w = 1 -> effective 2D slice: x^2 + y^2 = 12 (radius = sqrt(12) ~ 3.464)
       const fn6D = compile('x^2 + y^2 + z^2 + u^2 + v^2 + w^2 - 16', ['x', 'y', 'z', 'u', 'v', 'w']);
+      // Warm up slice generator and JIT
+      for (let w = 0; w < 5; w++) {
+        sampleSlice(fn6D, ['x', 'y', 'z', 'u', 'v', 'w'], ['x', 'y'], { z: 1, u: 1, v: 1, w: 1 }, [[-5, 5], [-5, 5]], 200);
+      }
       const t4 = performance.now();
       const resSlice = sampleSlice(
         fn6D,

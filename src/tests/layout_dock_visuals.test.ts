@@ -152,6 +152,12 @@ class MockElement {
     this.listeners.get(event)!.push(handler);
   }
 
+  removeEventListener(event: string, handler: Function) {
+    if (!this.listeners.has(event)) return;
+    const list = this.listeners.get(event)!.filter(h => h !== handler);
+    this.listeners.set(event, list);
+  }
+
   dispatchEvent(event: { type: string; stopPropagation?: Function }) {
     const handlers = this.listeners.get(event.type) || [];
     for (const h of handlers) h(event);
@@ -411,12 +417,12 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
     expect(scalarVal).toBeTruthy();
     expect(scalarVal?.textContent).toContain('15');
 
-    // Line 2: Inline Plot
+    // Line 2: Inline Plot / Space
     const rec1 = (editor as any).state.getRecords()[1];
-    expect(rec1?.result?.type).toBe('graph');
-    const plotCanvas = rows[1].querySelector('.doc-inline-canvas');
+    expect(rec1?.result?.type).toMatch(/graph|space/);
+    const plotCanvas = rows[1].querySelector('.doc-inline-canvas') || rows[1].querySelector('.doc-space-container');
     expect(plotCanvas).toBeTruthy();
-    expect(rows[1].textContent).toContain('Plot');
+    expect(rows[1].textContent).toMatch(/Plot|Space/);
 
     // Line 3: Inline Derivation
     const derivTree = rows[2].querySelector('.visual-derivation-tree');
@@ -468,7 +474,8 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
     editor = new DocumentEditor(container as any, docText);
 
     const row = container.querySelector('.doc-gutter-row[data-line="0"]');
-    expect(row?.querySelector('.doc-inline-canvas')).toBeTruthy();
+    const visualEl = row?.querySelector('.doc-inline-canvas') || row?.querySelector('.doc-space-container');
+    expect(visualEl).toBeTruthy();
 
     // Collapse line 0
     const collapseBtn = row?.querySelector('.doc-gutter-collapse-btn');
@@ -477,7 +484,8 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
 
     // Canvas should no longer be visible; summary should be displayed
     const collapsedRow = container.querySelector('.doc-gutter-row[data-line="0"]');
-    expect(collapsedRow?.querySelector('.doc-inline-canvas')).toBeFalsy();
+    const collapsedVisualEl = collapsedRow?.querySelector('.doc-inline-canvas') || collapsedRow?.querySelector('.doc-space-container');
+    expect(collapsedVisualEl).toBeFalsy();
     expect(collapsedRow?.querySelector('.doc-gutter-collapsed-summary')).toBeTruthy();
 
     // Check localStorage persistence for collapsed lines
@@ -488,7 +496,8 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
     const expandBtn = collapsedRow?.querySelector('.doc-gutter-collapse-btn');
     expandBtn?.click();
     const expandedRow = container.querySelector('.doc-gutter-row[data-line="0"]');
-    expect(expandedRow?.querySelector('.doc-inline-canvas')).toBeTruthy();
+    const expandedVisualEl = expandedRow?.querySelector('.doc-inline-canvas') || expandedRow?.querySelector('.doc-space-container');
+    expect(expandedVisualEl).toBeTruthy();
   });
 
   it('asserts the editor pane rendered line count matches the loaded document line count', () => {

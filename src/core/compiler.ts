@@ -443,3 +443,5 @@ export function compileRelation(
 
   return result;
 }
+
+export const compileAST = compileRelation;

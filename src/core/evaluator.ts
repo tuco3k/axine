@@ -4,15 +4,12 @@ import {
   BudgetLimits,
   ClaimNode,
   ClaimValue,
-  CurveSeries,
   DEFAULT_BUDGET_LIMITS,
   DiffNode,
   LimitNode,
   Environment,
   FunctionCallNode,
   FunctionValue,
-  GraphSpec,
-  GraphValue,
   LambdaValue,
   ListValue,
   RangeNode,
@@ -33,7 +30,11 @@ import {
   TrajectoryValue,
   TrajectorySample,
   DEFAULT_INVOKED_FUEL,
+  SpaceValue,
+  SpatialEntity,
+  BlockNode,
 } from './types';
+import { compileAST } from './compiler';
 import { BUNDLED_DOCUMENTS } from '../document/virtual_documents';
 import { getTrajectoryStateAt, mapTrajectory, exportTrajectory } from './simulation/trajectory';
 import { classifyODE, solveODERK4 } from './simulation/ode_solver';
@@ -360,8 +361,88 @@ export class Evaluator {
   }
 
   public evaluate(ast: ASTNode): Value {
-    analyzeAST(ast, this.env, new Set(), this.source);
+    if (ast.type === 'Block') {
+      return this.evalBlockAsSpace(ast, this.env);
+    }
+
+    const analysis = analyzeAST(ast, this.env, new Set(), this.source);
+    const isRelation = ast.type === 'BinaryOp' && ['=', '==', '!=', '<', '<=', '>', '>='].includes(ast.op);
+
+    if (isRelation && !analysis.isDefinition && analysis.freeVariables.length > 0) {
+      const coordinates = [...analysis.freeVariables].sort((a, b) => a.localeCompare(b));
+      const comp = compileAST(ast, coordinates, this.env);
+      if (comp.success) {
+        const entity: SpatialEntity = {
+          coordinates,
+          ast,
+          compiledFn: comp.fn,
+          dimension: coordinates.length,
+          source: formatAST(ast),
+        };
+        return {
+          type: 'space',
+          coordinates,
+          dimension: coordinates.length,
+          entities: [entity],
+          span: ast.span,
+        };
+      }
+    }
+
     return this.evalNode(ast, this.env);
+  }
+
+  private evalBlockAsSpace(node: BlockNode, currentEnv: Environment): Value {
+    const blockEnv: Environment = Object.create(currentEnv);
+    const analysis = analyzeAST(node, currentEnv, new Set(), this.source);
+    const coordinates = [...analysis.freeVariables].sort((a, b) => a.localeCompare(b));
+    const entities: SpatialEntity[] = [];
+    const nestedSpaces: SpaceValue[] = [];
+    let lastVal: Value = { type: 'none' };
+
+    for (const stmt of node.statements) {
+      this.budget.check('block', stmt.span);
+      if (stmt.type === 'Block') {
+        const childVal = this.evalBlockAsSpace(stmt, blockEnv);
+        if (childVal.type === 'space') {
+          nestedSpaces.push(childVal);
+        }
+        lastVal = childVal;
+      } else if (stmt.type === 'Assignment' || stmt.type === 'GlobalAssignment' || stmt.type === 'FunctionDef') {
+        lastVal = this.evalNode(stmt, blockEnv);
+      } else {
+        const stmtAnalysis = analyzeAST(stmt, blockEnv, new Set(), this.source);
+        if (stmtAnalysis.freeVariables.length > 0 && coordinates.length > 0) {
+          const comp = compileAST(stmt, coordinates, blockEnv);
+          if (comp.success) {
+            entities.push({
+              coordinates,
+              ast: stmt,
+              compiledFn: comp.fn,
+              dimension: coordinates.length,
+              source: formatAST(stmt),
+            });
+            continue;
+          }
+        }
+        lastVal = this.evalNode(stmt, blockEnv);
+      }
+    }
+
+    if (coordinates.length > 0 || entities.length > 0 || nestedSpaces.length > 0) {
+      return {
+        type: 'space',
+        coordinates,
+        dimension: coordinates.length,
+        entities,
+        nestedSpaces: nestedSpaces.length > 0 ? nestedSpaces : undefined,
+        bindings: blockEnv,
+        resultVal: lastVal,
+        span: node.span,
+      };
+    }
+
+    return lastVal;
   }
 
   private evalNode(node: ASTNode, currentEnv: Environment): Value {
@@ -523,13 +604,31 @@ export class Evaluator {
           });
         }
 
-        const left = this.evalNode(node.left, currentEnv);
+        let left: Value;
+        try {
+          left = this.evalNode(node.left, currentEnv);
+        } catch (err: any) {
+          if (['=', '==', '!=', '<', '<=', '>', '>='].includes(node.op)) {
+            return { type: 'none' };
+          }
+          throw err;
+        }
+
         if (node.op === '*' && (left.type === 'function' || left.type === 'lambda')) {
           const right = this.evalNode(node.right, currentEnv);
           const args = right.type === 'tuple' ? right.elements : [right];
           return this.invokeCallable(left, args, node.span);
         }
-        const right = this.evalNode(node.right, currentEnv);
+
+        let right: Value;
+        try {
+          right = this.evalNode(node.right, currentEnv);
+        } catch (err: any) {
+          if (['=', '==', '!=', '<', '<=', '>', '>='].includes(node.op)) {
+            return { type: 'none' };
+          }
+          throw err;
+        }
 
         switch (node.op) {
           case '+':
@@ -668,13 +767,7 @@ export class Evaluator {
         return fnVal;
       }
       case 'Block': {
-        const blockEnv: Environment = Object.create(currentEnv);
-        let lastVal: Value = { type: 'none' };
-        for (const stmt of node.statements) {
-          this.budget.check('block', stmt.span);
-          lastVal = this.evalNode(stmt, blockEnv);
-        }
-        return lastVal;
+        return this.evalBlockAsSpace(node, currentEnv);
       }
       case 'BigOp': {
         return this.evalBigOp(node, currentEnv);
@@ -891,12 +984,12 @@ export class Evaluator {
         return this.evalImport(node, currentEnv);
       }
       case 'ViewDecl': {
-        const viewFnVal = this.evalNode(node.viewFunction, currentEnv);
-        this.declaredViews.set(node.targetType, viewFnVal);
-        if (!(currentEnv as any).__views__) (currentEnv as any).__views__ = new Map();
-        (currentEnv as any).__views__.set(node.targetType, viewFnVal);
-        if (!(this.env as any).__views__) (this.env as any).__views__ = new Map();
-        (this.env as any).__views__.set(node.targetType, viewFnVal);
+        const viewBody = this.evalNode(node.viewFunction, currentEnv);
+        this.declaredViews.set(node.targetType, viewBody);
+        if (!(currentEnv as any).__views__) {
+          (currentEnv as any).__views__ = new Map();
+        }
+        (currentEnv as any).__views__.set(node.targetType, viewBody);
         return { type: 'none' };
       }
       case 'Index': {
@@ -1412,7 +1505,73 @@ export class Evaluator {
     const callee = node.callee;
 
     if (callee === 'graph') {
-      return this.evalGraph(node, currentEnv);
+      if (node.args.length === 0) return { type: 'none' };
+      const targetExpr = node.args[0];
+      if (targetExpr.type === 'NumberLiteral') {
+        throw createError('graph() requires at least one free variable to plot against, found 0', node.span);
+      }
+      const analysis = analyzeAST(targetExpr, currentEnv, new Set(), this.source);
+      if (analysis.freeVariables.length > 0) {
+        const coordinates = [...analysis.freeVariables].sort((a, b) => a.localeCompare(b));
+        const comp = compileAST(targetExpr, coordinates, currentEnv);
+        if (comp.success) {
+          return {
+            type: 'space',
+            coordinates,
+            dimension: coordinates.length,
+            entities: [{
+              coordinates,
+              ast: targetExpr,
+              compiledFn: comp.fn,
+              dimension: coordinates.length,
+              source: formatAST(targetExpr),
+            }],
+            span: node.span,
+          };
+        }
+      }
+
+      // Check for list or trajectory series (e.g. graph(E_euler_t, E_verlet_t, E_rk4_t) or graph(y_pos))
+      try {
+        const seriesList: any[] = [];
+        for (let i = 0; i < node.args.length; i++) {
+          const val = this.evalNode(node.args[i], currentEnv);
+          if (val.type === 'list') {
+            const pts = (val as any).elements.map((el: any, idx: number) => {
+              const y = el.type === 'rational' ? Number(el.n) / Number(el.d) : el.type === 'float' ? el.value : 0;
+              return { x: idx, y, valid: true };
+            });
+            seriesList.push({
+              label: formatAST(node.args[i]),
+              color: ['#38bdf8', '#f43f5e', '#10b981', '#f59e0b'][i % 4],
+              explicitPoints: pts,
+            });
+          } else if (val.type === 'trajectory') {
+            const pts = (val as any).samples.map((s: any) => {
+              const y = s.state?.type === 'rational' ? Number(s.state.n) / Number(s.state.d) : s.state?.type === 'float' ? s.state.value : typeof s.state === 'number' ? s.state : 0;
+              return { x: s.t, y, valid: true };
+            });
+            seriesList.push({
+              label: formatAST(node.args[i]),
+              color: ['#38bdf8', '#f43f5e', '#10b981', '#f59e0b'][i % 4],
+              explicitPoints: pts,
+            });
+          }
+        }
+        if (seriesList.length > 0) {
+          return {
+            type: 'graph',
+            spec: {
+              kind: seriesList.length > 1 ? 'multi_curve' : 'curve',
+              dimensionality: 1,
+              series: seriesList,
+              domain: { var: 't', min: 0, max: seriesList[0].explicitPoints.length - 1, isDefault: true },
+            },
+          };
+        }
+      } catch {}
+
+      return { type: 'none' };
     }
 
     if (callee === 'kindof') {
@@ -3855,256 +4014,7 @@ export class Evaluator {
     }
   }
 
-  private evalGraph(node: FunctionCallNode, currentEnv: Environment): GraphValue {
-    if (node.args.length === 0) {
-      throw createError('graph() requires at least one argument', node.span);
-    }
 
-    // Check if plotting an orbit or list directly: graph(orbit)
-    if (node.args.length === 1) {
-      const firstArg = node.args[0];
-      if (firstArg.type === 'Identifier' && firstArg.name in currentEnv) {
-        const val = currentEnv[firstArg.name];
-        if (val.type === 'list') {
-          const orbitNums: number[] = val.elements.map(e => valueToNumber(e, firstArg.span));
-          const spec: GraphSpec = {
-            dimensionality: 1,
-            kind: 'orbit',
-            series: [{ expr: firstArg, variable: 'index', label: firstArg.name }],
-            domain: { var: 'index', min: 0, max: orbitNums.length - 1, isDefault: false },
-            orbitData: orbitNums,
-          };
-          return { type: 'graph', spec };
-        }
-      }
-    }
-
-    const exprArgs: ASTNode[] = [];
-    const ranges: RangeNode[] = [];
-
-    for (const arg of node.args) {
-      if (arg.type === 'Range') {
-        ranges.push(arg);
-      } else {
-        exprArgs.push(arg);
-      }
-    }
-
-    // Trajectory plots: graph(traj1, traj2, ...)
-    const evaluatedArgs = exprArgs.map(expr => {
-      try {
-        return this.evalNode(expr, currentEnv);
-      } catch {
-        return null;
-      }
-    });
-
-    if (evaluatedArgs.length > 0 && evaluatedArgs.every(v => v && v.type === 'trajectory')) {
-      const trajs = evaluatedArgs as TrajectoryValue[];
-      let tMin = Infinity;
-      let tMax = -Infinity;
-      const seriesList: CurveSeries[] = [];
-
-      for (let i = 0; i < trajs.length; i++) {
-        const traj = trajs[i];
-        if (traj.tStart < tMin) tMin = traj.tStart;
-        if (traj.tEnd > tMax) tMax = traj.tEnd;
-        const pts = traj.samples.map(s => {
-          const y = valueToNumber(s.state);
-          return { x: s.t, y, valid: isFinite(y) };
-        });
-        seriesList.push({
-          expr: exprArgs[i],
-          variable: 't',
-          label: formatAST(exprArgs[i]),
-          explicitPoints: pts,
-        });
-      }
-
-      const spec: GraphSpec = {
-        dimensionality: 1,
-        kind: seriesList.length > 1 ? 'multi_curve' : 'curve',
-        series: seriesList,
-        domain: { var: 't', min: isFinite(tMin) ? tMin : 0, max: isFinite(tMax) ? tMax : 10, isDefault: false },
-      };
-      return { type: 'graph', spec };
-    }
-
-    // Parametric plot: graph((cos t, sin t), t in 0..tau) or graph((x(u,v), y(u,v), z(u,v)), u in 0..tau, v in 0..tau)
-    if (exprArgs.length === 1 && exprArgs[0].type === 'Tuple') {
-      const tuple = exprArgs[0];
-      if (tuple.elements.length === 3) {
-        const xExpr = tuple.elements[0];
-        const yExpr = tuple.elements[1];
-        const zExpr = tuple.elements[2];
-        const rU = ranges[0];
-        const rV = ranges[1];
-        const paramU = rU ? rU.variable : 'u';
-        const paramV = rV ? rV.variable : 'v';
-        const minU = rU ? valueToNumber(this.evalNode(rU.start, currentEnv), rU.start.span) : 0;
-        const maxU = rU ? valueToNumber(this.evalNode(rU.end, currentEnv), rU.end.span) : 2 * Math.PI;
-        const minV = rV ? valueToNumber(this.evalNode(rV.start, currentEnv), rV.start.span) : 0;
-        const maxV = rV ? valueToNumber(this.evalNode(rV.end, currentEnv), rV.end.span) : 2 * Math.PI;
-
-        const spec: GraphSpec = {
-          dimensionality: 2,
-          kind: 'parametric',
-          series: [],
-          domain: { var: paramU, min: minU, max: maxU, isDefault: !rU },
-          domainY: { var: paramV, min: minV, max: maxV, isDefault: !rV },
-          parametric: {
-            xExpr,
-            yExpr,
-            zExpr,
-            param: paramU,
-            paramV,
-            min: minU,
-            max: maxU,
-            minV,
-            maxV,
-          },
-        };
-        return { type: 'graph', spec };
-      }
-
-      if (tuple.elements.length !== 2) {
-        throw createError('Parametric curve requires a 2D tuple (x(t), y(t)) or 3D tuple (x(u,v), y(u,v), z(u,v))', tuple.span);
-      }
-
-      const xExpr = tuple.elements[0];
-      const yExpr = tuple.elements[1];
-      const xAnalysis = analyzeAST(xExpr, currentEnv, new Set(), this.source);
-      const yAnalysis = analyzeAST(yExpr, currentEnv, new Set(), this.source);
-      const paramVars = Array.from(new Set([...xAnalysis.freeVariables, ...yAnalysis.freeVariables]));
-
-      let paramName = paramVars[0] ?? 't';
-      let min = 0;
-      let max = 2 * Math.PI;
-      let isDefault = true;
-      let step: number | undefined;
-
-      if (ranges.length > 0) {
-        const r = ranges[0];
-        paramName = r.variable;
-        min = valueToNumber(this.evalNode(r.start, currentEnv), r.start.span);
-        max = valueToNumber(this.evalNode(r.end, currentEnv), r.end.span);
-        if (r.step) step = valueToNumber(this.evalNode(r.step, currentEnv), r.step.span);
-        isDefault = false;
-      }
-
-      const spec: GraphSpec = {
-        dimensionality: 1,
-        kind: 'parametric',
-        series: [],
-        domain: { var: paramName, min, max, isDefault, step },
-        parametric: { xExpr, yExpr, param: paramName, min, max, step },
-      };
-
-      return { type: 'graph', spec };
-    }
-
-    const domainVarSet = new Set<string>();
-    const allFreeVars = new Set<string>();
-    for (const r of ranges) {
-      domainVarSet.add(r.variable);
-      allFreeVars.add(r.variable);
-    }
-
-    const seriesList: CurveSeries[] = [];
-
-    for (const expr of exprArgs) {
-      const analysis = analyzeAST(expr, currentEnv, domainVarSet, this.source);
-      for (const fv of analysis.freeVariables) {
-        allFreeVars.add(fv);
-      }
-      const label = formatAST(expr);
-      seriesList.push({
-        expr,
-        variable: Array.from(domainVarSet)[0] ?? analysis.freeVariables[0] ?? 'x',
-        label,
-      });
-    }
-
-    const freeVarArray = Array.from(allFreeVars);
-
-    if (freeVarArray.length === 0) {
-      throw createError('graph() requires at least one free variable to plot against, found 0', node.span);
-    }
-
-    // 2D scalar field heatmap / surface: graph(sin x cos y) or graph(s1, s2, x in ..., y in ...)
-    if (exprArgs.length >= 1 && freeVarArray.length === 2) {
-      const varX = freeVarArray[0];
-      const varY = freeVarArray[1];
-      let xMin = -10, xMax = 10, yMin = -10, yMax = 10;
-      let isDefaultX = true, isDefaultY = true;
-
-      for (const r of ranges) {
-        if (r.variable === varX) {
-          xMin = valueToNumber(this.evalNode(r.start, currentEnv), r.start.span);
-          xMax = valueToNumber(this.evalNode(r.end, currentEnv), r.end.span);
-          isDefaultX = false;
-        } else if (r.variable === varY) {
-          yMin = valueToNumber(this.evalNode(r.start, currentEnv), r.start.span);
-          yMax = valueToNumber(this.evalNode(r.end, currentEnv), r.end.span);
-          isDefaultY = false;
-        }
-      }
-
-      const surfaces = exprArgs.map(expr => ({
-        expr,
-        varX,
-        varY,
-        xMin,
-        xMax,
-        yMin,
-        yMax,
-      }));
-
-      const spec: GraphSpec = {
-        dimensionality: 2,
-        kind: exprArgs.length === 1 ? 'heatmap' : 'surface',
-        series: seriesList,
-        domain: { var: varX, min: xMin, max: xMax, isDefault: isDefaultX },
-        domainY: { var: varY, min: yMin, max: yMax, isDefault: isDefaultY },
-        surface: surfaces[0],
-        surfaces,
-      };
-
-      return { type: 'graph', spec };
-    }
-
-    // 1D curves
-    let domainVar = freeVarArray[0];
-    let min = -10;
-    let max = 10;
-    let isDefault = true;
-    let step: number | undefined;
-
-    if (ranges.length > 0) {
-      const r = ranges[0];
-      domainVar = r.variable;
-      min = valueToNumber(this.evalNode(r.start, currentEnv), r.start.span);
-      max = valueToNumber(this.evalNode(r.end, currentEnv), r.end.span);
-      if (r.step) step = valueToNumber(this.evalNode(r.step, currentEnv), r.step.span);
-      isDefault = false;
-    }
-
-    let sharedAxisNote: string | undefined;
-    if (freeVarArray.length > 1) {
-      const varNames = freeVarArray.map(v => `'${v}'`).join(', ');
-      sharedAxisNote = `Note: Variables ${varNames} were each mapped to the same horizontal axis.`;
-    }
-
-    const spec: GraphSpec = {
-      dimensionality: 1,
-      kind: seriesList.length > 1 ? 'multi_curve' : 'curve',
-      series: seriesList,
-      domain: { var: domainVar, min, max, isDefault, step },
-      sharedAxisNote,
-    };
-
-    return { type: 'graph', spec };
-  }
 
   private isTruthy(val: Value): boolean {
     if (val.type === 'boolean') return val.value;

@@ -54,31 +54,6 @@ function normalizeRange(r: RangeInput): Range1D {
   return { min: Math.min(r.min, r.max), max: Math.max(r.min, r.max) };
 }
 
-/**
- * Linearly interpolates the zero-crossing point along a 2D segment between p1 and p2.
- */
-function interpolateZero2D(
-  p1: Point2D,
-  p2: Point2D,
-  v1: number,
-  v2: number
-): Point2D {
-  if (!Number.isFinite(v1) || !Number.isFinite(v2)) {
-    return [(p1[0] + p2[0]) * 0.5, (p1[1] + p2[1]) * 0.5];
-  }
-  const denom = v2 - v1;
-  if (Math.abs(denom) < 1e-15) {
-    return [(p1[0] + p2[0]) * 0.5, (p1[1] + p2[1]) * 0.5];
-  }
-  let t = -v1 / denom;
-  if (!Number.isFinite(t)) t = 0.5;
-  t = Math.max(0, Math.min(1, t));
-  return [
-    p1[0] + t * (p2[0] - p1[0]),
-    p1[1] + t * (p2[1] - p1[1]),
-  ];
-}
-
 // Global edge direction offset mapping for fast Int32Array caching in 3D:
 // [di, dj, dk, dir] where dir is 0 (X), 1 (Y), 2 (Z)
 const CUBE_EDGE_DIR_MAP: ReadonlyArray<readonly [number, number, number, number]> = [
@@ -189,16 +164,26 @@ export function sample2D(
       const caseIndex = b0 | (b1 << 1) | (b2 << 2) | (b3 << 3);
       if (caseIndex === 0 || caseIndex === 15) continue;
 
-      const p0: Point2D = [x0, y0];
-      const p1: Point2D = [x1, y0];
-      const p2: Point2D = [x1, y1];
-      const p3: Point2D = [x0, y1];
-
-      // Edge intersection points
-      const e0 = () => interpolateZero2D(p0, p1, v0, v1);
-      const e1 = () => interpolateZero2D(p1, p2, v1, v2);
-      const e2 = () => interpolateZero2D(p3, p2, v3, v2);
-      const e3 = () => interpolateZero2D(p0, p3, v0, v3);
+      const e0 = (): Point2D => {
+        let t = Number.isFinite(v0) && Number.isFinite(v1) && Math.abs(v1 - v0) > 1e-15 ? -v0 / (v1 - v0) : 0.5;
+        t = Math.max(0, Math.min(1, Number.isFinite(t) ? t : 0.5));
+        return [x0 + t * dx, y0];
+      };
+      const e1 = (): Point2D => {
+        let t = Number.isFinite(v1) && Number.isFinite(v2) && Math.abs(v2 - v1) > 1e-15 ? -v1 / (v2 - v1) : 0.5;
+        t = Math.max(0, Math.min(1, Number.isFinite(t) ? t : 0.5));
+        return [x1, y0 + t * dy];
+      };
+      const e2 = (): Point2D => {
+        let t = Number.isFinite(v3) && Number.isFinite(v2) && Math.abs(v2 - v3) > 1e-15 ? -v3 / (v2 - v3) : 0.5;
+        t = Math.max(0, Math.min(1, Number.isFinite(t) ? t : 0.5));
+        return [x0 + t * dx, y1];
+      };
+      const e3 = (): Point2D => {
+        let t = Number.isFinite(v0) && Number.isFinite(v3) && Math.abs(v3 - v0) > 1e-15 ? -v0 / (v3 - v0) : 0.5;
+        t = Math.max(0, Math.min(1, Number.isFinite(t) ? t : 0.5));
+        return [x0, y0 + t * dy];
+      };
 
       switch (caseIndex) {
         case 1: // 0001
@@ -634,8 +619,8 @@ export function sample3D(
   };
 }
 
-const slice2DFactoryCache = new Map<string, (fn: NumericCompiledFn, fixed: Record<string, number>) => (x: number, y: number) => number>();
-const slice3DFactoryCache = new Map<string, (fn: NumericCompiledFn, fixed: Record<string, number>) => (x: number, y: number, z: number) => number>();
+const slice2DFactoryCache = new Map<string, (fn: any, ...fixedArgs: number[]) => (x: number, y: number) => number>();
+const slice3DFactoryCache = new Map<string, (fn: any, ...fixedArgs: number[]) => (x: number, y: number, z: number) => number>();
 
 /**
  * Creates a zero-overhead compiled 2D slice closure wrapping an n-variable function.
@@ -649,16 +634,20 @@ function createSlice2DFn(
   const key = `${allVars.join(',')}:${freeAxes.join(',')}`;
   let factory = slice2DFactoryCache.get(key);
   if (!factory) {
-    const args = allVars.map(v => {
+    const fixedVarNames = allVars.filter(v => v !== freeAxes[0] && v !== freeAxes[1]);
+    const factoryParams = ['fn', ...fixedVarNames];
+    const callArgs = allVars.map(v => {
       if (v === freeAxes[0]) return 'x';
       if (v === freeAxes[1]) return 'y';
-      return `(fixed['${v}'] ?? 0)`;
+      return v;
     });
-    const code = `return (fn, fixed) => (x, y) => fn(${args.join(', ')});`;
+    const code = `return (${factoryParams.join(', ')}) => (x, y) => fn(${callArgs.join(', ')});`;
     factory = new Function(code)() as any;
     slice2DFactoryCache.set(key, factory!);
   }
-  return factory!(fn, fixedValues);
+  const fixedVarNames = allVars.filter(v => v !== freeAxes[0] && v !== freeAxes[1]);
+  const fixedArgs = fixedVarNames.map(v => fixedValues[v] ?? 0);
+  return factory!(fn, ...fixedArgs);
 }
 
 /**
@@ -673,17 +662,21 @@ function createSlice3DFn(
   const key = `${allVars.join(',')}:${freeAxes.join(',')}`;
   let factory = slice3DFactoryCache.get(key);
   if (!factory) {
-    const args = allVars.map(v => {
+    const fixedVarNames = allVars.filter(v => !freeAxes.includes(v as any));
+    const factoryParams = ['fn', ...fixedVarNames];
+    const callArgs = allVars.map(v => {
       if (v === freeAxes[0]) return 'x';
       if (v === freeAxes[1]) return 'y';
       if (v === freeAxes[2]) return 'z';
-      return `(fixed['${v}'] ?? 0)`;
+      return v;
     });
-    const code = `return (fn, fixed) => (x, y, z) => fn(${args.join(', ')});`;
+    const code = `return (${factoryParams.join(', ')}) => (x, y, z) => fn(${callArgs.join(', ')});`;
     factory = new Function(code)() as any;
     slice3DFactoryCache.set(key, factory!);
   }
-  return factory!(fn, fixedValues);
+  const fixedVarNames = allVars.filter(v => !freeAxes.includes(v as any));
+  const fixedArgs = fixedVarNames.map(v => fixedValues[v] ?? 0);
+  return factory!(fn, ...fixedArgs);
 }
 
 /**

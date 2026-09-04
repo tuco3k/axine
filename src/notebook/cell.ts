@@ -1,7 +1,7 @@
 import { NotebookCell, NotebookState } from './state';
 import { formatAST } from '../core/formatter';
-import { Value } from '../core/types';
-import { GraphPlotEngine } from '../plot/engine';
+import { Value, SpaceValue } from '../core/types';
+import { GraphPlotEngine, SpaceViewport } from '../plot/engine';
 import { AutocompleteEngine, AutocompleteItem } from './autocomplete';
 import { ICONS } from '../styles/icons';
 
@@ -260,8 +260,15 @@ export class CellView {
     valBox.appendChild(valText);
     this.outputContainer.appendChild(valBox);
 
-    // 3. Graph View if GraphValue
-    if (this.cell.value.type === 'graph') {
+    // 3. Space View if SpaceValue or Graph View if GraphValue
+    if (this.cell.value.type === 'space') {
+      const spaceVal = this.cell.value as SpaceValue;
+      if (spaceVal.dimension > 0 || spaceVal.entities.length > 0) {
+        const spaceContainer = document.createElement('div');
+        this.outputContainer.appendChild(spaceContainer);
+        new SpaceViewport(spaceContainer, spaceVal);
+      }
+    } else if (this.cell.value.type === 'graph') {
       const graphContainer = document.createElement('div');
       this.outputContainer.appendChild(graphContainer);
       new GraphPlotEngine(graphContainer, this.cell.value.spec, this.state.env);
@@ -270,6 +277,8 @@ export class CellView {
 
   private formatValue(val: Value): string {
     switch (val.type) {
+      case 'space':
+        return `${val.dimension}D Space (${val.coordinates.join(', ')})`;
       case 'rational':
         if (val.d === 1n) return `${val.n}`;
         return `${val.n}/${val.d}`;

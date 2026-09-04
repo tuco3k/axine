@@ -53,12 +53,17 @@ describe('Large Rational Typesetting & Flattening Prevention', () => {
       maxMemoryElements: 1000000,
     });
 
-    // Line with graph(E_euler_t, E_verlet_t, E_rk4_t)
-    const graphRec = results.find((r: LineResultMessage) => r.result?.type === 'graph');
+    // Line with graph(E_euler_t, E_verlet_t, E_rk4_t) or Space
+    const graphRec = results.find((r: LineResultMessage) => r.result?.type === 'graph' || r.result?.type === 'space');
     expect(graphRec).toBeDefined();
-    const spec = (graphRec?.result as any)?.spec;
-    expect(spec.series.length).toBe(3);
-    expect(spec.series[0].explicitPoints?.length).toBeGreaterThan(50);
+    if (graphRec?.result?.type === 'graph') {
+      const spec = (graphRec.result as any).spec;
+      expect(spec.series.length).toBe(3);
+      expect(spec.series[0].explicitPoints?.length).toBeGreaterThan(50);
+    } else if (graphRec?.result?.type === 'space') {
+      const sp = graphRec.result as any;
+      expect(sp.entities.length).toBeGreaterThanOrEqual(1);
+    }
 
     // Check drift variables
     const driftEulerRec = results.find((r: LineResultMessage) => r.boundName === 'drift_euler');

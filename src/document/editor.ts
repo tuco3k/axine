@@ -1,8 +1,9 @@
 import { DocumentState, DocumentLineRecord } from './document_state';
 import { CORPUS_DOCUMENTS } from './corpus_data';
-import { Value, GraphValue, DerivationValue, SolveTraceValue, DescribedValue, TrajectoryValue } from '../core/types';
+import { Value, GraphValue, DerivationValue, SolveTraceValue, DescribedValue, TrajectoryValue, SpaceValue } from '../core/types';
 import { Canvas2DPlotter } from '../plot/canvas2d';
 import { Surface3DPlotter } from '../plot/surface3d';
+import { SpaceViewport } from '../plot/space_viewport';
 import { AnimationPlayer } from '../plot/animation_player';
 import { typesetMath, typesetSourceLine, TypesetOptions } from '../core/math_typeset';
 import { explainSymbol } from '../core/explainer';
@@ -105,6 +106,8 @@ export class DocumentEditor {
   private expandedPlots: Set<number> = new Set();
   private linePlotters: Map<number, Canvas2DPlotter | Surface3DPlotter> = new Map();
   private pinnedPlotters: Map<number, Canvas2DPlotter | Surface3DPlotter> = new Map();
+  private lineViewports: Map<number, SpaceViewport> = new Map();
+  private pinnedViewports: Map<number, SpaceViewport> = new Map();
   private animationPlayers: Map<number, AnimationPlayer> = new Map();
   private pinnedAnimationPlayers: Map<number, AnimationPlayer> = new Map();
   public mathPopover: MathPopover;
@@ -250,9 +253,11 @@ export class DocumentEditor {
       }
     }
 
-    // Trigger plotter re-renders so canvas widths match
+    // Trigger plotter and viewport re-renders so canvas widths match
     this.linePlotters.forEach(p => p.render());
     this.pinnedPlotters.forEach(p => p.render());
+    this.lineViewports.forEach(p => p.render());
+    this.pinnedViewports.forEach(p => p.render());
     this.updateCaret();
   }
 
@@ -1324,6 +1329,8 @@ export class DocumentEditor {
       localStorage.setItem('math_notebook_theme', nextTheme);
       this.linePlotters.forEach(p => p.render());
       this.pinnedPlotters.forEach(p => p.render());
+      this.lineViewports.forEach(p => p.render());
+      this.pinnedViewports.forEach(p => p.render());
     });
 
     // Multi-edge Draggable Splitter
@@ -1667,11 +1674,15 @@ export class DocumentEditor {
     }
     this.lineNumbersEl.innerHTML = lineNumsHtml;
 
-    // Clean up existing plotters and animation players
+    // Clean up existing plotters, viewports, and animation players
     this.linePlotters.forEach(p => p.dispose());
     this.linePlotters.clear();
     this.pinnedPlotters.forEach(p => p.dispose());
     this.pinnedPlotters.clear();
+    this.lineViewports.forEach(p => p.dispose());
+    this.lineViewports.clear();
+    this.pinnedViewports.forEach(p => p.dispose());
+    this.pinnedViewports.clear();
     this.animationPlayers.forEach(p => p.dispose());
     this.animationPlayers.clear();
     this.pinnedAnimationPlayers.forEach(p => p.dispose());
@@ -1703,10 +1714,16 @@ export class DocumentEditor {
           });
         });
 
-        // Instantiate pinned plotters
+        // Instantiate pinned plotters and viewports
         this.pinnedLines.forEach(lineIdx => {
           const rec = records[lineIdx];
-          if (rec && rec.result && rec.result.type === 'graph') {
+          if (rec && rec.result && rec.result.type === 'space') {
+            const spaceContainer = pinnedContainer.querySelector(`.doc-pinned-space-container[data-line="${lineIdx}"]`) as HTMLElement;
+            if (spaceContainer) {
+              const vp = new SpaceViewport(spaceContainer, rec.result as SpaceValue);
+              this.pinnedViewports.set(lineIdx, vp);
+            }
+          } else if (rec && rec.result && rec.result.type === 'graph') {
             const canvas = pinnedContainer.querySelector(`.doc-pinned-canvas[data-line="${lineIdx}"]`) as HTMLCanvasElement;
             if (canvas) {
               const spec = (rec.result as GraphValue).spec;
@@ -1834,6 +1851,21 @@ export class DocumentEditor {
       });
     });
 
+    // Instantiate and render all SpaceViewports for visible space rows
+    for (let i = 0; i < records.length; i++) {
+      const rec = records[i];
+      if (rec && rec.result && rec.result.type === 'space' && !this.collapsedLines.has(i)) {
+        const spaceVal = rec.result as SpaceValue;
+        if (spaceVal.dimension > 0 || spaceVal.entities.length > 0 || (spaceVal.nestedSpaces && spaceVal.nestedSpaces.length > 0)) {
+          const container = this.gutterEl.querySelector(`.doc-space-container[data-line="${i}"]`) as HTMLElement;
+          if (container) {
+            const vp = new SpaceViewport(container, spaceVal);
+            this.lineViewports.set(i, vp);
+          }
+        }
+      }
+    }
+
     // Instantiate and render all inline plotters for visible graph rows
     for (let i = 0; i < records.length; i++) {
       const rec = records[i];
@@ -1917,6 +1949,19 @@ export class DocumentEditor {
   private formatPinnedItem(rec: DocumentLineRecord): string {
     const lineIdx = rec.lineIndex;
     if (!rec.result) return '';
+
+    if (rec.result.type === 'space') {
+      const spaceVal = rec.result as SpaceValue;
+      return `
+        <div class="doc-pinned-item" data-line="${lineIdx}">
+          <div class="doc-pinned-header">
+            <span>Pinned: Line ${lineIdx + 1} (Space: ${spaceVal.dimension}D)</span>
+            <button class="doc-unpin-btn" data-line="${lineIdx}">Unpin</button>
+          </div>
+          <div class="doc-pinned-space-container" data-line="${lineIdx}"></div>
+        </div>
+      `;
+    }
 
     if (rec.result.type === 'graph') {
       const graphVal = rec.result as GraphValue;
@@ -2212,6 +2257,56 @@ export class DocumentEditor {
         <div class="doc-gutter-row" data-line="${lineIdx}">
           <div class="doc-gutter-row-header">
             <span class="doc-gutter-lineno">L${lineIdx + 1}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    // 0. Space result
+    if (rec.result.type === 'space') {
+      const spaceVal = rec.result as SpaceValue;
+      if (spaceVal.dimension === 0 && spaceVal.entities.length === 0 && (!spaceVal.nestedSpaces || spaceVal.nestedSpaces.length === 0)) {
+        if (spaceVal.resultVal && spaceVal.resultVal.type !== 'none') {
+          return `
+            <div class="doc-gutter-row" data-line="${lineIdx}">
+              <div class="doc-gutter-row-header">
+                <span class="doc-gutter-lineno">L${lineIdx + 1}</span>
+              </div>
+              <div class="doc-gutter-content">
+                <div class="doc-gutter-result"><span class="doc-result-value">${this.typesetMathReadOnly(this.formatValue(spaceVal.resultVal))}</span></div>
+              </div>
+            </div>
+          `;
+        }
+        return `
+          <div class="doc-gutter-row" data-line="${lineIdx}">
+            <div class="doc-gutter-row-header">
+              <span class="doc-gutter-lineno">L${lineIdx + 1}</span>
+            </div>
+            <div class="doc-gutter-content">
+              <span class="doc-result-value">none</span>
+            </div>
+          </div>
+        `;
+      }
+
+      const dimStr = `${spaceVal.dimension}D Space`;
+      const collapseText = isCollapsed ? '+' : '\u2212';
+      return `
+        <div class="doc-gutter-row" data-line="${lineIdx}">
+          <div class="doc-gutter-row-header">
+            <span class="doc-gutter-lineno">L${lineIdx + 1} &bull; Space (${spaceVal.dimension}D)</span>
+            <div class="doc-gutter-row-actions">
+              <button class="doc-gutter-action-btn doc-gutter-pin-btn ${isPinned ? 'pinned' : ''}" data-line="${lineIdx}" title="Pin space to top of panel">${isPinned ? 'Pinned' : 'Pin'}</button>
+              ${!isCollapsed ? `<button class="doc-gutter-action-btn doc-gutter-expand-plot-btn" data-line="${lineIdx}" title="Toggle space viewport size">${isExpandedPlot ? 'Compact' : 'Expand'}</button>` : ''}
+              <button class="doc-gutter-action-btn doc-gutter-collapse-btn" data-line="${lineIdx}" title="Collapse/Expand row">${collapseText}</button>
+            </div>
+          </div>
+          <div class="doc-gutter-content">
+            ${isCollapsed
+              ? `<div class="doc-gutter-collapsed-summary">[Collapsed ${dimStr}]</div>`
+              : `<div class="doc-space-container ${isExpandedPlot ? 'expanded' : ''}" data-line="${lineIdx}"></div>`
+            }
           </div>
         </div>
       `;

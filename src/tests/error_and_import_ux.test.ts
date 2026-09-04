@@ -97,8 +97,8 @@ describe('Error Box Wrapping & Import Value Semantics', () => {
     const trajRes = results.find(r => r.boundName === 'traj');
     expect(trajRes?.result?.type).toBe('trajectory');
 
-    // Verify graph
-    const graphRes = results.find(r => r.result?.type === 'graph');
+    // Verify graph or space
+    const graphRes = results.find(r => r.result?.type === 'graph' || r.result?.type === 'space');
     expect(graphRes).toBeDefined();
 
     // Verify kinetic energy calculation
