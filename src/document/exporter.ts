@@ -1,6 +1,6 @@
 import { DocumentLineRecord } from './document_state';
-import { typesetMath } from '../core/math_typeset';
-import { GraphSpec, GraphValue } from '../core/types';
+import { typesetMath, typesetSourceLine } from '../core/math_typeset';
+import { GraphSpec, GraphValue, Value, DerivationValue, DerivationStep } from '../core/types';
 import { formatValue } from './editor';
 
 export interface FrontMatterData {
@@ -238,9 +238,141 @@ export function renderSVGGraphToString(
   </svg>`;
 }
 
+function renderDerivationExportHtml(val: Value, options: { inlineFractions?: boolean, collapsed?: boolean }): string {
+  if (options.collapsed) {
+    const formatted = formatValue(val);
+    const typeset = typesetMath(formatted, { displayMode: false, inlineFractions: options.inlineFractions });
+    return `<div class="export-math-result">${typeset}</div>`;
+  }
+
+  if (val.type === 'derivation') {
+    const deriv = val as DerivationValue;
+    let html = `<div class="export-deriv-tree">`;
+    const origEq = deriv.originalEquation || deriv.originalExprString || '';
+    if (origEq) {
+      html += `<div class="export-deriv-orig"><span class="export-deriv-label">Equation:</span> ${typesetMath(origEq, { displayMode: false, inlineFractions: options.inlineFractions })}</div>`;
+    }
+
+    if (deriv.steps && deriv.steps.length > 0) {
+      html += `<div class="export-deriv-steps">`;
+      for (let i = 0; i < deriv.steps.length; i++) {
+        const step = deriv.steps[i];
+        const eqStr = step.after || step.equation || '';
+        html += `
+          <div class="export-step-card">
+            <div class="export-step-header">
+              <span class="export-step-num">Step ${i + 1}</span>
+              <span class="export-step-rule">${escapeHtml(step.rule)}</span>
+            </div>
+            ${eqStr ? `<div class="export-step-eq">${typesetMath(eqStr, { displayMode: false, inlineFractions: options.inlineFractions })}</div>` : ''}
+            <div class="export-step-just">${escapeHtml(step.justification)}</div>
+            ${step.sideCondition ? `<div class="export-step-cond">Condition: ${escapeHtml(step.sideCondition)}</div>` : ''}
+          </div>
+        `;
+
+        if (step.branches && step.branches.length > 0) {
+          html += `<div class="export-deriv-forks">`;
+          for (const branch of step.branches) {
+            html += `
+              <div class="export-branch-column">
+                <div class="export-branch-header">Branch: ${escapeHtml(branch.condition ?? 'Branch')}</div>
+                ${branch.steps.map((bs: DerivationStep) => `
+                  <div class="export-branch-step-card">
+                    <div class="export-step-rule">${escapeHtml(bs.rule)}</div>
+                    <div class="export-step-eq">${typesetMath(bs.after || bs.equation || '', { displayMode: false, inlineFractions: options.inlineFractions })}</div>
+                    <div class="export-step-just">${escapeHtml(bs.justification)}</div>
+                  </div>
+                `).join('')}
+                <div class="export-branch-result">Root: ${formatValue(branch.result)}</div>
+              </div>
+            `;
+          }
+          html += `</div>`;
+        }
+      }
+      html += `</div>`;
+    }
+
+    if (deriv.roots && deriv.roots.length > 0) {
+      html += `<div class="export-deriv-result"><span class="export-result-label">Roots:</span> ${deriv.roots.map((r: Value) => formatValue(r)).join(', ')}</div>`;
+    } else if (deriv.finalExprString) {
+      html += `<div class="export-deriv-result"><span class="export-result-label">Result:</span> ${typesetMath(deriv.finalExprString, { displayMode: false, inlineFractions: options.inlineFractions })}</div>`;
+    } else if (deriv.result) {
+      html += `<div class="export-deriv-result"><span class="export-result-label">Result:</span> ${formatValue(deriv.result as any)}</div>`;
+    }
+
+    html += `</div>`;
+    return html;
+  }
+
+  if (val.type === 'check_result') {
+    const check = val as any;
+    let html = `<div class="export-deriv-tree export-check-tree">`;
+    html += `<div class="export-deriv-orig"><span class="export-deriv-label">Target:</span> ${escapeHtml(check.targetQuantity)} <span class="export-check-status ${check.isValid ? 'valid' : 'invalid'}">[${check.isValid ? 'Valid' : 'Invalid formula'}]</span></div>`;
+
+    if (check.messageLines && check.messageLines.length > 0) {
+      html += `<div class="export-check-messages">`;
+      for (const msg of check.messageLines) {
+        html += `<div class="export-check-msg">${escapeHtml(msg)}</div>`;
+      }
+      html += `</div>`;
+    }
+
+    if (check.derivationSteps && check.derivationSteps.length > 0) {
+      html += `<div class="export-check-deriv-header">Canonical Derivation Steps:</div><div class="export-deriv-steps">`;
+      for (const s of check.derivationSteps) {
+        html += `
+          <div class="export-step-card">
+            <div class="export-step-header">
+              <span class="export-step-num">Step ${s.step}</span>
+              <span class="export-step-rule">${escapeHtml(s.title)}</span>
+            </div>
+            <div class="export-step-eq">${typesetMath(s.math, { displayMode: false, inlineFractions: options.inlineFractions })}</div>
+            <div class="export-step-just">${escapeHtml(s.explanation)}</div>
+          </div>
+        `;
+      }
+      html += `</div>`;
+    }
+
+    html += `</div>`;
+    return html;
+  }
+
+  if (val.type === 'solve_trace') {
+    const trace = val as any;
+    let html = `<div class="export-deriv-tree export-trace-tree">`;
+    html += `<div class="export-deriv-orig"><span class="export-deriv-label">Method:</span> ${trace.method === 'newton' ? 'Newton-Raphson Iteration' : 'Bisection Search'}</div>`;
+    if (trace.iterations && trace.iterations.length > 0) {
+      html += `
+        <table class="export-trace-table">
+          <thead><tr><th>Iter</th><th>x</th><th>f(x)</th><th>Error</th></tr></thead>
+          <tbody>
+            ${trace.iterations.map((it: any) => `
+              <tr>
+                <td>${it.n}</td>
+                <td>${it.x.toFixed(6)}</td>
+                <td>${it.fx.toExponential(4)}</td>
+                <td>${it.error.toExponential(4)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+    html += `<div class="export-deriv-result"><span class="export-result-label">Converged Root:</span> ${formatValue(trace.root)}</div>`;
+    html += `</div>`;
+    return html;
+  }
+
+  const formatted = formatValue(val);
+  const typeset = typesetMath(formatted, { displayMode: false, inlineFractions: options.inlineFractions });
+  return `<div class="export-math-result">${typeset}</div>`;
+}
+
 /**
  * Generate a standalone, self-contained HTML document with inline typeset math,
- * embedded SVG plots, current theme styling, and zero external dependencies.
+ * embedded SVG plots, full derivation steps, current theme styling, and zero external dependencies.
  */
 export function exportToHtml(
   fileName: string,
@@ -249,7 +381,9 @@ export function exportToHtml(
   theme: 'dark' | 'light' = 'dark'
 ): string {
   const { frontMatter } = parseFrontMatter(docText);
-  const title = frontMatter.title || fileName.replace(/\.ax$/, '') || 'Axine Document';
+  const firstLineComment = records[0]?.text.trim().startsWith('#') ? records[0].text.trim().replace(/^#+\s*/, '') : '';
+  const title = frontMatter.title || firstLineComment || fileName.replace(/\.ax$/, '') || 'Axine Document';
+  const isStepsCollapsed = frontMatter.steps === 'collapsed';
 
   const isDark = theme === 'dark';
   const bg = isDark ? '#121214' : '#ffffff';
@@ -260,19 +394,16 @@ export function exportToHtml(
   const codeBg = isDark ? '#1a1a1e' : '#f4f4f6';
   const resultBg = isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)';
 
-  let frontMatterHtml = '';
-  if (Object.keys(frontMatter).length > 0) {
-    frontMatterHtml = `
-      <header class="export-header">
-        ${frontMatter.title ? `<h1 class="export-title">${escapeHtml(frontMatter.title)}</h1>` : ''}
-        <div class="export-meta">
-          ${frontMatter.course ? `<span class="meta-item"><strong>Course:</strong> ${escapeHtml(frontMatter.course)}</span>` : ''}
-          ${frontMatter.author ? `<span class="meta-item"><strong>Author:</strong> ${escapeHtml(frontMatter.author)}</span>` : ''}
-          ${frontMatter.date ? `<span class="meta-item"><strong>Date:</strong> ${escapeHtml(frontMatter.date)}</span>` : ''}
-        </div>
-      </header>
-    `;
-  }
+  let frontMatterHtml = `
+    <header class="export-header">
+      <h1 class="export-title">${escapeHtml(title)}</h1>
+      <div class="export-meta">
+        ${frontMatter.course ? `<span class="meta-item"><strong>Course:</strong> ${escapeHtml(frontMatter.course)}</span>` : ''}
+        ${frontMatter.author ? `<span class="meta-item"><strong>Author:</strong> ${escapeHtml(frontMatter.author)}</span>` : ''}
+        ${frontMatter.date ? `<span class="meta-item"><strong>Date:</strong> ${escapeHtml(frontMatter.date)}</span>` : ''}
+      </div>
+    </header>
+  `;
 
   let inFm = docText.split('\n')[0]?.trim() === '---';
   let fmDone = !inFm;
@@ -318,16 +449,18 @@ export function exportToHtml(
         const spec = (rec.result as GraphValue).spec;
         const svgStr = renderSVGGraphToString(spec, { width: 580, height: 260, theme });
         resultHtml = `<div class="export-plot-container">${svgStr}</div>`;
+      } else if (rec.result.type === 'derivation' || rec.result.type === 'check_result' || rec.result.type === 'solve_trace') {
+        resultHtml = renderDerivationExportHtml(rec.result, { inlineFractions: true, collapsed: isStepsCollapsed });
       } else {
         const formatted = formatValue(rec.result);
-        const typeset = typesetMath(formatted, { displayMode: false });
+        const typeset = typesetMath(formatted, { displayMode: false, inlineFractions: true });
         resultHtml = `<div class="export-math-result">${typeset}</div>`;
       }
     } else if (rec?.error) {
       resultHtml = `<div class="export-error-result">${escapeHtml(rec.error.message)}</div>`;
     }
 
-    const typesetSource = typesetMath(rawLine, { displayMode: false });
+    const typesetSource = typesetSourceLine(rawLine, { displayMode: false, inlineFractions: true });
 
     linesHtml += `
       <div class="export-line-row ${isPlot ? 'plot-row' : ''}">
@@ -556,6 +689,167 @@ export function exportToHtml(
     .tm-exact-expanded.hidden {
       display: none !important;
     }
+    /* Derivation Export Tree Styles */
+    .export-deriv-tree {
+      margin: 8px 0;
+      padding: 10px 14px;
+      background: var(--result-bg);
+      border-left: 3px solid var(--accent);
+      border-radius: 4px;
+      font-size: 13px;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .export-deriv-orig {
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+    .export-deriv-label {
+      color: var(--text-muted);
+      margin-right: 6px;
+      font-weight: 500;
+    }
+    .export-deriv-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin: 8px 0;
+    }
+    .export-step-card {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px 12px;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .export-step-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    .export-step-num {
+      font-weight: 600;
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+    .export-step-rule {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: rgba(0, 119, 204, 0.12);
+      color: var(--accent);
+    }
+    .export-step-eq {
+      font-size: 13.5px;
+      margin: 4px 0;
+    }
+    .export-step-just {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .export-step-cond {
+      font-size: 11.5px;
+      font-style: italic;
+      color: #ff9800;
+      margin-top: 3px;
+    }
+    .export-deriv-forks {
+      display: flex;
+      gap: 12px;
+      margin: 8px 0;
+    }
+    .export-branch-column {
+      flex: 1;
+      background: rgba(0, 0, 0, 0.02);
+      border: 1px dashed var(--border);
+      border-radius: 4px;
+      padding: 8px 10px;
+    }
+    .export-branch-header {
+      font-weight: 600;
+      font-size: 12px;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .export-branch-step-card {
+      margin: 4px 0;
+      padding: 4px 6px;
+      background: var(--code-bg);
+      border-radius: 3px;
+    }
+    .export-branch-result {
+      font-weight: 600;
+      font-size: 12px;
+      color: var(--accent);
+      margin-top: 6px;
+    }
+    .export-deriv-result {
+      font-weight: 600;
+      margin-top: 8px;
+      padding-top: 6px;
+      border-top: 1px solid var(--border);
+      color: var(--text);
+    }
+    .export-result-label {
+      color: var(--text-muted);
+      margin-right: 6px;
+    }
+    .export-check-msg {
+      font-size: 12px;
+      margin: 2px 0;
+      color: var(--text-muted);
+    }
+    .export-check-status.valid {
+      color: #4caf50;
+      font-weight: 600;
+      margin-left: 8px;
+    }
+    .export-check-status.invalid {
+      color: #f44336;
+      font-weight: 600;
+      margin-left: 8px;
+    }
+    .export-check-deriv-header {
+      font-weight: 600;
+      font-size: 13px;
+      margin-top: 10px;
+      margin-bottom: 4px;
+      color: var(--text);
+    }
+    .export-trace-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11.5px;
+      margin: 6px 0;
+    }
+    .export-trace-table th, .export-trace-table td {
+      padding: 4px 8px;
+      border: 1px solid var(--border);
+      text-align: left;
+    }
+    .tm-source-code {
+      font-family: ui-monospace, Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+    }
+    .tm-keyword {
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .tm-code-op {
+      color: var(--text-muted);
+    }
+    .tm-code-num {
+      color: #ff9800;
+    }
+    .tm-code-ident {
+      color: var(--text);
+    }
     @media print {
       @page {
         size: letter;
@@ -575,6 +869,10 @@ export function exportToHtml(
       .export-line-row { break-inside: avoid !important; page-break-inside: avoid !important; margin: 6px 0 !important; }
       .export-line-result { margin-top: 4px !important; margin-left: 20px !important; padding-left: 10px !important; border-left: 2px solid #999999 !important; font-size: 11pt !important; }
       .export-plot-container { border: 1px solid #cccccc !important; background: #ffffff !important; margin: 10px 0 !important; break-inside: avoid !important; page-break-inside: avoid !important; }
+      .export-deriv-tree { border-left: 3px solid #222222 !important; background: transparent !important; break-inside: avoid !important; page-break-inside: avoid !important; }
+      .export-step-card { border: 1px solid #dddddd !important; background: transparent !important; break-inside: avoid !important; page-break-inside: avoid !important; }
+      .export-step-rule { background: #eeeeee !important; color: #111111 !important; border: 1px solid #cccccc !important; }
+      .export-branch-column { border: 1px dashed #999999 !important; background: transparent !important; }
       .tm-num-box { border-bottom: 1px solid #111111 !important; }
     }
   </style>

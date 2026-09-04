@@ -1,0 +1,28 @@
+---
+title: Symbolic Derivations and Exact Calculations
+course: MATH 302 - Modern Algebra & Calculus
+author: Axine Verification Suite
+date: 2026-09-02
+---
+
+## 1. Quadratic Equation Isolation with Factoring & Branch Forks
+isolate(x^2 - 5x + 6 = 0, for: x)
+
+## 2. Square Root Branching Isolation
+isolate(x^2 = 4, for: x)
+
+## 3. Algebraic Rational Simplification with Side Conditions
+simplify((x^2 - 1)/(x - 1))
+
+## 4. Symbolic Calculus & Derivative Chain Rule Sequences
+d//dx (x^3 * sin x)
+
+## 5. Geometric & Dimensional Assertion Verification
+check(3/4 * pi * r^2, is: "sphere volume")
+
+## 6. Identifiers with Underscores and Exact Inline Fractions
+traj := [(0, 0), (20, 52/5)]
+y_pos := map(p -> p[1], traj)
+exact_frac := 52/5
+negative_frac := -23/5
+kinetic_energy_val := 3029/50

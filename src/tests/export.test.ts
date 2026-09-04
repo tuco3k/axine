@@ -85,12 +85,10 @@ plot(t, sin(t))
     expect(html).toContain('t (s)');
     expect(html).not.toContain('class="svg-legend"');
 
-    // Assert typeset math and fraction separator
+    // Assert typeset math and inline fraction
     expect(html).toContain('export-math-result');
     expect(html).toContain('tm-num');
-    expect(html).toContain('tm-frac');
-    expect(html).toContain('aria-label="5 / 2"');
-    expect(html).toContain('tm-num-box');
+    expect(html).toContain('5/2');
 
     // Assert source lines are typeset, not monospace
     expect(html).toContain('export-source-typeset');
@@ -167,9 +165,8 @@ plot(t, sin(t))
     expect(plainText).toContain('Body(mass: 1, position: (0, 0), velocity: (10, 15))');
     expect(plainText).toContain('Trajectory(Scalar, 0..3, 61 samples)');
 
-    // Assert fraction inside tuple contains separator
-    expect(html).toContain('aria-label="52 / 5"');
-    expect(html).toContain('tm-num-box');
+    // Assert fraction inside tuple contains inline fraction 52/5
+    expect(plainText).toContain('52/5');
   });
 
   it('generates a clean Markdown export with front matter, code blocks, and linked plot assets', () => {
@@ -227,5 +224,125 @@ plot(t, cos(omega * t))
     expect(plotImages.length).toBe(1);
     expect(plotImages[0].filename).toBe('plot_L9.svg');
     expect(plotImages[0].svgString).toContain('<svg');
+  });
+
+  it('asserts exact rational in export contains 52/5 as a contiguous string', () => {
+    const docText = `p_exact := (20, 52/5)\nKE := 3029/50\n`;
+    const records: DocumentLineRecord[] = [
+      {
+        lineIndex: 0,
+        text: 'p_exact := (20, 52/5)',
+        classification: { state: 'COMPLETE' } as any,
+        result: {
+          type: 'tuple',
+          elements: [{ type: 'rational', n: 20n, d: 1n }, { type: 'rational', n: 52n, d: 5n }],
+        } as any,
+        durationMs: 1,
+      },
+      {
+        lineIndex: 1,
+        text: 'KE := 3029/50',
+        classification: { state: 'COMPLETE' } as any,
+        result: { type: 'rational', n: 3029n, d: 50n },
+        durationMs: 1,
+      },
+    ];
+
+    const html = exportToHtml('fractions_test.ax', docText, records, 'light');
+    const plainText = html.replace(/<[^>]+>/g, '');
+
+    // Assert exact rational appears as a contiguous string "52/5" and "3029/50"
+    expect(plainText).toContain('52/5');
+    expect(plainText).toContain('3029/50');
+  });
+
+  it('asserts an identifier containing an underscore round-trips through export unchanged', () => {
+    const docText = `y_pos := map(b -> b.position[1], traj)\ngraph(y_pos)\nball_at_2 := traj[2.0]\nspring_force_fn := (b) -> (-k * b.position[0], 0.0)\n`;
+    const records: DocumentLineRecord[] = [
+      {
+        lineIndex: 0,
+        text: 'y_pos := map(b -> b.position[1], traj)',
+        classification: { state: 'COMPLETE' } as any,
+        result: { type: 'trajectory', stateKind: 'Scalar', tStart: 0, tEnd: 3, samples: [] } as any,
+        durationMs: 1,
+      },
+      {
+        lineIndex: 1,
+        text: 'graph(y_pos)',
+        classification: { state: 'COMPLETE' } as any,
+        result: { type: 'graph', spec: { dimensionality: 1, kind: 'curve', series: [] } } as any,
+        durationMs: 1,
+      },
+      {
+        lineIndex: 2,
+        text: 'ball_at_2 := traj[2.0]',
+        classification: { state: 'COMPLETE' } as any,
+        result: { type: 'record', typeName: 'Body', fields: {} } as any,
+        durationMs: 1,
+      },
+      {
+        lineIndex: 3,
+        text: 'spring_force_fn := (b) -> (-k * b.position[0], 0.0)',
+        classification: { state: 'COMPLETE' } as any,
+        result: { type: 'function', name: 'spring_force_fn', params: ['b'], body: {} as any },
+        durationMs: 1,
+      },
+    ];
+
+    const html = exportToHtml('identifiers_test.ax', docText, records, 'light');
+    const plainText = html.replace(/<[^>]+>/g, '');
+
+    // Assert underscore identifiers round-trip completely intact
+    expect(plainText).toContain('y_pos');
+    expect(plainText).toContain('graph(y_pos)');
+    expect(plainText).toContain('ball_at_2');
+    expect(plainText).toContain('spring_force_fn');
+  });
+
+  it('asserts full derivation steps, justifications, rules, and branch forks are exported by default, and collapsed when configured', async () => {
+    const { evaluate, createInitialEnvironment } = await import('../core/evaluator');
+
+    const env = createInitialEnvironment();
+    const res1 = evaluate('isolate(x^2 - 5x + 6 = 0, for: x)', env);
+    const res2 = evaluate('isolate(x^2 = 4, for: x)', env);
+    const res3 = evaluate('simplify((x^2 - 1)/(x - 1))', env);
+    const res4 = evaluate('d//dx (x^3 * sin x)', env);
+    const res5 = evaluate('check(3/4 * pi * r^2, is: "sphere volume")', env);
+
+    const records: DocumentLineRecord[] = [
+      { lineIndex: 0, text: 'isolate(x^2 - 5x + 6 = 0, for: x)', classification: { state: 'COMPLETE' } as any, result: res1.value, durationMs: 2 },
+      { lineIndex: 1, text: 'isolate(x^2 = 4, for: x)', classification: { state: 'COMPLETE' } as any, result: res2.value, durationMs: 2 },
+      { lineIndex: 2, text: 'simplify((x^2 - 1)/(x - 1))', classification: { state: 'COMPLETE' } as any, result: res3.value, durationMs: 2 },
+      { lineIndex: 3, text: 'd//dx (x^3 * sin x)', classification: { state: 'COMPLETE' } as any, result: res4.value, durationMs: 2 },
+      { lineIndex: 4, text: 'check(3/4 * pi * r^2, is: "sphere volume")', classification: { state: 'COMPLETE' } as any, result: res5.value, durationMs: 2 },
+    ];
+
+    const docText = `isolate(x^2 - 5x + 6 = 0, for: x)\nisolate(x^2 = 4, for: x)\nsimplify((x^2 - 1)/(x - 1))\nd//dx (x^3 * sin x)\ncheck(3/4 * pi * r^2, is: "sphere volume")\n`;
+
+    // 1. Default (Expanded) export
+    const htmlExpanded = exportToHtml('deriv_test.ax', docText, records, 'light');
+    expect(htmlExpanded).toContain('export-deriv-tree');
+    expect(htmlExpanded).toContain('export-step-card');
+    expect(htmlExpanded).toContain('factor');
+    expect(htmlExpanded).toContain('cancel-common-factor');
+    expect(htmlExpanded).toContain('take-root');
+    expect(htmlExpanded).toContain('Branch');
+    expect(htmlExpanded).toContain('export-deriv-forks');
+    expect(htmlExpanded).toContain('power-rule');
+    expect(htmlExpanded).toContain('product-rule');
+    expect(htmlExpanded).toContain('Canonical Derivation Steps');
+
+    // 2. Collapsed export (steps: collapsed)
+    const collapsedDocText = `---\nsteps: collapsed\n---\n${docText}`;
+    const collapsedRecords: DocumentLineRecord[] = [
+      { lineIndex: 0, text: '---', classification: { state: 'FRONTMATTER' } as any, durationMs: 0 },
+      { lineIndex: 1, text: 'steps: collapsed', classification: { state: 'FRONTMATTER' } as any, durationMs: 0 },
+      { lineIndex: 2, text: '---', classification: { state: 'FRONTMATTER' } as any, durationMs: 0 },
+      ...records.map((r, i) => ({ ...r, lineIndex: i + 3 })),
+    ];
+    const htmlCollapsed = exportToHtml('deriv_test_collapsed.ax', collapsedDocText, collapsedRecords, 'light');
+    expect(htmlCollapsed).not.toContain('class="export-deriv-tree"');
+    expect(htmlCollapsed).not.toContain('class="export-deriv-forks"');
+    expect(htmlCollapsed).toContain('export-math-result');
   });
 });

@@ -187,10 +187,42 @@ solve(expr, x in a..b, trace: true)
 ```
 Returns structured iteration telemetry including iteration index $n$, approximation $x_n$, function value $f(x_n)$, and residual error $|f(x_n)|$ or bracket width.
 
+## Document Export & Publication Engine
+
+Axine provides full standalone HTML, PDF print view, and Markdown export capabilities designed for publication and textbook-grade document output.
+
+### 1. Typesetting Rules: Mathematics vs Procedure Code
+To maintain visual clarity, the export engine and print view distinguish between mathematical statements and procedure instructions:
+- **Mathematical Formulations**: Definitions (`:=`), equations (`=`), arithmetic expressions, algebraic calls (`isolate`, `simplify`, `check`), and evaluations are mathematically typeset with italic variables, roman numbers, TeX operator spacing, raised superscripts, and clean typography.
+- **Identifiers with Underscores**: Multi-letter identifiers (e.g. `y_pos`, `ball_at_2`, `spring_force`, `traj_euler`) retain underscores as legal identifier characters and are not converted into subscripts.
+- **Inline Fractions in Print/Export**: While on-screen layout renders stacked fraction bars (`a // b`), export and print views render fractions inline as `a/b` (e.g. `52/5`) to prevent vertical layout instability and page splits.
+- **Monospace Procedure Instructions**: Procedure calls and declarative instructions (`import "..."`, `module ...`, `simulate(...)`) remain in monospace code typography.
+
+### 2. Derivations and Step-by-Step Traces in Export
+Every step-by-step derivation is a first-class value. In HTML and PDF exports:
+- Derivations (`isolate`, `simplify`, `d//dx`, `check`) are expanded in full by default, including:
+  1. The original equation or formula.
+  2. Each derivation step with its rule badge in the margin, transformed expression, and plain-English justification.
+  3. Side conditions indented under the step that introduced them.
+  4. Branch forks rendered as side-by-side branch columns with branch conditions, inner steps, and branch roots.
+  5. Final roots and solution set.
+- **Collapsed Steps Configuration**: To export results only without step trees, add the following YAML frontmatter:
+  ```yaml
+  ---
+  steps: collapsed
+  ---
+  ```
+
+### 3. Standalone HTML & PDF Export Policy
+- **Primary Artifact**: Standalone, self-contained HTML (`.html`) with embedded vector SVG plots, CSS stylesheets, and zero external network dependencies.
+- **PDF Export via Browser Print**: PDF generation uses the browser's high-fidelity print engine (`@media print` rules configured with `@page { size: letter; margin: 0.75in; }`).
+  *Browser Header Note*: Chrome and Safari print dialogs inject URL, page number, and date headers by default. To produce clean, header-free PDFs, uncheck **"Headers and footers"** in your browser's print dialog.
+
 ---
 
 ## Known Boundaries & Implementation Notes
 
 - Transcendentals on exact rationals produce high-precision IEEE 754 floating point numbers rather than arbitrary-precision algebraic numbers.
 - 3D surfaces are rendered using depth-sorted isometric/perspective polygon rasterization on HTML5 Canvas.
+
 

@@ -4,7 +4,7 @@ import { Value, GraphValue, DerivationValue, SolveTraceValue, DescribedValue, Tr
 import { Canvas2DPlotter } from '../plot/canvas2d';
 import { Surface3DPlotter } from '../plot/surface3d';
 import { AnimationPlayer } from '../plot/animation_player';
-import { typesetMath } from '../core/math_typeset';
+import { typesetMath, typesetSourceLine, TypesetOptions } from '../core/math_typeset';
 import { explainSymbol } from '../core/explainer';
 import { analyzeAndParse, createInitialEnvironment, evaluate, Evaluator } from '../core/evaluator';
 import { formatAST } from '../core/formatter';
@@ -608,20 +608,20 @@ export class DocumentEditor {
     const text = this.textarea ? this.textarea.value : '';
     const records = this.state.getRecords();
     const { frontMatter } = parseFrontMatter(text);
+    const firstLineComment = records[0]?.text.trim().startsWith('#') ? records[0].text.trim().replace(/^#+\s*/, '') : '';
+    const title = frontMatter.title || firstLineComment || this.currentFileName.replace(/\.ax$/, '') || 'Axine Document';
+    const isStepsCollapsed = frontMatter.steps === 'collapsed';
 
-    let html = '';
-    if (Object.keys(frontMatter).length > 0) {
-      html += `
-        <div class="doc-print-header">
-          ${frontMatter.title ? `<div class="doc-print-title">${escapeHtml(frontMatter.title)}</div>` : ''}
-          <div class="doc-print-meta">
-            ${frontMatter.course ? `<span><strong>Course:</strong> ${escapeHtml(frontMatter.course)}</span>` : ''}
-            ${frontMatter.author ? `<span><strong>Author:</strong> ${escapeHtml(frontMatter.author)}</span>` : ''}
-            ${frontMatter.date ? `<span><strong>Date:</strong> ${escapeHtml(frontMatter.date)}</span>` : ''}
-          </div>
+    let html = `
+      <div class="doc-print-header">
+        <div class="doc-print-title">${escapeHtml(title)}</div>
+        <div class="doc-print-meta">
+          ${frontMatter.course ? `<span><strong>Course:</strong> ${escapeHtml(frontMatter.course)}</span>` : ''}
+          ${frontMatter.author ? `<span><strong>Author:</strong> ${escapeHtml(frontMatter.author)}</span>` : ''}
+          ${frontMatter.date ? `<span><strong>Date:</strong> ${escapeHtml(frontMatter.date)}</span>` : ''}
         </div>
-      `;
-    }
+      </div>
+    `;
 
     let inFm = text.split('\n')[0]?.trim() === '---';
     let fmDone = !inFm;
@@ -660,16 +660,32 @@ export class DocumentEditor {
           const spec = (rec.result as GraphValue).spec;
           const svg = renderSVGGraphToString(spec, { width: 580, height: 260, theme: 'light' });
           resHtml = `<div class="doc-print-plot">${svg}</div>`;
+        } else if (rec.result.type === 'derivation') {
+          if (isStepsCollapsed) {
+            const formatted = this.formatValue(rec.result);
+            const typeset = typesetMath(formatted, { displayMode: false, inlineFractions: true });
+            resHtml = `<div class="doc-print-math">${typeset}</div>`;
+          } else {
+            resHtml = `<div class="doc-print-derivation">${this.renderDerivationFull(rec.result as DerivationValue, { displayMode: false, inlineFractions: true })}</div>`;
+          }
+        } else if (rec.result.type === 'check_result') {
+          if (isStepsCollapsed) {
+            const formatted = this.formatValue(rec.result);
+            const typeset = typesetMath(formatted, { displayMode: false, inlineFractions: true });
+            resHtml = `<div class="doc-print-math">${typeset}</div>`;
+          } else {
+            resHtml = `<div class="doc-print-derivation">${this.renderCheckResultFull(rec.result, { displayMode: false, inlineFractions: true })}</div>`;
+          }
         } else {
           const formatted = this.formatValue(rec.result);
-          const typeset = typesetMath(formatted, { displayMode: false });
+          const typeset = typesetMath(formatted, { displayMode: false, inlineFractions: true });
           resHtml = `<div class="doc-print-math">${typeset}</div>`;
         }
       } else if (rec?.error) {
         resHtml = `<div class="doc-print-error" style="color:#d32f2f;">${escapeHtml(rec.error.message)}</div>`;
       }
 
-      const typesetSource = typesetMath(raw, { displayMode: false });
+      const typesetSource = typesetSourceLine(raw, { displayMode: false, inlineFractions: true });
 
       html += `
         <div class="doc-print-line-row">
@@ -2023,9 +2039,9 @@ export class DocumentEditor {
     return html;
   }
 
-  private renderCheckResultFull(checkVal: any): string {
+  private renderCheckResultFull(checkVal: any, options: TypesetOptions = { displayMode: true }): string {
     let html = `<div class="visual-derivation-tree">`;
-    html += `<div class="derivation-orig-eq">${this.typesetMathReadOnly(checkVal.actualExprString)}</div>`;
+    html += `<div class="derivation-orig-eq">${this.typesetMathReadOnly(checkVal.actualExprString, options)}</div>`;
 
     for (let i = 0; i < checkVal.messageLines.length; i++) {
       const line = checkVal.messageLines[i];
@@ -2049,7 +2065,7 @@ export class DocumentEditor {
               <span class="step-num">Step ${s.step}</span>
               <span class="step-rule-badge">${escapeHtml(s.title)}</span>
             </div>
-            <div class="step-card-eq">${this.typesetMathReadOnly(s.math)}</div>
+            <div class="step-card-eq">${this.typesetMathReadOnly(s.math, options)}</div>
             <div class="step-card-just">${escapeHtml(s.explanation)}</div>
           </div>
         `;
@@ -2060,14 +2076,17 @@ export class DocumentEditor {
     return html;
   }
 
-  public typesetMathReadOnly(raw: string): string {
+  public typesetMathReadOnly(raw: string, options: TypesetOptions = { displayMode: true }): string {
     if (!raw) return '';
-    return typesetMath(raw, { displayMode: true });
+    return typesetMath(raw, options);
   }
 
-  private renderDerivationFull(deriv: DerivationValue): string {
+  private renderDerivationFull(deriv: DerivationValue, options: TypesetOptions = { displayMode: true }): string {
     let html = `<div class="visual-derivation-tree">`;
-    html += `<div class="derivation-orig-eq">${this.typesetMathReadOnly(deriv.originalEquation)}</div>`;
+    const origEq = deriv.originalEquation || deriv.originalExprString || '';
+    if (origEq) {
+      html += `<div class="derivation-orig-eq">${this.typesetMathReadOnly(origEq, options)}</div>`;
+    }
 
     for (let i = 0; i < deriv.steps.length; i++) {
       const step = deriv.steps[i];
@@ -2078,7 +2097,7 @@ export class DocumentEditor {
             <span class="step-num">Step ${i + 1}</span>
             <span class="step-rule-badge">${escapeHtml(step.rule)}</span>
           </div>
-          <div class="step-card-eq">${this.typesetMathReadOnly(eqStr)}</div>
+          ${eqStr ? `<div class="step-card-eq">${this.typesetMathReadOnly(eqStr, options)}</div>` : ''}
           <div class="step-card-just">${escapeHtml(step.justification)}</div>
           ${step.sideCondition ? `<div class="step-card-cond">${escapeHtml(step.sideCondition)}</div>` : ''}
         </div>
@@ -2092,7 +2111,7 @@ export class DocumentEditor {
               <div class="branch-condition-header">${escapeHtml(branch.condition ?? 'Branch')}</div>
               ${branch.steps.map(bs => `
                 <div class="branch-step-card">
-                  <div class="branch-step-eq">${this.typesetMathReadOnly(bs.after || bs.equation || '')}</div>
+                  <div class="branch-step-eq">${this.typesetMathReadOnly(bs.after || bs.equation || '', options)}</div>
                   <div class="branch-step-just">${escapeHtml(bs.justification)}</div>
                 </div>
               `).join('')}
@@ -2106,6 +2125,8 @@ export class DocumentEditor {
 
     if (deriv.roots && deriv.roots.length > 0) {
       html += `<div class="derivation-final-roots">Roots: ${deriv.roots.map(r => this.formatValue(r)).join(', ')}</div>`;
+    } else if (deriv.finalExprString) {
+      html += `<div class="derivation-final-roots">Result: ${this.typesetMathReadOnly(deriv.finalExprString, options)}</div>`;
     }
     html += `</div>`;
     return html;

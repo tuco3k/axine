@@ -11,6 +11,7 @@ import { BigFraction } from './numeric/rational';
 
 export interface TypesetOptions {
   displayMode?: boolean; // display (large limits, stacked fractions) vs inline
+  inlineFractions?: boolean; // when true (e.g. in print/export), render rational fractions as a/b (e.g. 52/5)
 }
 
 export function escapeHtml(str: string): string {
@@ -31,10 +32,14 @@ export function rationalToApproxString(n: bigint, d: bigint, maxDecimals: number
   return v.toFixed(maxDecimals).replace(/\.?0+$/, '');
 }
 
-export function renderLargeRationalHtml(n: bigint, d: bigint, _options?: TypesetOptions): string {
+export function renderLargeRationalHtml(n: bigint, d: bigint, options?: TypesetOptions): string {
   const approxStr = rationalToApproxString(n, d, 6);
   const nStr = n.toString();
   const dStr = d.toString();
+
+  if (options?.inlineFractions) {
+    return `<span class="tm-large-rational"><span class="tm-approx-val">${approxStr}</span> <span class="tm-exact-inline">(${nStr}/${dStr})</span></span>`;
+  }
 
   return `<span class="tm-large-rational" data-exact-n="${nStr}" data-exact-d="${dStr}"><span class="tm-approx-val">${approxStr}</span><span class="tm-exact-badge" title="Exact: ${nStr}/${dStr}" role="button" tabindex="0" data-n="${nStr}" data-d="${dStr}">[exact]</span><span class="tm-exact-expanded hidden"><span class="tm-frac" role="math" aria-label="${nStr} / ${dStr}"><span class="tm-num-box"><span class="tm-num">${nStr}</span></span><span class="tm-frac-bar"><span class="tm-frac-slash">/</span></span><span class="tm-den-box"><span class="tm-num">${dStr}</span></span></span></span></span>`;
 }
@@ -87,7 +92,14 @@ function typesetASTNode(node: ASTNode, options: TypesetOptions): string {
             if (numRaw.replace('-', '').length > 12 || denRaw.length > 12) {
               return renderLargeRationalHtml(BigInt(numRaw), BigInt(denRaw), options);
             }
+            if (options.inlineFractions) {
+              return `<span class="tm-num">${escapeHtml(numRaw)}/${escapeHtml(denRaw)}</span>`;
+            }
           }
+        }
+
+        if (options.inlineFractions) {
+          return `${leftHtml}/${rightHtml}`;
         }
 
         return `
@@ -372,6 +384,9 @@ export function typesetStringExpression(expr: string, options: TypesetOptions = 
     if (num.replace('-', '').length > 12 || den.length > 12) {
       return renderLargeRationalHtml(BigInt(num), BigInt(den), options);
     }
+    if (options.inlineFractions) {
+      return `<span class="tm-num">${escapeHtml(num)}/${escapeHtml(den)}</span>`;
+    }
     return `
       <span class="tm-frac" role="math" aria-label="${escapeHtml(num)} / ${escapeHtml(den)}">
         <span class="tm-num-box"><span class="tm-num">${escapeHtml(num)}</span></span>
@@ -519,6 +534,10 @@ export function typesetStringExpression(expr: string, options: TypesetOptions = 
       return renderLargeRationalHtml(BigInt(num), BigInt(den), options);
     }
 
+    if (options.inlineFractions) {
+      return `${typesetStringExpression(num, options)} / ${typesetStringExpression(den, options)}`;
+    }
+
     return `
       <span class="tm-frac" role="math" aria-label="${escapeHtml(num)} / ${escapeHtml(den)}">
         <span class="tm-num-box">${typesetStringExpression(num, options)}</span>
@@ -617,6 +636,8 @@ function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
       if (/^-?\d+$/.test(numRaw) && /^\d+$/.test(denRaw)) {
         if (numRaw.replace('-', '').length > 12 || denRaw.length > 12) {
           out += renderLargeRationalHtml(BigInt(numRaw), BigInt(denRaw), options);
+        } else if (options.inlineFractions) {
+          out += `${escapeHtml(numRaw)}/${escapeHtml(denRaw)}`;
         } else {
           out += `<span class="tm-frac" role="math" aria-label="${escapeHtml(numRaw)} / ${escapeHtml(denRaw)}"><span class="tm-num-box"><span class="tm-num">${escapeHtml(numRaw)}</span></span><span class="tm-frac-bar"><span class="tm-frac-slash">/</span></span><span class="tm-den-box"><span class="tm-num">${escapeHtml(denRaw)}</span></span></span>`;
         }
@@ -677,4 +698,113 @@ function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
   }
 
   return out || escapeHtml(str);
+}
+
+/**
+ * Typesets an editor source line into publication-grade HTML.
+ *
+ * Rules:
+ * 1. Monospace procedure lines: lines with imports, module definitions, or simulate(...)
+ *    remain in monospace code typography.
+ * 2. Mathematical statements & definitions: expressions, definitions (:=), formulas,
+ *    algebraic calls (isolate, simplify, check), and graphs are mathematically typeset with:
+ *    - Multi-letter identifiers (e.g. y_pos, ball_at_2, spring_force, traj_euler) kept intact
+ *      without stripping or converting underscores into subscripts.
+ *    - Italic variable typography, roman numbers, TeX operator spacing, raised exponents.
+ *    - Fractions rendered inline as a/b when inlineFractions is set.
+ */
+export function typesetSourceLine(rawLine: string, options: TypesetOptions = { displayMode: false, inlineFractions: true }): string {
+  const trimmed = rawLine.trim();
+  if (!trimmed) return '';
+
+  // Rule 1: Monospace procedure instructions
+  if (trimmed.startsWith('import ') || trimmed.startsWith('module ') || trimmed.includes('simulate(')) {
+    return renderCodeShapedLine(rawLine);
+  }
+
+  // Rule 2: Mathematical typography for equations, definitions, formulas, and expressions
+  return renderMathShapedLine(rawLine, options);
+}
+
+function renderCodeShapedLine(rawLine: string): string {
+  const tokenRegex = /(\s+)|("[^"]*"|'[^']*')|(\b(?:import|module|simulate|in|for|dt|as|let|const)\b)|(<=|>=|!=|==|:=|->|[=<>+\-*/..()\[\]{},:;])|(\b\d+(?:\.\d+)?\b)|(\b[a-zA-Z][a-zA-Z0-9_]*\b)/g;
+  let out = '';
+  let match: RegExpExecArray | null;
+  while ((match = tokenRegex.exec(rawLine)) !== null) {
+    const [, ws, str, kw, op, num, ident] = match;
+    if (ws) out += ws;
+    else if (str) out += `<span class="tm-string">${escapeHtml(str)}</span>`;
+    else if (kw) out += `<span class="tm-keyword">${escapeHtml(kw)}</span>`;
+    else if (op) out += `<span class="tm-code-op">${escapeHtml(op)}</span>`;
+    else if (num) out += `<span class="tm-code-num">${escapeHtml(num)}</span>`;
+    else if (ident) out += `<span class="tm-code-ident">${escapeHtml(ident)}</span>`;
+  }
+  return `<span class="tm-source-code">${out || escapeHtml(rawLine)}</span>`;
+}
+
+function renderMathShapedLine(rawLine: string, options: TypesetOptions): string {
+  const tokenRegex = /(\s+)|("[^"]*"|'[^']*')|(d\/\/d[a-zA-Z][a-zA-Z0-9_]*|\b\u2202\/\/\u2202[a-zA-Z][a-zA-Z0-9_]*)|(-?\b\d+\s*(?:\/|\/\/)\s*\d+\b)|(\.\.)|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|\/\/|\/|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b[a-zA-Z][a-zA-Z0-9_]*\b)|([()\[\],'{}:.])/g;
+
+  let out = '';
+  let match: RegExpExecArray | null;
+  while ((match = tokenRegex.exec(rawLine)) !== null) {
+    const [, wsTok, strTok, diffTok, fracTok, dotDotTok, supTok, deltaTok, entityTok, relTok, binTok, numTok, identTok, puncTok] = match;
+
+    if (wsTok) {
+      out += wsTok;
+    } else if (strTok) {
+      out += `<span class="tm-string">${escapeHtml(strTok)}</span>`;
+    } else if (diffTok) {
+      if (options.inlineFractions) {
+        out += `<span class="tm-diff">${escapeHtml(diffTok.replace('//', '/'))}</span>`;
+      } else {
+        const varName = diffTok.slice(diffTok.lastIndexOf('d') + 1);
+        out += `<span class="tm-frac tm-diff-frac" role="math" aria-label="${escapeHtml(diffTok.replace('//', '/'))}"><span class="tm-num-box"><span class="tm-diff">d</span></span><span class="tm-frac-bar"><span class="tm-frac-slash">/</span></span><span class="tm-den-box"><span class="tm-diff">d${escapeHtml(varName)}</span></span></span>`;
+      }
+    } else if (dotDotTok) {
+      out += `<span class="tm-op">..</span>`;
+    } else if (fracTok) {
+      const [numRaw, denRaw] = fracTok.split(fracTok.includes('//') ? '//' : '/').map(s => s.trim());
+      if (options.inlineFractions) {
+        out += `<span class="tm-num">${escapeHtml(numRaw)}/${escapeHtml(denRaw)}</span>`;
+      } else {
+        out += `<span class="tm-frac" role="math" aria-label="${escapeHtml(numRaw)} / ${escapeHtml(denRaw)}"><span class="tm-num-box"><span class="tm-num">${escapeHtml(numRaw)}</span></span><span class="tm-frac-bar"><span class="tm-frac-slash">/</span></span><span class="tm-den-box"><span class="tm-num">${escapeHtml(denRaw)}</span></span></span>`;
+      }
+    } else if (supTok) {
+      let exp = supTok.slice(1);
+      if ((exp.startsWith('(') && exp.endsWith(')')) || (exp.startsWith('{') && exp.endsWith('}'))) exp = exp.slice(1, -1);
+      out += `<sup class="tm-sup">${typesetStringExpression(exp, options)}</sup>`;
+    } else if (deltaTok) {
+      const sub = deltaTok.replace(/^&?Delta_?/, '');
+      out += `<span class="tm-var">&Delta;${escapeHtml(sub)}</span>`;
+    } else if (entityTok) {
+      out += `<span class="tm-const">${entityTok}</span>`;
+    } else if (relTok) {
+      let sym = escapeHtml(relTok);
+      if (relTok === '<=' || relTok === '\u2264') sym = '&le;';
+      else if (relTok === '>=' || relTok === '\u2265') sym = '&ge;';
+      else if (relTok === '!=' || relTok === '\u2260') sym = '&ne;';
+      else if (relTok === '==') sym = '=';
+      else if (relTok === ':=') sym = ':=';
+      else if (relTok === '->') sym = '&rarr;';
+      out += `<span class="tm-rel">${sym}</span>`;
+    } else if (binTok) {
+      const sym = binTok === '-' || binTok === '&minus;' ? '&minus;' : (binTok === '*' || binTok === '&sdot;' ? '&sdot;' : (binTok === '//' || binTok === '/' ? '/' : escapeHtml(binTok)));
+      out += `<span class="tm-bin">${sym}</span>`;
+    } else if (numTok) {
+      out += `<span class="tm-num">${escapeHtml(numTok)}</span>`;
+    } else if (identTok) {
+      const mathFns = new Set(['sin', 'cos', 'tan', 'ln', 'exp', 'det', 'sqrt', 'pi', 'inf', 'isolate', 'simplify', 'check', 'graph', 'map', 'abs']);
+      if (identTok === 'pi') out += `<span class="tm-const">&pi;</span>`;
+      else if (identTok === 'inf') out += `<span class="tm-const">&infin;</span>`;
+      else if (mathFns.has(identTok)) out += `<span class="tm-fn">${escapeHtml(identTok)}</span>`;
+      else out += `<span class="tm-var">${escapeHtml(identTok)}</span>`;
+    } else if (puncTok) {
+      if (puncTok === "'") out += `<span class="tm-prime">&prime;</span>`;
+      else if (puncTok === '(' || puncTok === ')') out += `<span class="tm-paren">${escapeHtml(puncTok)}</span>`;
+      else if (puncTok === '[' || puncTok === ']') out += `<span class="tm-bracket">${escapeHtml(puncTok)}</span>`;
+      else out += escapeHtml(puncTok);
+    }
+  }
+  return out || escapeHtml(rawLine);
 }

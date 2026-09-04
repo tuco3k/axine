@@ -2712,6 +2712,48 @@ html, body {
     max-width: 100% !important;
   }
 
+  .doc-print-derivation .visual-derivation-tree {
+    margin: 6px 0 !important;
+  }
+
+  .doc-print-derivation .derivation-step-card {
+    border: 1px solid #dddddd !important;
+    background: #fafafa !important;
+    border-radius: 4px !important;
+    padding: 6px 10px !important;
+    margin: 6px 0 !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .doc-print-derivation .step-rule-badge {
+    background: #eeeeee !important;
+    color: #111111 !important;
+    border: 1px solid #cccccc !important;
+    padding: 1px 6px !important;
+    font-size: 9.5pt !important;
+    font-weight: 600 !important;
+  }
+
+  .doc-print-derivation .derivation-fork-container {
+    display: flex !important;
+    gap: 12px !important;
+    margin: 8px 0 !important;
+  }
+
+  .doc-print-derivation .derivation-branch-column {
+    flex: 1 !important;
+    border: 1px dashed #999999 !important;
+    border-radius: 4px !important;
+    padding: 6px 8px !important;
+  }
+
+  .doc-print-derivation .step-card-cond {
+    color: #c67100 !important;
+    font-style: italic !important;
+    font-size: 9.5pt !important;
+  }
+
   /* Typography */
   .tm-var {
     font-style: italic !important;
@@ -2725,6 +2767,11 @@ html, body {
 
   .tm-rel, .tm-bin {
     padding: 0 3px !important;
+  }
+
+  .tm-source-code {
+    font-family: ui-monospace, Menlo, Monaco, Consolas, monospace !important;
+    font-size: 10.5pt !important;
   }
 
   .tm-frac {
