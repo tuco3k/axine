@@ -242,6 +242,23 @@ export function processDocumentLines(
   return { totalDurationMs: Date.now() - startTime };
 }
 
+function sanitizeValueForWorker(val: any): any {
+  if (!val || typeof val !== 'object') return val;
+  if (Array.isArray(val)) return val.map(sanitizeValueForWorker);
+  if (val.type === 'space') {
+    return {
+      ...val,
+      entities: (val.entities || []).map((e: any) => {
+        const { compiledFn, ...rest } = e;
+        return rest;
+      }),
+      nestedSpaces: val.nestedSpaces ? sanitizeValueForWorker(val.nestedSpaces) : undefined,
+      resultVal: val.resultVal ? sanitizeValueForWorker(val.resultVal) : undefined,
+    };
+  }
+  return val;
+}
+
 // In Web Worker context
 if (typeof self !== 'undefined' && typeof (self as any).postMessage === 'function' && typeof window === 'undefined') {
   self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
@@ -263,7 +280,11 @@ if (typeof self !== 'undefined' && typeof (self as any).postMessage === 'functio
         msg.lines,
         (lineRes) => {
           if (currentEvalId === targetId) {
-            self.postMessage(lineRes);
+            const sanitized: LineResultMessage = {
+              ...lineRes,
+              result: lineRes.result ? sanitizeValueForWorker(lineRes.result) : undefined,
+            };
+            self.postMessage(sanitized);
           }
         },
         () => currentEvalId !== targetId,

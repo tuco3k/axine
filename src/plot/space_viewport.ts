@@ -1,5 +1,6 @@
 import { SpaceValue } from '../core/types';
 import { sample2D, sample3D, sampleSlice, findBounds2D, TriangleMesh3D, Bounds2D, Bounds3D, Contour2DResult } from '../core/sampler';
+import { compileAST } from '../core/compiler';
 
 export interface SpaceViewportOptions {
   width?: number;
@@ -66,7 +67,7 @@ export class SpaceViewport {
     const coords = space.coordinates.length > 0 ? space.coordinates : ['x', 'y'];
     if (coords.length === 1) {
       this.displayAxes = [coords[0], 'y'];
-      this.viewMode = '2d'; // 2D vertical line view default for single variable, supports 1D toggle
+      this.viewMode = '1d'; // 1D number line default for single variable space (n = 1)
     } else if (coords.length === 2) {
       this.displayAxes = [coords[0], coords[1]];
       this.viewMode = '2d';
@@ -86,6 +87,16 @@ export class SpaceViewport {
     for (const c of coords) {
       if (!this.displayAxes.includes(c)) {
         this.fixedCoords[c] = options.fixedCoords?.[c] ?? 0.0;
+      }
+    }
+
+    // Ensure compiledFn is present for every entity
+    for (const ent of this.space.entities) {
+      if (!ent.compiledFn && ent.ast) {
+        const comp = compileAST(ent.ast, ent.coordinates);
+        if (comp.success) {
+          ent.compiledFn = comp.fn;
+        }
       }
     }
 

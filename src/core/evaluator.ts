@@ -128,13 +128,13 @@ export class BudgetTracker {
     }
   }
 
-  public enterFunction(fnName: string, span?: Span): void {
+  public enterFunction(fnName: string, _span?: Span): void {
     this.depth++;
     if (this.depth > this.peakDepth) this.peakDepth = this.depth;
     if (this.depth > this.limits.maxDepth) {
-      throw createError(
-        `recursion depth exceeded in ${fnName} — is there a base case?`,
-        span ?? { start: 0, end: 0, line: 1, col: 1 }
+      throw new BudgetExhaustedError(
+        'budget-exhausted',
+        `recursion depth limit (${this.limits.maxDepth}) reached in ${fnName}`
       );
     }
   }
@@ -361,35 +361,45 @@ export class Evaluator {
   }
 
   public evaluate(ast: ASTNode): Value {
-    if (ast.type === 'Block') {
-      return this.evalBlockAsSpace(ast, this.env);
-    }
-
-    const analysis = analyzeAST(ast, this.env, new Set(), this.source);
-    const isRelation = ast.type === 'BinaryOp' && ['=', '==', '!=', '<', '<=', '>', '>='].includes(ast.op);
-
-    if (isRelation && !analysis.isDefinition && analysis.freeVariables.length > 0) {
-      const coordinates = [...analysis.freeVariables].sort((a, b) => a.localeCompare(b));
-      const comp = compileAST(ast, coordinates, this.env);
-      if (comp.success) {
-        const entity: SpatialEntity = {
-          coordinates,
-          ast,
-          compiledFn: comp.fn,
-          dimension: coordinates.length,
-          source: formatAST(ast),
-        };
-        return {
-          type: 'space',
-          coordinates,
-          dimension: coordinates.length,
-          entities: [entity],
-          span: ast.span,
-        };
+    try {
+      if (ast.type === 'Block') {
+        return this.evalBlockAsSpace(ast, this.env);
       }
-    }
 
-    return this.evalNode(ast, this.env);
+      const analysis = analyzeAST(ast, this.env, new Set(), this.source);
+      const isRelation = ast.type === 'BinaryOp' && ['=', '==', '!=', '<', '<=', '>', '>='].includes(ast.op);
+
+      if (isRelation && !analysis.isDefinition && analysis.freeVariables.length > 0) {
+        const coordinates = [...analysis.freeVariables].sort((a, b) => a.localeCompare(b));
+        const comp = compileAST(ast, coordinates, this.env);
+        if (comp.success) {
+          const entity: SpatialEntity = {
+            coordinates,
+            ast,
+            compiledFn: comp.fn,
+            dimension: coordinates.length,
+            source: formatAST(ast),
+          };
+          return {
+            type: 'space',
+            coordinates,
+            dimension: coordinates.length,
+            entities: [entity],
+            span: ast.span,
+          };
+        }
+      }
+
+      return this.evalNode(ast, this.env);
+    } catch (err) {
+      if (err instanceof BudgetExhaustedError) {
+        return makeUnknown(err.reason, err.detail);
+      }
+      if (err instanceof RangeError && err.message.toLowerCase().includes('call stack')) {
+        return makeUnknown('budget-exhausted', 'maximum recursion depth reached');
+      }
+      throw err;
+    }
   }
 
   private evalBlockAsSpace(node: BlockNode, currentEnv: Environment): Value {
@@ -604,15 +614,7 @@ export class Evaluator {
           });
         }
 
-        let left: Value;
-        try {
-          left = this.evalNode(node.left, currentEnv);
-        } catch (err: any) {
-          if (['=', '==', '!=', '<', '<=', '>', '>='].includes(node.op)) {
-            return { type: 'none' };
-          }
-          throw err;
-        }
+        const left = this.evalNode(node.left, currentEnv);
 
         if (node.op === '*' && (left.type === 'function' || left.type === 'lambda')) {
           const right = this.evalNode(node.right, currentEnv);
@@ -620,15 +622,7 @@ export class Evaluator {
           return this.invokeCallable(left, args, node.span);
         }
 
-        let right: Value;
-        try {
-          right = this.evalNode(node.right, currentEnv);
-        } catch (err: any) {
-          if (['=', '==', '!=', '<', '<=', '>', '>='].includes(node.op)) {
-            return { type: 'none' };
-          }
-          throw err;
-        }
+        const right = this.evalNode(node.right, currentEnv);
 
         switch (node.op) {
           case '+':

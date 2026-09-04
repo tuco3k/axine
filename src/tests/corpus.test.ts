@@ -9,7 +9,13 @@ interface GoldenTestCase {
   source: string;
   setup?: string[];
   expectedNormalized?: string;
-  expectedValue?: { type: 'rational'; n: bigint; d: bigint } | { type: 'float'; value: number } | { type: 'boolean'; value: boolean } | { type: 'string'; match: string };
+  expectedValue?:
+    | { type: 'rational'; n: bigint; d: bigint }
+    | { type: 'float'; value: number }
+    | { type: 'boolean'; value: boolean }
+    | { type: 'string'; match: string }
+    | { type: 'undefined' }
+    | { type: 'expression'; text?: string };
   expectedError?: {
     messageContains?: string;
     expectedContains?: string;
@@ -426,98 +432,79 @@ const GOLDEN_CORPUS: GoldenTestCase[] = [
     expectedValue: { type: 'float', value: 1 },
   },
 
-  // --- 7. Error Cases with exact messages, expected, and suggestions ---
+  // --- 7. Reduction & Standing Expressions / Undefined Forms ---
   {
     source: '1 / 0',
-    expectedError: {
-      messageContains: 'Division by zero',
-      expectedContains: 'a non-zero divisor',
-      suggestionContains: 'Check the divisor expression',
-    },
+    expectedNormalized: '1 / 0',
+    expectedValue: { type: 'undefined' },
   },
   {
     source: '5 / (3 - 3)',
-    expectedError: {
-      messageContains: 'Division by zero',
-      expectedContains: 'a non-zero divisor',
-      suggestionContains: 'Check the divisor expression',
-    },
+    expectedNormalized: '5 / (3 - 3)',
+    expectedValue: { type: 'undefined' },
   },
   {
     source: 'sqrt(-1)',
-    expectedError: {
-      messageContains: 'Cannot compute square root of negative number in real mode',
-      expectedContains: 'a non-negative real number (x >= 0)',
-    },
+    expectedNormalized: 'sqrt(-1)',
+    expectedValue: { type: 'expression', text: 'sqrt(-1)' },
   },
   {
     source: 'sqrt(-16)',
-    expectedError: {
-      messageContains: 'Cannot compute square root of negative number in real mode',
-    },
+    expectedNormalized: 'sqrt(-16)',
+    expectedValue: { type: 'expression', text: 'sqrt(-16)' },
   },
   {
     source: '(-4)^(1/2)',
-    expectedError: {
-      messageContains: 'Cannot compute fractional power of negative number in real mode',
-    },
+    expectedNormalized: '(-4)^(1 / 2)',
+    expectedValue: { type: 'expression', text: '(-4)^(1 / 2)' },
   },
   {
     source: '0^0',
-    expectedError: {
-      messageContains: 'Indeterminate form: 0^0 is undefined',
-      expectedContains: 'a non-zero base or exponent',
-    },
+    expectedNormalized: '0^0',
+    expectedValue: { type: 'undefined' },
   },
   {
     source: 'ln(0)',
-    expectedError: {
-      messageContains: 'ln(0) is undefined for non-positive values',
-      expectedContains: 'a strictly positive number (x > 0)',
-    },
+    expectedNormalized: 'ln(0)',
+    expectedValue: { type: 'expression', text: 'ln(0)' },
   },
   {
     source: 'ln(-5)',
-    expectedError: {
-      messageContains: 'ln(-5) is undefined for non-positive values',
-    },
+    expectedNormalized: 'ln(-5)',
+    expectedValue: { type: 'expression', text: 'ln(-5)' },
   },
   {
     source: 'log(0)',
-    expectedError: {
-      messageContains: 'log(0) is undefined for non-positive values',
-    },
+    expectedNormalized: 'log(0)',
+    expectedValue: { type: 'expression', text: 'log(0)' },
   },
   {
     source: 'log(-10)',
-    expectedError: {
-      messageContains: 'log(-10) is undefined for non-positive values',
-    },
+    expectedNormalized: 'log(-10)',
+    expectedValue: { type: 'expression', text: 'log(-10)' },
   },
   {
     source: 'log2(0)',
-    expectedError: {
-      messageContains: 'log2(0) is undefined for non-positive values',
-    },
+    expectedNormalized: 'log2(0)',
+    expectedValue: { type: 'expression', text: 'log2(0)' },
   },
   {
     source: 'factorial(-3)',
-    expectedError: {
-      messageContains: 'Factorial is only defined for non-negative integers',
-    },
+    expectedNormalized: 'factorial(-3)',
+    expectedValue: { type: 'expression', text: '(-3)!' },
   },
   {
     source: '(-3)!',
-    expectedError: {
-      messageContains: 'Factorial is only defined for non-negative integers',
-    },
+    expectedNormalized: '(-3)!',
+    expectedValue: { type: 'expression', text: '(-3)!' },
   },
   {
     source: '(1/2)!',
-    expectedError: {
-      messageContains: 'Factorial is only defined for non-negative integers',
-    },
+    expectedNormalized: '(1 / 2)!',
+    expectedValue: { type: 'expression', text: '(1 / 2)!' },
   },
+
+  // --- 8. Error Cases (Syntax and unbound multi-letter identifiers) ---
   {
     source: 'velocity + 1',
     expectedError: {
@@ -715,6 +702,13 @@ describe(`Golden File Test Corpus (${GOLDEN_CORPUS.length} cases)`, () => {
               type: 'boolean',
               value: testCase.expectedValue.value,
             });
+          } else if (testCase.expectedValue.type === 'undefined') {
+            expect(value.type).toBe('undefined');
+          } else if (testCase.expectedValue.type === 'expression') {
+            expect(value.type).toBe('expression');
+            if (testCase.expectedValue.text) {
+              expect((value as any).text).toBe(testCase.expectedValue.text);
+            }
           }
         }
       }

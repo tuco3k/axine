@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { addValues, divValues, factorialValue, powValues, sqrtValue } from '../core/numeric/tower';
 import { makeRational } from '../core/numeric/tower';
-import { MathError } from '../core/errors';
 
 describe('Numeric Tower & Exact Rationals', () => {
   it('1/3 + 1/3 + 1/3 equals exactly 1', () => {
@@ -11,27 +10,17 @@ describe('Numeric Tower & Exact Rationals', () => {
     expect(sum3).toEqual({ type: 'rational', n: 1n, d: 1n });
   });
 
-  it('handles division by zero with clear error', () => {
+  it('handles division by zero as undefined', () => {
     const one = makeRational(1n, 1n);
     const zero = makeRational(0n, 1n);
-    expect(() => divValues(one, zero)).toThrow(MathError);
-    try {
-      divValues(one, zero);
-    } catch (e: any) {
-      expect(e.diagnostic.message).toContain('Division by zero');
-      expect(e.diagnostic.expected).toBeDefined();
-      expect(e.diagnostic.suggestion).toBeDefined();
-    }
+    expect(divValues(one, zero)).toEqual({ type: 'undefined' });
   });
 
-  it('sqrt(-1) errors clearly and does not return NaN', () => {
+  it('sqrt(-1) stands unreduced as sqrt(-1) expression', () => {
     const negOne = makeRational(-1n, 1n);
-    expect(() => sqrtValue(negOne)).toThrow(MathError);
-    try {
-      sqrtValue(negOne);
-    } catch (e: any) {
-      expect(e.diagnostic.message).toContain('Cannot compute square root of negative number in real mode');
-    }
+    const res = sqrtValue(negOne);
+    expect(res.type).toBe('expression');
+    expect((res as any).text).toBe('sqrt(-1)');
   });
 
   it('exact square roots return exact rationals', () => {
@@ -51,19 +40,27 @@ describe('Numeric Tower & Exact Rationals', () => {
     }
   });
 
-  it('0^0 throws indeterminate error', () => {
+  it('0^0 reduces to undefined', () => {
     const zero = makeRational(0n, 1n);
-    expect(() => powValues(zero, zero)).toThrow(MathError);
+    expect(powValues(zero, zero)).toEqual({ type: 'undefined' });
   });
 
-  it('factorial handles non-negative integers exactly and rejects negatives/non-integers', () => {
+  it('factorial handles non-negative integers exactly and stands unreduced for negatives/non-integers', () => {
     const five = makeRational(5n, 1n);
     expect(factorialValue(five)).toEqual({ type: 'rational', n: 120n, d: 1n });
 
     const negFive = makeRational(-5n, 1n);
-    expect(() => factorialValue(negFive)).toThrow(MathError);
+    expect(factorialValue(negFive)).toEqual({
+      type: 'expression',
+      ast: expect.anything(),
+      text: '(-5)!',
+    });
 
     const half = makeRational(1n, 2n);
-    expect(() => factorialValue(half)).toThrow(MathError);
+    expect(factorialValue(half)).toEqual({
+      type: 'expression',
+      ast: expect.anything(),
+      text: '(1 / 2)!',
+    });
   });
 });

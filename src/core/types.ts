@@ -554,6 +554,11 @@ export interface NoneValue {
   type: 'none';
 }
 
+export interface UndefinedValue {
+  type: 'undefined';
+  reason?: string;
+}
+
 import { MathKind } from './kinds';
 
 export type ObstructionReason =
@@ -1008,6 +1013,7 @@ export type Value =
   | TupleValue
   | ListValue
   | NoneValue
+  | UndefinedValue
   | UnknownValue
   | MatrixValue
   | GraphTypeValue
@@ -1059,7 +1065,7 @@ export type BudgetLimits = FuelLimits;
 export const DEFAULT_AMBIENT_FUEL: FuelLimits = {
   maxSteps: 2_000_000,
   timeoutMs: 250,
-  maxDepth: 1_000,
+  maxDepth: 250,
   maxBigIntDigits: 100_000,
   maxMemoryElements: 10_000_000,
 };
@@ -1067,7 +1073,7 @@ export const DEFAULT_AMBIENT_FUEL: FuelLimits = {
 export const DEFAULT_INVOKED_FUEL: FuelLimits = {
   maxSteps: 100_000_000,
   timeoutMs: 10_000,
-  maxDepth: 1_000,
+  maxDepth: 500,
   maxBigIntDigits: 100_000,
   maxMemoryElements: 10_000_000,
 };

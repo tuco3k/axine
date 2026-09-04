@@ -36,10 +36,14 @@ describe('Core Language Extensions & Problem Corpus Features', () => {
       expect(res.value).toEqual({ type: 'rational', n: 12586269025n, d: 1n });
     });
 
-    it('detects infinite recursion and throws recursion depth exceeded error', () => {
+    it('detects infinite recursion and reports budget-exhausted unknown', () => {
       const env = createInitialEnvironment();
       evaluate('bad(x) := bad(x + 1)', env);
-      expect(() => evaluate('bad(0)', env)).toThrowError(/recursion depth exceeded in bad/);
+      const res = evaluate('bad(0)', env);
+      expect(res.value.type).toBe('unknown');
+      if (res.value.type === 'unknown') {
+        expect(res.value.reason).toBe('budget-exhausted');
+      }
     });
   });
 

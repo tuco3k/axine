@@ -2756,6 +2756,8 @@ export function formatValue(val: Value): string {
       return val.value ? 'true' : 'false';
     case 'none':
       return 'none';
+    case 'undefined':
+      return 'undefined';
     case 'unknown':
       return `unknown(${val.reason}${val.detail ? `, "${val.detail}"` : ''})`;
     case 'claim':
