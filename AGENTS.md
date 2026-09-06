@@ -94,3 +94,18 @@ exact rational.
 
 If you find yourself editing content to avoid a defect, stop and fix the
 defect. Then revert the content change.
+
+## Opacity is the disqualifier, not speed
+Math.sqrt is banned because you cannot look at it, not because it is
+fast. A fast sqrt written in Axine — bit tricks, lookup tables, whatever
+— is legitimate no matter how fast, as long as it is readable, derivable,
+and \expand shows what it did.
+
+This means optimization is permitted when it is uniform and visible:
+compiling relations, warm-starting search, GPU sampling. Every relation
+gets it equally and you can see what happened.
+
+It also means the floor may grow to reach lower — bit operations,
+machine representation — if that is what lets fast numerics be written
+IN Axine rather than imported from outside. Extending reach is not an
+exception. Hiding an implementation behind a name is.
