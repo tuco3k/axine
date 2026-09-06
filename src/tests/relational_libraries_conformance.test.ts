@@ -453,5 +453,56 @@ describe('Relational Libraries Full Conformance & Benchmark Suite', () => {
       expect(speedup).toBeGreaterThan(30.0);
       expect(Number.isFinite(sumCompiled)).toBe(true);
     });
+
+    it('confirms user-defined \\forall recurrence receives identical compilation throughput speedup', () => {
+      const env = createStandardLibraryEnv();
+      evaluate('\\forall x, :user_step(x) = 0.5 * (x + 3 / x)', env);
+      evaluate('\\forall x, y, :user_surface(x, y) = :user_step(:user_step(x)) * :user_step(:user_step(y)) - 3', env);
+
+      const expr = ':user_surface(x, y)';
+      const ast = parse(expr);
+      const res = compileRelation(ast, ['x', 'y'], env);
+      expect(res.success).toBe(true);
+      const compiledFn = (res as CompileSuccess).fn;
+
+      const N = 5000;
+      const xVals = Array.from({ length: N }, (_, i) => 1.0 + (3.0 * i) / N);
+      const yVals = Array.from({ length: N }, (_, i) => 1.0 + (3.0 * (N - 1 - i)) / N);
+
+      // Warm up
+      for (let i = 0; i < 100; i++) {
+        compiledFn(xVals[i], yVals[i]);
+      }
+
+      // Time compiled closure
+      const t0 = performance.now();
+      let sumCompiled = 0;
+      for (let i = 0; i < N; i++) {
+        sumCompiled += compiledFn(xVals[i], yVals[i]);
+      }
+      const t1 = performance.now();
+      const compiledTimePerEvalUs = ((t1 - t0) * 1000) / N;
+
+      // Time AST walker
+      const M = 100;
+      const t2 = performance.now();
+      for (let i = 0; i < M; i++) {
+        const iterEnv = { ...env, x: { type: 'float', value: xVals[i] }, y: { type: 'float', value: yVals[i] } };
+        evaluate(expr, iterEnv as any);
+      }
+      const t3 = performance.now();
+      const walkerTimePerEvalUs = ((t3 - t2) * 1000) / M;
+
+      const speedup = walkerTimePerEvalUs / compiledTimePerEvalUs;
+
+      console.log(`\n--- USER-DEFINED \\forall RECURRENCE BENCHMARK ---`);
+      console.log(`• User Relation: \\forall x, y, :user_surface(x, y) = :user_step(:user_step(x)) * :user_step(:user_step(y)) - 3`);
+      console.log(`• AST Walker evaluation: ${walkerTimePerEvalUs.toFixed(3)} µs/eval`);
+      console.log(`• Compiled closure evaluation: ${compiledTimePerEvalUs.toFixed(4)} µs/eval`);
+      console.log(`• User-Defined \\forall Compilation Speedup: ${speedup.toFixed(1)}x`);
+
+      expect(speedup).toBeGreaterThan(30.0);
+      expect(Number.isFinite(sumCompiled)).toBe(true);
+    });
   });
 });
