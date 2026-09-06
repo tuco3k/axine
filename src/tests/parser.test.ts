@@ -27,4 +27,8 @@ describe('Parser and Formatter Ambiguity Table', () => {
     const ast = parse('-x^2');
     expect(formatAST(ast)).toBe('-(x^2)');
   });
+
+  it('rejects obsolete relation space annotations like : 3R', () => {
+    expect(() => parse('x = 0 : 3R')).toThrow();
+  });
 });
