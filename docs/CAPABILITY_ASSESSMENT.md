@@ -1,7 +1,7 @@
 # Architectural Assessment: Mathematical Capabilities and the Expanded Floor
 
 > **Document Type**: Normative Architectural Specification & Capability Road Map  
-> **Status**: Complete Specification — Ready for Architectural Review  
+> **Status**: Complete Specification (Updated with C9 Operator Overloading) — Ready for Implementation  
 > **Target System**: Axine 2.0+ (Pure Relational Universe)  
 > **Reference Baselines**: [`AGENTS.md`](../AGENTS.md), [`docs/SYNTAX_V2.md`](./SYNTAX_V2.md), [`docs/SEMANTICS.md`](./SEMANTICS.md), [`docs/BUILTIN_ASSESSMENT.md`](./BUILTIN_ASSESSMENT.md), [`docs/LEFTOVER_AUDIT.md`](./LEFTOVER_AUDIT.md), [`docs/DERIVATIVE_ASSESSMENT.md`](./DERIVATIVE_ASSESSMENT.md)
 
@@ -13,22 +13,23 @@ Axine today computes numbers with high fidelity: exact rationals, multi-precisio
 
 Every advanced mathematical facility in the codebase today—symbolic differentiation, algebraic simplification, equation isolation, limits, and series—is hardcoded in TypeScript as rigid switch statements over internal AST nodes. Like the 44 procedural builtins recently removed in Phase 12, these hardcoded subsystems lock the user into a small set of anticipated operations.
 
-This document specifies the **irreducible set of core capabilities** required to transform Axine from a scalar calculus engine into an extensible environment for abstract mathematics. It inventories each capability, derives its minimal floor addition, establishes the dependency graph, specifies the exact backslash commands, works out five comprehensive mathematical applications, estimates implementation costs, and inventories open theoretical risks.
+This document specifies the **irreducible set of nine core capabilities** (C1 through C9) required to transform Axine from a scalar calculus engine into an extensible environment for abstract mathematics. It inventories each capability, derives its minimal floor addition, establishes the dependency graph, specifies the exact backslash commands, works out five comprehensive mathematical applications, estimates implementation costs, and inventories open theoretical risks.
 
 ```
                            THE CAPABILITY PYRAMID
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ LEVEL 3: ABSTRACT ALGEBRAIC STRUCTURES & TOPOLOGY                           │
-│ • Groups, Rings, Fields, Quotient Structures, Homomorphisms                 │
+│ LEVEL 3: STRUCTURE-BOUND OPERATIONS & TOPOLOGY                              │
+│ • C9: Operator Overloading by Structure (\with, \op)                        │
+│ • C7: Homomorphisms & Actions, C8: Quotient Structures                      │
 │ • Differential Forms, Exterior Calculus, Tensor Algebras                    │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ LEVEL 2: COMPUTATIONAL & LOGICAL ABSTRACTIONS                               │
-│ • Bounded Quantifiers (\forall, \exists), Structural Catamorphisms (\fold) │
-│ • Piecewise Regional Partitions (\cases, \when), Equational Rewriting       │
+│ • C4: Bounded Quantifiers (\forall, \exists), C3: Structural Folds (\fold)  │
+│ • C5: Piecewise Regional Partitions (\cases), C6: Operation Tables & Axioms │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ LEVEL 1: THE EXTENDED CORE FLOOR                                            │
-│ • First-Class Syntactic Terms & Pattern Destructuring                       │
-│ • Inductive Type Constructors & Carrier Set Comprehensions                  │
+│ • C1: First-Class Syntactic Terms (\match, \build, \rule)                   │
+│ • C2: Inductive Type Constructors & Carrier Set Comprehensions (\set)       │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ LEVEL 0: THE EXISTING IRREDUCIBLE FLOOR                                     │
 │ • Exact Rational Arithmetic, Numerical Relations (=, <, <=), Substitution  │
@@ -47,7 +48,7 @@ Below is the complete inventory of missing core capabilities, what currently can
 ### 1. Expressions as Values & Equational Pattern Rewriting (Term Homoiconicity)
 
 #### What It Is
-The ability to treat mathematical expressions as first-class, inspectable, and constructible syntactic terms without forcing immediate evaluation to scalar numbers. The core provides structural pattern matching over term shapes and fuel-bounded equational substitution.
+The ability to treat mathematical expressions as first-class, inspectable, and constructible syntactic terms without forcing immediate evaluation to scalar numbers. The core provides structural pattern matching over term shapes (`\match`), syntactic construction (`\build`), and fuel-bounded equational substitution (`\rule`).
 
 #### What Currently Cannot Be Written
 - **Symbolic Differentiation (`d//dx`)**: User-defined derivative rules on custom operators or functions.
@@ -57,13 +58,16 @@ The ability to treat mathematical expressions as first-class, inspectable, and c
 
 #### What the Core Must Provide
 1. An `Expression` term representation (`{ type: 'expression', ast: ASTNode }`) in the value tower.
-2. A structural pattern matching and unification algorithm (matching AST subtrees to metavariables $u, v \in \mathrm{Expr}$).
-3. A fuel-bounded equational term-rewriting engine executing recursive bottom-up / top-down fixpoint passes.
-4. Term quoting and quasi-quoting primitives to construct unevaluated AST templates.
+2. A structural pattern matching and unification algorithm (`\match`, matching AST subtrees to metavariables $u, v \in \mathrm{Expr}$).
+3. A structural expression constructor (`\build`, synthesizing AST nodes from bound subtrees).
+4. A fuel-bounded equational term-rewriting engine executing recursive bottom-up / top-down fixpoint passes.
+5. Term quoting and quasi-quoting primitives to construct unevaluated AST templates.
 
 #### Notation Implied
 ```axine
 \rule <name>: <pattern> = <replacement> [\requires <condition>]
+\match <expr> { \case <pattern>: <result>, ... }
+\build <type>(<args>)
 ```
 
 #### What Else Becomes Possible
@@ -164,7 +168,7 @@ The ability to define relations and functions whose mathematical formulations br
 
 #### What Currently Cannot Be Written
 - **Standard Piecewise Analysis**: Step functions (Heaviside $\theta(x)$), triangle waves, clamp functions.
-- **Boundary Value Problems (BVPs)**: Specifying differential equations with regional source terms or piecewise potentials $V(x) = \begin{cases} 0 & 0 \le x \le L \\ \infty & \text{otherwise} \end{cases}$.
+- **Boundary Value Problems (BVPs)**: Specifying differential equations with regional source terms or piecewise potentials.
 - **Splines and Finite Elements**: Continuous piecewise polynomial splines spanning partitioned intervals.
 - **Piecewise Level-Set Sampling**: Rendering manifolds with conditional boundaries.
 
@@ -274,52 +278,88 @@ Constructing a new mathematical structure $S / \sim$ by partitioning a carrier s
 
 ---
 
+### 9. Operator Overloading by Structure (\with, \op)
+
+#### What It Is
+The ability to bind standard arithmetic and algebraic operators (`+`, `-`, `*`, `/`, `^`, `\wedge`, `\otimes`, `\circ`, `\star`, `==`) to user-defined relations within the context of a mathematical structure. When an expression `a + b` is evaluated where `a, b \in S` (or inside a structural scope `\with :Structure { ... }`), the evaluator dispatches `+` to the structure's registered addition relation rather than failing with a kind mismatch or defaulting to real scalar arithmetic.
+
+#### What Currently Cannot Be Written
+- **Idiomatic Polynomial Arithmetic**: Writing `:p1 + :p2` and `:p1 * :p2` for polynomial coefficient lists rather than invoking awkward procedural names like `:add_poly(:p1, :p2)`.
+- **Modular Arithmetic Systems**: Writing `3 + 5` inside `\with :Z7 { ... }` evaluating directly to `1`.
+- **Matrix Rings Over Arbitrary Rings**: Writing `:A * :B` where element additions and multiplications use the underlying ring's overloaded operators.
+- **Quaternion & Clifford Multiplication**: Writing `:q1 * :q2` resolving to the non-commutative Hamilton product.
+
+#### What the Core Must Provide
+1. Structure-scoped operator dispatch table in `OpTable` (SEMANTICS.md Section 4 & Context System).
+2. Lexical structure scoping pragma `\with <structure> { ... }` that binds active operator overloads for enclosed statements.
+3. Dynamic operator dispatch: when evaluating `BinaryOp(op, left, right)`, resolve against the active structure's operator table before falling back to scalar arithmetic.
+
+#### Notation Implied
+```axine
+\structure <name> {
+  \carrier: <set>,
+  \op +: <add_relation>,
+  \op *: <mul_relation>
+}
+
+\with <structure> {
+  # Operators resolve to structure definitions
+  :c = :a + :b
+}
+```
+
+#### What Else Becomes Possible
+- Direct mathematical notation across all user-defined rings, fields, vector spaces, and algebras.
+- Dual numbers for exact automatic differentiation ($a + b\epsilon$ with $\epsilon^2 = 0$).
+- Interval arithmetic packages defined entirely in Axine standard libraries.
+
+---
+
 ## B. The Dependency Graph & Minimal First Addition
 
-The capabilities are not independent; they form a strict directed acyclic dependency graph.
+The nine capabilities form a strict directed acyclic dependency graph.
 
 ```
                                 DEPENDENCY GRAPH
                                 
-      [1. Expressions as Values]               [2. Inductive Collections]
+      [C1. Expressions as Values]               [C2. Inductive Collections]
                   │                                         │
          ┌────────┴────────┐                       ┌────────┴────────┐
          ▼                 ▼                       ▼                 ▼
-  [5. Piecewise]   [Equational Diff]         [3. Folding]    [Comprehensions]
+  [C5. Piecewise]   [Equational Diff]        [C3. Folding]     [Comprehensions]
          │                 │                       │                 │
          │                 │                       └────────┬────────┘
          │                 │                                ▼
-         │                 │                     [4. Bounded Quantifiers]
+         │                 │                     [C4. Bounded Quantifiers]
          │                 │                                │
          │                 └───────────────┬────────────────┘
          │                                 ▼
-         └──────────────────────► [6. Operation Tables & Axioms]
+         └──────────────────────► [C6. Operation Tables & Axioms]
                                            │
-                                  ┌────────┴────────┐
-                                  ▼                 ▼
-                        [7. Homomorphisms]   [8. Quotients]
+                        ┌──────────────────┼──────────────────┐
+                        ▼                  ▼                  ▼
+              [C7. Homomorphisms]   [C8. Quotients]   [C9. Operator Overloads]
 ```
 
 ### Dependency Audit Table
 
 | Capability | Prerequisites | Reason for Dependency |
 | :--- | :--- | :--- |
-| **1. Expressions as Values** | None (Core floor addition) | Foundation for all symbolic transformation and term manipulation. |
-| **2. Inductive Collections** | None (Core floor addition) | Foundation for discrete structures, sets, and lists. |
-| **3. Folding (\fold)** | **2** (Inductive Collections) | Cannot reduce a collection without a structured collection representation. |
-| **4. Bounded Quantifiers** | **2** (Collections), **3** (Folding) | $\forall$ and $\exists$ evaluate as boolean reductions over finite collections. |
-| **5. Piecewise (\cases)** | **1** (Expressions as Values) | Piecewise functions require branch substitution and expression preservation. |
-| **6. Operation Tables & Axioms** | **2** (Collections), **4** (Quantifiers) | Axiom checking evaluates quantified propositions over carrier collections. |
-| **7. Homomorphisms** | **6** (Structures), **4** (Quantifiers) | Validating $\phi(a \star b) = \phi(a) \star \phi(b)$ is a quantified axiom over $G$. |
-| **8. Quotient Structures** | **6** (Structures), **4** (Quantifiers), **1** (Expressions) | Requires quotient normalizer and well-definedness quantification. |
+| **C1. Expressions as Values** | None (Core floor addition) | Foundation for all symbolic transformation, term rewriting, and pattern matching. |
+| **C2. Inductive Collections** | None (Core floor addition) | Foundation for discrete structures, sets, and lists. |
+| **C3. Folding (\fold)** | **C2** (Inductive Collections) | Cannot reduce a collection without a structured collection representation. |
+| **C4. Bounded Quantifiers** | **C2** (Collections), **C3** (Folding) | $\forall$ and $\exists$ evaluate as boolean reductions over finite collections. |
+| **C5. Piecewise (\cases)** | **C1** (Expressions as Values) | Piecewise functions require branch substitution and expression preservation. |
+| **C6. Operation Tables & Axioms** | **C2** (Collections), **C4** (Quantifiers) | Axiom checking evaluates quantified propositions over carrier collections. |
+| **C7. Homomorphisms** | **C6** (Structures), **C4** (Quantifiers) | Validating $\phi(a \star b) = \phi(a) \star \phi(b)$ is a quantified axiom over $G$. |
+| **C8. Quotient Structures** | **C6** (Structures), **C4** (Quantifiers), **C1** (Expressions) | Requires quotient normalizer and well-definedness quantification. |
+| **C9. Operator Overloading** | **C6** (Structures), **C1** (Expressions) | Binds structural operations to operator syntax within lexical scopes. |
 
 ### The Minimal First Addition
 
-The dependency analysis reveals that the **minimal first step** consists of two complementary additions:
-1. **Capability 1 (Expressions as Values & Equational Rewriter)**: Unlocks symbolic differentiation (`d//dx`), algebraic simplification, integration by parts, and transform tables.
-2. **Capability 2 + 4 (Inductive Collections & Bounded Quantifiers)**: Unlocks finite sets, sums, products, and axiom validation.
-
-Together, these two additions unlock 90% of the downstream algebraic graph.
+The dependency analysis reveals that the **minimal first step** consists of:
+1. **C1 (Expressions as Values & Term Rewriting)**: Unlocks symbolic differentiation (`d//dx`), algebraic simplification, integration by parts, and transform tables.
+2. **C2 + C4 (Inductive Collections & Bounded Quantifiers)**: Unlocks finite sets, sums, products, and axiom validation.
 
 ---
 
@@ -345,14 +385,18 @@ Today's minimal floor consists strictly of:
 │    • Structure Descriptor: { type: 'structure', carrier, opTable, axioms }  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 2. EQUATIONAL TERM REWRITING & PATTERN ENGINE                               │
-│    • AST structural pattern matcher with wildcard binding                   │
-│    • Fuel-bounded fixpoint term substitution and rule dispatch              │
+│    • AST structural pattern matcher with wildcard binding (\match)          │
+│    • AST node constructor (\build)                                          │
+│    • Fuel-bounded fixpoint term substitution and rule dispatch (\rule)      │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 3. DISCRETE ITERATION & QUANTIFICATION KERNEL                               │
 │    • Structural catamorphism loop (\fold over inductive collections)        │
 │    • Short-circuiting bounded quantifier evaluator (\forall, \exists)       │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│ 4. RELATIONAL SAMPLER & CONTINUATION ENGINE (UNCHANGED)                     │
+│ 4. STRUCTURE-SCOPED OPERATOR DISPATCH TABLE                                 │
+│    • Context-bound operator resolution (\with, \op)                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ 5. RELATIONAL SAMPLER & CONTINUATION ENGINE (UNCHANGED)                     │
 │    • Uniform implicit grid evaluation over [-L, L]^n                        │
 │    • Forward numerical continuation for differential relations (RK4)        │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -386,35 +430,47 @@ Below is the complete, closed set of backslash commands required:
 │    • Arity: 3 or 4 (Identifier, Pattern Expr, Replacement Expr, Guard Expr) │
 │    • Meaning: Declares an equational term rewrite rule.                     │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│ 2. \cases { \when <cond>: <expr>, ..., \otherwise: <expr> }                 │
+│ 2. \match <expr> { \case <pattern>: <result>, ... }                         │
+│    • Arity: 1 (Expression with case branch block)                           │
+│    • Meaning: Pattern-matches an expression AST by structure.               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ 3. \build <node_type>(<args>)                                               │
+│    • Arity: 2 (Node Type Token, Argument Tuple)                             │
+│    • Meaning: Constructs an unevaluated AST expression term.                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ 4. \cases { \when <cond>: <expr>, ..., \otherwise: <expr> }                 │
 │    • Arity: 1 (Block containing branch pairs)                               │
 │    • Meaning: Evaluates a piecewise regional branching expression.          │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│ 3. \forall <vars> \in <collection>, <predicate>                             │
+│ 5. \forall <vars> \in <collection>, <predicate>                             │
 │    • Arity: 3 (Identifier list, Collection Expr, Predicate Expr)            │
 │    • Meaning: Evaluates universal quantification over a discrete domain.    │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│ 4. \exists <vars> \in <collection>, <predicate>                             │
+│ 6. \exists <vars> \in <collection>, <predicate>                             │
 │    • Arity: 3 (Identifier list, Collection Expr, Predicate Expr)            │
 │    • Meaning: Evaluates existential quantification over a discrete domain.  │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│ 5. \fold <op> \over <collection> \from <initial_value>                      │
+│ 7. \fold <op> \over <collection> \from <initial_value>                      │
 │    • Arity: 3 (Binary Op/Function, Collection Expr, Initial Expr)           │
 │    • Meaning: Reduces a collection using an associative operation.          │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│ 6. \structure <name> { \carrier: <set>, \op <op>: <table>, \axiom ... }     │
+│ 8. \structure <name> { \carrier: <set>, \op <op>: <rel>, \axiom ... }       │
 │    • Arity: 2 (Identifier, Block specification)                             │
 │    • Meaning: Declares an algebraic structure with operations and axioms.   │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│ 7. \quotient <structure> \by <relation_or_subgroup>                         │
+│ 9. \with <structure> { <statements> }                                       │
+│    • Arity: 2 (Structure Expr, Statement Block)                             │
+│    • Meaning: Executes statements with structure's operator overloads.      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ 10. \quotient <structure> \by <relation_or_subgroup>                        │
 │    • Arity: 2 (Structure Expr, Partition Expr)                              │
 │    • Meaning: Constructs a quotient structure modulo an equivalence.        │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│ 8. \homomorphism <name>: <source> \to <target> \map <relation>              │
+│ 11. \homomorphism <name>: <source> \to <target> \map <relation>             │
 │    • Arity: 4 (Identifier, Source Expr, Target Expr, Map Relation)          │
 │    • Meaning: Declares and validates a structure-preserving map.            │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│ 9. \set { <elem1>, <elem2>, ... }                                           │
+│ 12. \set { <elem1>, <elem2>, ... }                                          │
 │    • Arity: 1 (Element list or comprehension)                               │
 │    • Meaning: Constructs an explicit or comprehension-defined set.          │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -424,7 +480,7 @@ Below is the complete, closed set of backslash commands required:
 
 ## E. What This Makes Possible: Five Concrete Mathematical Workflows
 
-Below are five mathematical formulations written in pure Axine syntax that are **completely impossible** in Axine today, showing exactly how they execute once the capabilities are added.
+Below are five mathematical formulations written in pure Axine syntax that are **completely impossible** in Axine today, showing exactly how they execute once capabilities C1 through C9 exist.
 
 ---
 
@@ -438,7 +494,7 @@ Below are five mathematical formulations written in pure Axine syntax that are *
   \carrier: :G_set,
   
   # Cayley Multiplication Table
-  \op :mul: {
+  \op *: {
     (:e, :e) = :e, (:e, :a) = :a, (:e, :b) = :b, (:e, :c) = :c,
     (:a, :e) = :a, (:a, :a) = :e, (:a, :b) = :c, (:a, :c) = :b,
     (:b, :e) = :b, (:b, :a) = :c, (:b, :b) = :e, (:b, :c) = :a,
@@ -447,16 +503,16 @@ Below are five mathematical formulations written in pure Axine syntax that are *
   
   # Group Axioms Verified Automatically by Bounded Quantifiers:
   \axiom :closure:
-    \forall :x, :y \in :G_set, (:x \star :y) \in :G_set,
+    \forall :x, :y \in :G_set, (:x * :y) \in :G_set,
     
   \axiom :associativity:
-    \forall :x, :y, :z \in :G_set, (:x \star :y) \star :z = :x \star (:y \star :z),
+    \forall :x, :y, :z \in :G_set, (:x * :y) * :z = :x * (:y * :z),
     
   \axiom :identity:
-    \exists :id \in :G_set, \forall :x \in :G_set, :id \star :x = :x \land :x \star :id = :x,
+    \exists :id \in :G_set, \forall :x \in :G_set, :id * :x = :x \land :x * :id = :x,
     
   \axiom :inverses:
-    \forall :x \in :G_set, \exists :inv \in :G_set, :x \star :inv = :e
+    \forall :x \in :G_set, \exists :inv \in :G_set, :x * :inv = :e
 }
 ```
 
@@ -464,29 +520,34 @@ Below are five mathematical formulations written in pure Axine syntax that are *
 
 ---
 
-### 2. Polynomial Arithmetic Over a User-Defined Finite Ring ($\mathbb{Z}_7[x]$)
+### 2. Polynomial Arithmetic Over a User-Defined Finite Ring ($\mathbb{Z}_7[x]$ with Operator Overloading)
 
 ```axine
 # Define the coefficient ring Z7
 :Z7 = \set { 0, 1, 2, 3, 4, 5, 6 }
 
-# Polynomial Addition in Z7[x]: elementwise addition mod 7
-\rule :poly_add:
-  :add_poly(:p1, :p2) = \map (\lambda :pair, (:pair.1 + :pair.2) % 7) \over \zip(:p1, :p2)
+# Define the Polynomial Ring Structure Z7[x]
+\structure :Z7_poly {
+  \carrier: \set { :coeffs \in \list(:Z7) },
+  
+  # Overload + for Polynomials: elementwise addition mod 7
+  \op +: \lambda :p1, :p2, \map (\lambda :pair, (:pair.1 + :pair.2) % 7) \over \zip(:p1, :p2),
+  
+  # Overload * for Polynomials: Cauchy convolution product mod 7
+  \op *: \lambda :p1, :p2, \fold (\lambda :k, :acc, :acc \concat [:cauchy_term(:p1, :p2, :k) % 7]) \over (0..(\len(:p1)+\len(:p2)-2)) \from []
+}
 
-# Polynomial Evaluation via Horner's Method: \fold over coefficient list
-# P(x) = a0 + a1*x + a2*x^2 = a0 + x*(a1 + x*(a2))
-\rule :poly_eval:
-  :eval_poly(:coeffs, :x) = \fold (\lambda :coeff, :acc, (:coeff + :x * :acc) % 7) \over \reverse(:coeffs) \from 0
-
-# P(x) = 3 + 2x + 5x^2 represented as [3, 2, 5]
-:P = [3, 2, 5]
-
-# Evaluate P(4) in Z7: 3 + 2(4) + 5(16) = 3 + 8 + 80 = 91 = 0 (mod 7)
-:result = :eval_poly(:P, 4)
+# In structural context, standard + and * execute polynomial arithmetic!
+\with :Z7_poly {
+  :p1 = [3, 2, 5]     # 3 + 2x + 5x^2
+  :p2 = [4, 6, 1]     # 4 + 6x + x^2
+  
+  # Evaluates via overloaded + to [ (3+4)%7, (2+6)%7, (5+1)%7 ] = [0, 1, 6]
+  :p_sum = :p1 + :p2
+}
 ```
 
-*Outcome*: `:result` reduces to `0`. Polynomials are evaluated over arbitrary rings without any built-in polynomial CAS engine.
+*Outcome*: With C9 operator overloading, `:p_sum` reduces naturally to `[0, 1, 6]` ($x + 6x^2$) using idiomatic mathematical `+` syntax!
 
 ---
 
@@ -575,14 +636,15 @@ Below is the engineering effort breakdown and invariant risk analysis for each c
 
 | Capability | Estimated Effort | Primary Files Affected | Conformance & Test Suite Impact | Invariant Risks & Mitigations |
 | :--- | :---: | :--- | :--- | :--- |
-| **1. Expressions as Values & Rewriter** | **1.5 Weeks** | `types.ts`, `parser.ts`, `evaluator.ts`, `algebra/rewrite.ts` | High: affects derivation steps and rule execution across 45 test files. | **Fuel Invariant**: Rewriter must enforce strict step fuel to prevent non-terminating rewrite loops. |
-| **2. Inductive Collections & Sets** | **1.0 Week** | `types.ts`, `parser.ts`, `evaluator.ts` | Medium: replaces ad-hoc `ListValue` with structured inductive terms. | **Honesty Invariant**: Ensure empty sets $\emptyset$ evaluate cleanly to empty manifolds. |
-| **3. Folding (\fold)** | **3 Days** | `evaluator.ts`, `parser.ts` | Low: self-contained structural iterator. | **Stack Invariant**: Must use iterative loop, never deep JS recursion. |
-| **4. Bounded Quantifiers (\forall, \exists)** | **4 Days** | `evaluator.ts`, `parser.ts` | Low: adds boolean short-circuit loop over collections. | **Termination Invariant**: Bounded only to finite collections; reject open real intervals. |
-| **5. Piecewise (\cases)** | **4 Days** | `evaluator.ts`, `sampler.ts`, `symbolic_diff.ts` | Medium: Sampler must detect partition boundaries for grid refinement. | **Discontinuity Invariant**: Render level sets without spurious connecting lines. |
-| **6. Operation Tables & Axioms** | **1.0 Week** | `types.ts`, `evaluator.ts`, `kinds.ts` | Low: builds on Quantifiers and Collections. | **Kind Safety**: OpTable mismatches must produce structured error diagnostics. |
-| **7. Homomorphisms** | **3 Days** | `evaluator.ts`, `parser.ts` | Low: builds on Structures and Quantifiers. | **Diagnostic Honesty**: Clearly report non-homomorphic elements if check fails. |
-| **8. Quotient Structures** | **1.0 Week** | `evaluator.ts`, `algebra/quotient.ts` | Medium: requires normalizer and well-definedness checking. | **Canonical Representative**: Ensure normalizer idempotence $N(N(x)) = N(x)$. |
+| **C1. Expressions as Values & Rewriter** | **1.5 Weeks** | `types.ts`, `parser.ts`, `evaluator.ts`, `algebra/rewrite.ts` | High: affects derivation steps and rule execution across 45 test files. | **Fuel Invariant**: Rewriter must enforce strict step fuel to prevent non-terminating rewrite loops. |
+| **C2. Inductive Collections & Sets** | **1.0 Week** | `types.ts`, `parser.ts`, `evaluator.ts` | Medium: replaces ad-hoc `ListValue` with structured inductive terms. | **Honesty Invariant**: Ensure empty sets $\emptyset$ evaluate cleanly to empty manifolds. |
+| **C3. Folding (\fold)** | **3 Days** | `evaluator.ts`, `parser.ts` | Low: self-contained structural iterator. | **Stack Invariant**: Must use iterative loop, never deep JS recursion. |
+| **C4. Bounded Quantifiers (\forall, \exists)** | **4 Days** | `evaluator.ts`, `parser.ts` | Low: adds boolean short-circuit loop over collections. | **Termination Invariant**: Bounded only to finite collections; reject open real intervals. |
+| **C5. Piecewise (\cases)** | **4 Days** | `evaluator.ts`, `sampler.ts`, `symbolic_diff.ts` | Medium: Sampler must detect partition boundaries for grid refinement. | **Discontinuity Invariant**: Render level sets without spurious connecting lines. |
+| **C6. Operation Tables & Axioms** | **1.0 Week** | `types.ts`, `evaluator.ts`, `kinds.ts` | Low: builds on Quantifiers and Collections. | **Kind Safety**: OpTable mismatches must produce structured error diagnostics. |
+| **C7. Homomorphisms** | **3 Days** | `evaluator.ts`, `parser.ts` | Low: builds on Structures and Quantifiers. | **Diagnostic Honesty**: Clearly report non-homomorphic elements if check fails. |
+| **C8. Quotient Structures** | **1.0 Week** | `evaluator.ts`, `algebra/quotient.ts` | Medium: requires normalizer and well-definedness checking. | **Canonical Representative**: Ensure normalizer idempotence $N(N(x)) = N(x)$. |
+| **C9. Operator Overloading** | **4 Days** | `types.ts`, `evaluator.ts`, `operations.ts` | Low: structure-scoped dispatch in evaluator. | **No Fast Paths**: Fallback to standard scalar tower when out of structure scope. |
 
 ---
 
@@ -606,6 +668,10 @@ This section inventories the critical open questions and theoretical boundaries 
 ### 4. Performance Scaling of Discrimination Trees
 - A standard library with 300+ mathematical rewrite rules will suffer severe latency under naive linear rule scanning ($O(N \cdot R)$).
 - *Question*: Will the core require a Discrimination Tree / Aho-Corasick AST trie to maintain $<16.6\text{ ms}$ interactive slider performance?
+
+### 5. Operator Resolution Order in Nested Structure Scopes
+- If a document nests `\with :R1 { \with :R2 { a + b } }`, does operator resolution perform lexical shadowing (inner over outer) or structural kind matching ($a, b \in R_1 \implies R_1$, $a, b \in R_2 \implies R_2$)?
+- *Resolution*: Lexical shadowing with fallback to parent structure scope.
 
 ---
 
