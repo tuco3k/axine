@@ -44,19 +44,19 @@ describe('Phase 2: Lexical Scopes, Blocks, Global Assignment, and Forward Refere
   describe('Global Assignment (:\u2261 and :==)', () => {
     it('exports global variables from inside a block using :\u2261', () => {
       const env = createInitialEnvironment();
-      const res = evalVal('{ secret := 999; exported :\u2261 secret * 2; exported + 1 }', env);
+      const res = evalVal('{ :secret := 999; :exported :\u2261 :secret * 2; :exported + 1 }', env);
       expect(res).toEqual({ type: 'rational', n: 1999n, d: 1n });
 
       // secret is local
       expect(env['secret']).toBeUndefined();
       // exported is global
       expect(env['exported']).toEqual({ type: 'rational', n: 1998n, d: 1n });
-      expect(evalVal('exported', env)).toEqual({ type: 'rational', n: 1998n, d: 1n });
+      expect(evalVal(':exported', env)).toEqual({ type: 'rational', n: 1998n, d: 1n });
     });
 
     it('exports global variables using :==', () => {
       const env = createInitialEnvironment();
-      evalVal('{ global_val :== 42; 0 }', env);
+      evalVal('{ :global_val :== 42; 0 }', env);
       expect(env['global_val']).toEqual({ type: 'rational', n: 42n, d: 1n });
     });
   });
@@ -64,7 +64,7 @@ describe('Phase 2: Lexical Scopes, Blocks, Global Assignment, and Forward Refere
   describe('Block Functions & Mutual Recursion', () => {
     it('supports function definitions with local closures in blocks', () => {
       const env = createInitialEnvironment();
-      const res = evalVal('{ factor := 3; scale(x) := x * factor; scale(10) }', env);
+      const res = evalVal('{ :factor := 3; :scale(x) := x * :factor; :scale(10) }', env);
       expect(res).toEqual({ type: 'rational', n: 30n, d: 1n });
       expect(env['scale']).toBeUndefined();
     });
@@ -73,9 +73,9 @@ describe('Phase 2: Lexical Scopes, Blocks, Global Assignment, and Forward Refere
       const env = createInitialEnvironment();
       const code = `
         {
-          is_even(n) := if n == 0 then true else is_odd(n - 1);
-          is_odd(n) := if n == 0 then false else is_even(n - 1);
-          is_even(10)
+          :is_even(n) := \\if n == 0 \\then \\true \\else :is_odd(n - 1);
+          :is_odd(n) := \\if n == 0 \\then \\false \\else :is_even(n - 1);
+          :is_even(10)
         }
       `;
       const res = evalVal(code, env);
@@ -84,9 +84,10 @@ describe('Phase 2: Lexical Scopes, Blocks, Global Assignment, and Forward Refere
   });
 
   describe('Forward Reference & Dependent Detection', () => {
-    it('errors when referencing an unassigned variable', () => {
+    it('stands unreduced when referencing an unassigned variable', () => {
       const env = createInitialEnvironment();
-      expect(() => evalVal('y + 10', env)).toThrowError(/Variable 'y' is not assigned a value/);
+      const res = evalVal('y + 10', env);
+      expect(res.type === 'expression' || res.type === 'space').toBe(true);
     });
 
     it('evaluates correctly once variable is defined', () => {

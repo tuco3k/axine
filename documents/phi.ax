@@ -1,0 +1,4 @@
+# phi.ax — Golden ratio phi = (1 + sqrt(5)) / 2
+\module :phi_constant
+:phi = (1 + :sqrt(5)) / 2
+\export :phi

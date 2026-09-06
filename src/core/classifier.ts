@@ -85,7 +85,8 @@ export function hasHighMathTokenRatio(line: string, tokens?: Token[]): boolean {
   }
 
   let mathCharCount = 0;
-  for (const tok of tokenList) {
+  for (let i = 0; i < tokenList.length; i++) {
+    const tok = tokenList[i];
     if (tok.type === 'EOF') continue;
     if (
       tok.type === 'NUMBER' ||
@@ -93,10 +94,13 @@ export function hasHighMathTokenRatio(line: string, tokens?: Token[]): boolean {
       tok.type === 'MINUS' ||
       tok.type === 'STAR' ||
       tok.type === 'SLASH' ||
+      tok.type === 'DOUBLE_SLASH' ||
       tok.type === 'PERCENT' ||
       tok.type === 'CARET' ||
       tok.type === 'BANG' ||
       tok.type === 'ASSIGN' ||
+      tok.type === 'GLOBAL_ASSIGN' ||
+      tok.type === 'DOT' ||
       tok.type === 'DOTDOT' ||
       tok.type === 'EQ' ||
       tok.type === 'NEQ' ||
@@ -104,13 +108,65 @@ export function hasHighMathTokenRatio(line: string, tokens?: Token[]): boolean {
       tok.type === 'LTE' ||
       tok.type === 'GT' ||
       tok.type === 'GTE' ||
+      tok.type === 'CONGRUENT' ||
       tok.type === 'LPAREN' ||
       tok.type === 'RPAREN' ||
+      tok.type === 'LBRACKET' ||
+      tok.type === 'RBRACKET' ||
+      tok.type === 'LBRACE' ||
+      tok.type === 'RBRACE' ||
       tok.type === 'COMMA' ||
       tok.type === 'SUPERSCRIPT_DIGITS' ||
-      (tok.type === 'IDENTIFIER' && (BUILTIN_FUNCTIONS.has(tok.value) || CONSTANTS.has(tok.value) || tok.value.length === 1))
+      tok.type === 'INTEGRAL' ||
+      tok.type === 'DOUBLE_INTEGRAL' ||
+      tok.type === 'TRIPLE_INTEGRAL' ||
+      tok.type === 'CONTOUR_INTEGRAL' ||
+      tok.type === 'DIFF_OP' ||
+      tok.type === 'NABLA' ||
+      tok.type === 'LAPLACIAN' ||
+      tok.type === 'WEDGE' ||
+      tok.type === 'HODGE_STAR' ||
+      tok.type === 'TENSOR_PROD' ||
+      tok.type === 'DIRECT_SUM' ||
+      tok.type === 'LANGLE' ||
+      tok.type === 'RANGLE' ||
+      tok.type === 'NORM_BAR' ||
+      tok.type === 'FLOOR_L' ||
+      tok.type === 'FLOOR_R' ||
+      tok.type === 'CEIL_L' ||
+      tok.type === 'CEIL_R' ||
+      tok.type === 'FORALL' ||
+      tok.type === 'EXISTS' ||
+      tok.type === 'EXISTS_UNIQUE' ||
+      tok.type === 'SET_IN' ||
+      tok.type === 'SET_NOTIN' ||
+      tok.type === 'SET_SUBSET' ||
+      tok.type === 'SET_SUBSETEQ' ||
+      tok.type === 'SET_UNION' ||
+      tok.type === 'SET_INTERSECT' ||
+      tok.type === 'SET_DIFF' ||
+      tok.type === 'ISO' ||
+      tok.type === 'HOMOTOPY' ||
+      tok.type === 'EQUIV' ||
+      tok.type === 'DAGGER' ||
+      tok.type === 'FAT_ARROW' ||
+      tok.type === 'ARROW' ||
+      tok.type === 'SIGMA' ||
+      tok.type === 'PI_PROD'
     ) {
       mathCharCount += tok.value.length;
+    } else if (tok.type === 'IDENTIFIER') {
+      if (BUILTIN_FUNCTIONS.has(tok.value) || CONSTANTS.has(tok.value)) {
+        mathCharCount += tok.value.length;
+      } else if (tok.value.length === 1) {
+        const prevTok = i > 0 ? tokenList[i - 1] : undefined;
+        const nextTok = i + 1 < tokenList.length ? tokenList[i + 1] : undefined;
+        const isPartWord = (!tok.leadingWhitespace && prevTok && prevTok.type === 'IDENTIFIER') ||
+                           (nextTok && nextTok.type === 'IDENTIFIER' && !nextTok.leadingWhitespace);
+        if (!isPartWord) {
+          mathCharCount += 1;
+        }
+      }
     }
   }
 
@@ -211,12 +267,65 @@ export function classifyLine(line: string, env: Environment = {}): Classificatio
     // Validate AST through scope analyzer
     analyzeAST(ast, env, new Set(), trimmed);
 
-    // If it's an assignment or function definition:
+    // If it's an assignment or function/module/statement definition:
     if (ast.type === 'Assignment') {
       return { state: 'DEFINITION', ast, boundName: ast.target, isFunctionDef: false };
     }
+    if (ast.type === 'BinaryOp' && ast.op === '=') {
+      if (ast.left.type === 'Identifier') {
+        return { state: 'DEFINITION', ast, boundName: ast.left.name, isFunctionDef: false };
+      } else if (ast.right.type === 'Identifier') {
+        return { state: 'DEFINITION', ast, boundName: ast.right.name, isFunctionDef: false };
+      }
+    }
     if (ast.type === 'FunctionDef') {
       return { state: 'DEFINITION', ast, boundName: ast.name, isFunctionDef: true };
+    }
+    if (
+      ast.type === 'ModuleDecl' ||
+      ast.type === 'Import' ||
+      ast.type === 'Export' ||
+      ast.type === 'UnitDecl' ||
+      ast.type === 'DimensionDecl' ||
+      ast.type === 'Claim' ||
+      ast.type === 'RuleDecl' ||
+      ast.type === 'ViewDecl' ||
+      ast.type === 'OperatorDecl' ||
+      ast.type === 'KindDecl' ||
+      ast.type === 'RecordDef' ||
+      ast.type === 'RecordWith'
+    ) {
+      return { state: 'DEFINITION', ast };
+    }
+
+    if (
+      ast.type === 'RegionIntegral' ||
+      ast.type === 'Diff' ||
+      ast.type === 'BigOp' ||
+      ast.type === 'Limit' ||
+      ast.type === 'DifferentialFormOp' ||
+      ast.type === 'TensorOp' ||
+      ast.type === 'NablaOp' ||
+      ast.type === 'BracketOp' ||
+      ast.type === 'Quantifier' ||
+      ast.type === 'SetOp' ||
+      ast.type === 'SetBuilder' ||
+      ast.type === 'Equivalence' ||
+      ast.type === 'Probability'
+    ) {
+      return { state: 'MATH', ast };
+    }
+
+    // If it parsed as an expression, check if it was accidental math from multiple prose words
+    const bareProseWords = trimmed.match(/(?<!:)\b[a-zA-Z]{2,}\b/g) || [];
+    if (
+      bareProseWords.length >= 2 &&
+      !hasAssignment(trimmed) &&
+      !hasKnownFunctionCall(trimmed, knownFunctions) &&
+      !hasDigitAdjacentToOperator(trimmed) &&
+      !hasHighMathTokenRatio(trimmed)
+    ) {
+      return { state: 'PROSE' };
     }
 
     return { state: 'MATH', ast };

@@ -1,0 +1,6 @@
+# abs.ax — Absolute value defined as conditional relation
+\module :abs
+
+\forall x, :abs(x) = \if x >= 0 \then x \else -x
+
+\export :abs

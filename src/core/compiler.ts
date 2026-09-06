@@ -1,5 +1,4 @@
 import { ASTNode, Environment, FunctionValue, LambdaValue, NumberLiteralNode } from './types';
-import { FLOAT_CONSTANTS } from './numeric/float';
 import { OPERATIONS, REAL_HELPERS_CODE } from './operations';
 
 export type NumericCompiledFn = (...args: number[]) => number;
@@ -76,22 +75,14 @@ function compileNode(
         return { success: true, code: ctx.varMap.get(name)! };
       }
 
-      // 2. Check standard mathematical constants
-      if (name in FLOAT_CONSTANTS) {
-        if (name === 'pi') return { success: true, code: 'Math.PI' };
-        if (name === 'e') return { success: true, code: 'Math.E' };
-        if (name === 'tau') return { success: true, code: '(2 * Math.PI)' };
-        if (name === 'phi') return { success: true, code: '((1 + Math.sqrt(5)) / 2)' };
-        return { success: true, code: FLOAT_CONSTANTS[name].toString() };
-      }
-
       // 3. Check boolean literals
       if (name === 'true') return { success: true, code: '1' };
       if (name === 'false') return { success: true, code: '0' };
 
       // 4. Check environment for constant scalar bindings
-      if (ctx.env && name in ctx.env) {
-        const val = ctx.env[name];
+      const cleanName = name.replace(/^:/, '');
+      if (ctx.env && (name in ctx.env || cleanName in ctx.env)) {
+        const val = ctx.env[name] !== undefined ? ctx.env[name] : ctx.env[cleanName];
         if (val.type === 'float') {
           return { success: true, code: val.value.toString() };
         }
@@ -113,6 +104,16 @@ function compileNode(
         success: false,
         uncompilableNode: 'Identifier',
         reason: `Unbound variable or identifier '${name}' is not in free variable list or environment`,
+      };
+    }
+
+    case 'Assignment': {
+      const targetCode = ctx.varMap.get(node.target) || node.target;
+      const valueRes = compileNode(node.value, { ...ctx, depth: ctx.depth + 1 });
+      if (!valueRes.success) return valueRes;
+      return {
+        success: true,
+        code: `((${targetCode}) - (${valueRes.code}))`,
       };
     }
 
@@ -160,6 +161,20 @@ function compileNode(
           const val = ctx.env[callee];
           if (val.type === 'function' || val.type === 'lambda') {
             return compileFunctionCall(callee, [node.right], ctx);
+          }
+          if ((val as any).type === 'forall_rule') {
+            const rule = val as any;
+            const param = rule.param;
+            const body = rule.body;
+            const argRes = compileNode(node.right, { ...ctx, depth: ctx.depth + 1 });
+            if (!argRes.success) return argRes;
+            const innerCtx: CompilerContext = {
+              ...ctx,
+              depth: ctx.depth + 1,
+              varMap: new Map(ctx.varMap),
+            };
+            innerCtx.varMap.set(param, `(${argRes.code})`);
+            return compileNode(body, innerCtx);
           }
         }
       }
@@ -262,9 +277,10 @@ function compileFunctionCall(callee: string, args: ASTNode[], ctx: CompilerConte
   }
 
   // 2. Check built-in mathematical functions via OPERATIONS table
-  if (callee in OPERATIONS && OPERATIONS[callee].kind === 'function') {
-    const op = OPERATIONS[callee];
-    if (callee === 'log') {
+  const cleanCallee = callee.replace(/^:/, '');
+  if (cleanCallee in OPERATIONS && OPERATIONS[cleanCallee].kind === 'function') {
+    const op = OPERATIONS[cleanCallee];
+    if (cleanCallee === 'log') {
       if (argCodes.length === 1 || argCodes.length === 2) {
         return { success: true, code: op.compileJS(argCodes) };
       }
@@ -274,7 +290,7 @@ function compileFunctionCall(callee: string, args: ASTNode[], ctx: CompilerConte
         reason: `Built-in function '${callee}' expects 1 or 2 arguments, got ${argCodes.length}`,
       };
     }
-    if (callee === 'min' || callee === 'max') {
+    if (cleanCallee === 'min' || cleanCallee === 'max') {
       if (argCodes.length >= 1) {
         return { success: true, code: op.compileJS(argCodes) };
       }
@@ -295,10 +311,10 @@ function compileFunctionCall(callee: string, args: ASTNode[], ctx: CompilerConte
   }
 
   // 3. Check user-defined functions or lambdas in environment
-  if (ctx.env && callee in ctx.env) {
-    const fnVal = ctx.env[callee];
+  if (ctx.env && (callee in ctx.env || cleanCallee in ctx.env)) {
+    const fnVal = ctx.env[callee] !== undefined ? ctx.env[callee] : ctx.env[cleanCallee];
     if (fnVal.type === 'function' || fnVal.type === 'lambda') {
-      if (ctx.userFnCallStack.has(callee)) {
+      if (ctx.userFnCallStack.has(callee) || ctx.userFnCallStack.has(cleanCallee)) {
         return {
           success: false,
           uncompilableNode: 'FunctionCall',
@@ -320,8 +336,11 @@ function compileFunctionCall(callee: string, args: ASTNode[], ctx: CompilerConte
       const paramBindings: string[] = [];
       for (let i = 0; i < userFn.params.length; i++) {
         const paramName = userFn.params[i];
-        const paramId = `_p_${callee}_${i}_${ctx.depth}`;
+        const cleanParam = paramName.replace(/^:/, '');
+        const paramId = `_p_${cleanCallee}_${i}_${ctx.depth}`;
         nestedVarMap.set(paramName, paramId);
+        nestedVarMap.set(cleanParam, paramId);
+        nestedVarMap.set(':' + cleanParam, paramId);
         paramBindings.push(`const ${paramId} = ${argCodes[i]};`);
       }
 
@@ -333,6 +352,59 @@ function compileFunctionCall(callee: string, args: ASTNode[], ctx: CompilerConte
         {
           varMap: nestedVarMap,
           env: { ...ctx.env, ...userFn.closure },
+          depth: ctx.depth + 1,
+          userFnCallStack: nestedCallStack,
+        },
+        false
+      );
+
+      if (!bodyRes.success) return bodyRes;
+
+      return {
+        success: true,
+        code: `((() => { ${paramBindings.join(' ')} return ${bodyRes.code}; })())`,
+      };
+    }
+
+    if ((fnVal as any).type === 'forall_rule') {
+      const rule = fnVal as any;
+      const params: string[] = rule.params || [rule.param];
+      if (params.length !== argCodes.length) {
+        return {
+          success: false,
+          uncompilableNode: 'FunctionCall',
+          reason: `Relation rule '${callee}' expects ${params.length} arguments, got ${argCodes.length}`,
+        };
+      }
+
+      if (ctx.userFnCallStack.has(callee) || ctx.userFnCallStack.has(cleanCallee)) {
+        return {
+          success: false,
+          uncompilableNode: 'FunctionCall',
+          reason: `Recursive user function call '${callee}' cannot be inlined into static closure`,
+        };
+      }
+
+      const nestedVarMap = new Map<string, string>();
+      const paramBindings: string[] = [];
+      for (let i = 0; i < params.length; i++) {
+        const paramName = params[i];
+        const cleanParam = paramName.replace(/^:/, '');
+        const paramId = `_p_${cleanCallee}_${i}_${ctx.depth}`;
+        nestedVarMap.set(paramName, paramId);
+        nestedVarMap.set(cleanParam, paramId);
+        nestedVarMap.set(':' + cleanParam, paramId);
+        paramBindings.push(`const ${paramId} = ${argCodes[i]};`);
+      }
+
+      const nestedCallStack = new Set(ctx.userFnCallStack);
+      nestedCallStack.add(callee);
+
+      const bodyRes = compileNode(
+        rule.body,
+        {
+          varMap: nestedVarMap,
+          env: { ...ctx.env, ...rule.env },
           depth: ctx.depth + 1,
           userFnCallStack: nestedCallStack,
         },

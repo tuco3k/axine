@@ -72,8 +72,6 @@ export function valueToASTNode(val: Value, span?: Span): ASTNode {
     }
     case 'boolean':
       return { type: 'Identifier', name: val.value ? 'true' : 'false', span: s };
-    case 'undefined':
-      return { type: 'Identifier', name: 'undefined', span: s };
     case 'expression':
       return val.ast;
     case 'tuple':
@@ -211,7 +209,6 @@ export function computeDivUnit(u1: string, u2: string): string {
 }
 
 export function addValues(a: Value, b: Value, span?: Span): Value {
-  if (a.type === 'undefined' || b.type === 'undefined') return { type: 'undefined' };
   if (a.type === 'unknown') return a;
   if (b.type === 'unknown') return b;
   if (a.type === 'none' || b.type === 'none') {
@@ -220,6 +217,9 @@ export function addValues(a: Value, b: Value, span?: Span): Value {
 
   // Handle unreduced expressions with constant folding
   if (a.type === 'expression' || b.type === 'expression') {
+    if (isZeroValue(b)) return a;
+    if (isZeroValue(a)) return b;
+
     // Fold (E + c1) + c2 => E + (c1 + c2)
     if (a.type === 'expression' && a.ast.type === 'BinaryOp' && a.ast.op === '+' && (b.type === 'rational' || b.type === 'float')) {
       const rightVal = nodeToConstantValue(a.ast.right);
@@ -233,6 +233,26 @@ export function addValues(a: Value, b: Value, span?: Span): Value {
           type: 'BinaryOp',
           op: '+',
           left: a.ast.left,
+          right: combinedNode,
+          span: span ?? a.ast.span,
+        };
+        return { type: 'expression', ast: newAst, text: formatAST(newAst) };
+      }
+    }
+
+    // Fold (c1 + E) + c2 => (c1 + c2) + E
+    if (a.type === 'expression' && a.ast.type === 'BinaryOp' && a.ast.op === '+' && (b.type === 'rational' || b.type === 'float')) {
+      const leftVal = nodeToConstantValue(a.ast.left);
+      if (leftVal) {
+        const combined = addValues(leftVal, b, span);
+        if (isZeroValue(combined)) {
+          return { type: 'expression', ast: a.ast.right, text: formatAST(a.ast.right) };
+        }
+        const combinedNode = valueToASTNode(combined, span);
+        const newAst: ASTNode = {
+          type: 'BinaryOp',
+          op: '+',
+          left: a.ast.right,
           right: combinedNode,
           span: span ?? a.ast.span,
         };
@@ -259,9 +279,6 @@ export function addValues(a: Value, b: Value, span?: Span): Value {
         return { type: 'expression', ast: newAst, text: formatAST(newAst) };
       }
     }
-
-    if (isZeroValue(b)) return a;
-    if (isZeroValue(a)) return b;
 
     const nodeA = valueToASTNode(a, span);
     const nodeB = valueToASTNode(b, span);
@@ -355,7 +372,6 @@ export function addValues(a: Value, b: Value, span?: Span): Value {
 }
 
 export function subValues(a: Value, b: Value, span?: Span): Value {
-  if (a.type === 'undefined' || b.type === 'undefined') return { type: 'undefined' };
   if (a.type === 'unknown') return a;
   if (b.type === 'unknown') return b;
   if (a.type === 'none' || b.type === 'none') {
@@ -470,7 +486,6 @@ export function subValues(a: Value, b: Value, span?: Span): Value {
 }
 
 export function mulValues(a: Value, b: Value, span?: Span): Value {
-  if (a.type === 'undefined' || b.type === 'undefined') return { type: 'undefined' };
   if (a.type === 'unknown') return a;
   if (b.type === 'unknown') return b;
   if (a.type === 'none' || b.type === 'none') {
@@ -494,6 +509,49 @@ export function mulValues(a: Value, b: Value, span?: Span): Value {
           left: a.ast.left,
           right: combinedNode,
           span: span ?? a.ast.span,
+        };
+        return { type: 'expression', ast: newAst, text: formatAST(newAst) };
+      }
+      const leftVal = nodeToConstantValue(a.ast.left);
+      if (leftVal) {
+        const combined = mulValues(leftVal, b, span);
+        const combinedNode = valueToASTNode(combined, span);
+        const newAst: ASTNode = {
+          type: 'BinaryOp',
+          op: '*',
+          left: combinedNode,
+          right: a.ast.right,
+          span: span ?? a.ast.span,
+        };
+        return { type: 'expression', ast: newAst, text: formatAST(newAst) };
+      }
+    }
+
+    // Fold c1 * (E * c2) or c1 * (c2 * E) => (c1 * c2) * E
+    if (b.type === 'expression' && b.ast.type === 'BinaryOp' && b.ast.op === '*' && (a.type === 'rational' || a.type === 'float')) {
+      const rightVal = nodeToConstantValue(b.ast.right);
+      if (rightVal) {
+        const combined = mulValues(a, rightVal, span);
+        const combinedNode = valueToASTNode(combined, span);
+        const newAst: ASTNode = {
+          type: 'BinaryOp',
+          op: '*',
+          left: combinedNode,
+          right: b.ast.left,
+          span: span ?? b.ast.span,
+        };
+        return { type: 'expression', ast: newAst, text: formatAST(newAst) };
+      }
+      const leftVal = nodeToConstantValue(b.ast.left);
+      if (leftVal) {
+        const combined = mulValues(a, leftVal, span);
+        const combinedNode = valueToASTNode(combined, span);
+        const newAst: ASTNode = {
+          type: 'BinaryOp',
+          op: '*',
+          left: combinedNode,
+          right: b.ast.right,
+          span: span ?? b.ast.span,
         };
         return { type: 'expression', ast: newAst, text: formatAST(newAst) };
       }
@@ -560,14 +618,22 @@ export function mulValues(a: Value, b: Value, span?: Span): Value {
 }
 
 export function divValues(a: Value, b: Value, span?: Span): Value {
-  if (a.type === 'undefined' || b.type === 'undefined') return { type: 'undefined' };
   if (a.type === 'unknown') return a;
   if (b.type === 'unknown') return b;
   if (a.type === 'none' || b.type === 'none') {
     throw createError(`Cannot perform arithmetic on 'none'`, span ?? { start: 0, end: 0, line: 1, col: 1 });
   }
   if (isZeroValue(b)) {
-    return { type: 'undefined' };
+    const nodeA = valueToASTNode(a, span);
+    const nodeB = valueToASTNode(b, span);
+    const newAst: ASTNode = {
+      type: 'BinaryOp',
+      op: '/',
+      left: nodeA,
+      right: nodeB,
+      span: span ?? { start: 0, end: 0, line: 1, col: 1 },
+    };
+    return { type: 'expression', ast: newAst, text: formatAST(newAst) };
   }
   if (isZeroValue(a)) {
     return { type: 'rational', n: 0n, d: 1n };
@@ -633,14 +699,22 @@ export function divValues(a: Value, b: Value, span?: Span): Value {
 }
 
 export function modValues(a: Value, b: Value, span?: Span): Value {
-  if (a.type === 'undefined' || b.type === 'undefined') return { type: 'undefined' };
   if (a.type === 'unknown') return a;
   if (b.type === 'unknown') return b;
   if (a.type === 'none' || b.type === 'none') {
     throw createError(`Cannot perform arithmetic on 'none'`, span ?? { start: 0, end: 0, line: 1, col: 1 });
   }
   if (isZeroValue(b)) {
-    return { type: 'undefined' };
+    const nodeA = valueToASTNode(a, span);
+    const nodeB = valueToASTNode(b, span);
+    const newAst: ASTNode = {
+      type: 'BinaryOp',
+      op: '%',
+      left: nodeA,
+      right: nodeB,
+      span: span ?? { start: 0, end: 0, line: 1, col: 1 },
+    };
+    return { type: 'expression', ast: newAst, text: formatAST(newAst) };
   }
   if (a.type === 'rational' && b.type === 'rational') {
     const fA = new BigFraction(a.n, a.d, span);
@@ -656,14 +730,22 @@ export function modValues(a: Value, b: Value, span?: Span): Value {
 }
 
 export function powValues(a: Value, b: Value, span?: Span): Value {
-  if (a.type === 'undefined' || b.type === 'undefined') return { type: 'undefined' };
   if (a.type === 'unknown') return a;
   if (b.type === 'unknown') return b;
   if (a.type === 'none' || b.type === 'none') {
     throw createError(`Cannot perform arithmetic on 'none'`, span ?? { start: 0, end: 0, line: 1, col: 1 });
   }
   if (isZeroValue(a) && isZeroValue(b)) {
-    return { type: 'undefined' };
+    const nodeA = valueToASTNode(a, span);
+    const nodeB = valueToASTNode(b, span);
+    const newAst: ASTNode = {
+      type: 'BinaryOp',
+      op: '^',
+      left: nodeA,
+      right: nodeB,
+      span: span ?? { start: 0, end: 0, line: 1, col: 1 },
+    };
+    return { type: 'expression', ast: newAst, text: formatAST(newAst) };
   }
   if (isZeroValue(b)) {
     return { type: 'rational', n: 1n, d: 1n };
@@ -811,21 +893,6 @@ export function compareValues(op: '=' | '==' | '!=' | '<' | '<=' | '>' | '>=', a
   if (a.type === 'unknown') return a;
   if (b.type === 'unknown') return b;
 
-  if (a.type === 'undefined' || b.type === 'undefined') {
-    if (op === '=' || op === '==') return { type: 'boolean', value: a.type === 'undefined' && b.type === 'undefined' };
-    if (op === '!=') return { type: 'boolean', value: !(a.type === 'undefined' && b.type === 'undefined') };
-    const nodeA = valueToASTNode(a, span);
-    const nodeB = valueToASTNode(b, span);
-    const ast: ASTNode = {
-      type: 'BinaryOp',
-      op,
-      left: nodeA,
-      right: nodeB,
-      span: span ?? { start: 0, end: 0, line: 1, col: 1 },
-    };
-    return { type: 'expression', ast, text: formatAST(ast) };
-  }
-
   // Handle 'none' value
   if (a.type === 'none' || b.type === 'none') {
     if (op === '=' || op === '==') {
@@ -883,7 +950,6 @@ export function compareValues(op: '=' | '==' | '!=' | '<' | '<=' | '>' | '>=', a
 }
 
 export function factorialValue(val: Value, span?: Span): Value {
-  if (val.type === 'undefined') return { type: 'undefined' };
   if (val.type === 'unknown') return val;
   if (val.type === 'rational' && val.d === 1n && val.n >= 0n) {
     const n = val.n;
@@ -917,7 +983,6 @@ export function factorialValue(val: Value, span?: Span): Value {
 }
 
 export function sqrtValue(val: Value, span?: Span): Value {
-  if (val.type === 'undefined') return { type: 'undefined' };
   if (val.type === 'unknown') return val;
   if (val.type === 'rational') {
     const frac = new BigFraction(val.n, val.d, span);
@@ -1048,7 +1113,6 @@ export function factorizeInt(n: bigint): [bigint, bigint][] {
 
 export function applyBuiltin(name: string, args: Value[], span?: Span): Value {
   for (const a of args) {
-    if (a.type === 'undefined') return { type: 'undefined' };
     if (a.type === 'unknown') return a;
   }
 

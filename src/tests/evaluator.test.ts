@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { evaluate, createInitialEnvironment } from '../core/evaluator';
-import { MathError } from '../core/errors';
 
 describe('Evaluator', () => {
   it('evaluates exact rationals without float drift', () => {
@@ -12,21 +11,21 @@ describe('Evaluator', () => {
   it('evaluates assignments and persistent variables', () => {
     const env = createInitialEnvironment();
     evaluate('a := 3', env);
-    evaluate('velocity := 10', env);
-    const { value } = evaluate('velocity * a', env);
+    evaluate(':velocity := 10', env);
+    const { value } = evaluate(':velocity * a', env);
     expect(value).toEqual({ type: 'rational', n: 30n, d: 1n });
   });
 
   it('evaluates function definitions and function calls', () => {
     const env = createInitialEnvironment();
-    evaluate('f(x) := x^2 + 1', env);
-    const { value } = evaluate('f(3)', env);
+    evaluate(':f(x) := x^2 + 1', env);
+    const { value } = evaluate(':f(3)', env);
     expect(value).toEqual({ type: 'rational', n: 10n, d: 1n });
   });
 
   it('evaluates bare function calls', () => {
     const env = createInitialEnvironment();
-    const { value } = evaluate('sin 0', env);
+    const { value } = evaluate(':sin 0', env);
     expect(value).toEqual({ type: 'float', value: 0 });
   });
 
@@ -74,16 +73,9 @@ describe('Evaluator', () => {
     }
   });
 
-  it('errors with rich suggestion on undeclared multi-letter identifier', () => {
+  it('undeclared multi-letter identifier stands as expression or space without error', () => {
     const env = createInitialEnvironment();
-    try {
-      evaluate('velocity + 5', env);
-      expect.unreachable('Should have thrown');
-    } catch (e: any) {
-      expect(e).toBeInstanceOf(MathError);
-      expect(e.diagnostic.message).toContain("'velocity' is not defined");
-      expect(e.diagnostic.suggestion).toContain("v·e·l·o·c·i·t·y");
-      expect(e.diagnostic.suggestion).toContain("velocity := ...");
-    }
+    const res = evaluate(':velocity + 5', env);
+    expect(res.value.type === 'expression' || res.value.type === 'space').toBe(true);
   });
 });

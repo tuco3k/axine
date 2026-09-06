@@ -25,6 +25,71 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#039;');
 }
 
+export const UNICODE_MATH_MAP: Record<string, string> = {
+  '\u222e': '\\oint',
+  '\u2297': '\\otimes',
+  '\u2295': '\\oplus',
+  '\u230a': '\\lfloor',
+  '\u230b': '\\rfloor',
+  '\u2308': '\\lceil',
+  '\u2309': '\\rceil',
+  '\u2200': '\\forall',
+  '\u2203': '\\exists',
+  '\u2208': '\\in',
+  '\u2209': '\\notin',
+  '\u2264': '\\le',
+  '\u2265': '\\ge',
+  '\u2260': '\\ne',
+  '\u221a': '\\sqrt',
+  '\u221e': '\\' + 'infty',
+  '\u222a': '\\cup',
+  '\u2229': '\\cap',
+  '\u2282': '\\subset',
+  '\u2286': '\\subseteq',
+  '\u2207': '\\nabla',
+  '\u00d7': '\\times',
+  '\u00b7': '\\cdot',
+  '\u222b': '\\' + 'int',
+  '\u222c': '\\iint',
+  '\u222d': '\\iiint',
+  '\u03c0': '\\pi',
+  '\u03c4': '\\tau',
+  '\u03d5': '\\phi',
+  '\u03b8': '\\theta',
+  '\u03bb': '\\lambda',
+  '\u03b1': '\\alpha',
+  '\u03b2': '\\beta',
+  '\u03b3': '\\gamma',
+  '\u03c9': '\\omega',
+  '\u03c3': '\\sigma',
+  '\u03bc': '\\mu',
+  '\u03b4': '\\delta',
+  '\u0394': '\\' + 'Delta',
+  '\u03a3': '\\Sigma',
+  '\u03a0': '\\Pi',
+  '\u00b1': '\\pm',
+  '\u2213': '\\mp',
+  '\u2248': '\\approx',
+  '\u221d': '\\propto',
+  '\u2227': '\\wedge',
+  '\u2228': '\\vee',
+  '\u00ac': '\\neg',
+  '\u2202': '\\' + 'partial',
+};
+
+export function replaceUnicodeMathSymbols(text: string): string {
+  let result = '';
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (UNICODE_MATH_MAP[char]) {
+      result += UNICODE_MATH_MAP[char];
+    } else {
+      result += char;
+    }
+  }
+  return result;
+}
+
 export type DockEdge = 'right' | 'left' | 'bottom' | 'top';
 
 export interface DockLayoutState {
@@ -1030,19 +1095,101 @@ export class DocumentEditor {
     this.updateFileInfo();
   }
 
+  private handleInputChange() {
+    this.updateTypesetOverlay();
+    this.updateCaret();
+    this.isDirty = this.textarea.value !== this.savedContent;
+    const curr = this.sessions.get(this.activeSessionId);
+    if (curr) {
+      curr.isDirty = this.isDirty;
+    }
+    this.updateDirtyIndicator();
+    this.updateSessionTabs();
+    this.scheduleAutosave();
+    this.state.setText(this.textarea.value);
+  }
+
   private bindEvents() {
-    this.textarea.addEventListener('input', () => {
-      this.updateTypesetOverlay();
-      this.updateCaret();
-      this.isDirty = this.textarea.value !== this.savedContent;
-      const curr = this.sessions.get(this.activeSessionId);
-      if (curr) {
-        curr.isDirty = this.isDirty;
+    this.textarea.addEventListener('beforeinput', (e: InputEvent) => {
+      const data = (e as any).data;
+      if (data && typeof data === 'string') {
+        let hasUnicode = false;
+        for (let i = 0; i < data.length; i++) {
+          if (UNICODE_MATH_MAP[data[i]]) {
+            hasUnicode = true;
+            break;
+          }
+        }
+        if (hasUnicode) {
+          e.preventDefault();
+          const transformed = replaceUnicodeMathSymbols(data);
+          let inserted = false;
+          try {
+            if (typeof document !== 'undefined' && typeof document.execCommand === 'function') {
+              inserted = document.execCommand('insertText', false, transformed);
+            }
+          } catch {}
+          if (!inserted) {
+            const start = this.textarea.selectionStart;
+            const end = this.textarea.selectionEnd;
+            const val = this.textarea.value;
+            this.textarea.value = val.substring(0, start) + transformed + val.substring(end);
+            this.textarea.selectionStart = this.textarea.selectionEnd = start + transformed.length;
+            this.handleInputChange();
+          }
+        }
       }
-      this.updateDirtyIndicator();
-      this.updateSessionTabs();
-      this.scheduleAutosave();
-      this.state.setText(this.textarea.value);
+    });
+
+    this.textarea.addEventListener('paste', (e: ClipboardEvent) => {
+      const pasteText = e.clipboardData?.getData('text');
+      if (pasteText) {
+        let hasUnicode = false;
+        for (let i = 0; i < pasteText.length; i++) {
+          if (UNICODE_MATH_MAP[pasteText[i]]) {
+            hasUnicode = true;
+            break;
+          }
+        }
+        if (hasUnicode) {
+          e.preventDefault();
+          const transformed = replaceUnicodeMathSymbols(pasteText);
+          let inserted = false;
+          try {
+            if (typeof document !== 'undefined' && typeof document.execCommand === 'function') {
+              inserted = document.execCommand('insertText', false, transformed);
+            }
+          } catch {}
+          if (!inserted) {
+            const start = this.textarea.selectionStart;
+            const end = this.textarea.selectionEnd;
+            const val = this.textarea.value;
+            this.textarea.value = val.substring(0, start) + transformed + val.substring(end);
+            this.textarea.selectionStart = this.textarea.selectionEnd = start + transformed.length;
+            this.handleInputChange();
+          }
+        }
+      }
+    });
+
+    this.textarea.addEventListener('input', () => {
+      const val = this.textarea.value;
+      let hasUnicode = false;
+      for (let i = 0; i < val.length; i++) {
+        if (UNICODE_MATH_MAP[val[i]]) {
+          hasUnicode = true;
+          break;
+        }
+      }
+      if (hasUnicode) {
+        const start = this.textarea.selectionStart;
+        const beforeCaret = val.substring(0, start);
+        const transformedBeforeCaret = replaceUnicodeMathSymbols(beforeCaret);
+        const transformed = replaceUnicodeMathSymbols(val);
+        this.textarea.value = transformed;
+        this.textarea.selectionStart = this.textarea.selectionEnd = transformedBeforeCaret.length;
+      }
+      this.handleInputChange();
     });
 
     this.textarea.addEventListener('keydown', (e: KeyboardEvent) => {
@@ -2756,8 +2903,6 @@ export function formatValue(val: Value): string {
       return val.value ? 'true' : 'false';
     case 'none':
       return 'none';
-    case 'undefined':
-      return 'undefined';
     case 'unknown':
       return `unknown(${val.reason}${val.detail ? `, "${val.detail}"` : ''})`;
     case 'claim':

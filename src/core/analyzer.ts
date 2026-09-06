@@ -1,6 +1,5 @@
-import { ASTNode, Span } from './types';
+import { ASTNode } from './types';
 import { BUILTIN_FUNCTIONS, CONSTANTS } from './parser';
-import { createError } from './errors';
 
 export interface AnalysisResult {
   freeVariables: string[];
@@ -43,32 +42,12 @@ export function analyzeAST(
     return false;
   }
 
-  function checkIdentifier(name: string, span: Span) {
+  function checkIdentifier(name: string) {
     if (isKnown(name)) {
       return;
     }
 
-    if (name === 'i') {
-      freeVars.add('i');
-      return;
-    }
-
-    if (name.length > 1) {
-      // Undeclared multi-letter identifier
-      const productSuggestion = name.split('').join('·');
-      throw createError(
-        `'${name}' is not defined. Multi-letter names must be assigned before use`,
-        span,
-        {
-          expected: `a previously assigned variable '${name}' or implicit product notation '${productSuggestion}'`,
-          suggestion: `Did you mean '${productSuggestion}' (implicit product) or did you mean to write '${name} := ...' first?`,
-          source,
-        }
-      );
-    } else {
-      // Single letter identifier: valid free variable
-      freeVars.add(name);
-    }
+    freeVars.add(name);
   }
 
   function walk(n: ASTNode) {
@@ -76,7 +55,7 @@ export function analyzeAST(
       case 'NumberLiteral':
         break;
       case 'Identifier':
-        checkIdentifier(n.name, n.span);
+        checkIdentifier(n.name);
         break;
       case 'UnaryOp':
         walk(n.operand);
@@ -125,16 +104,45 @@ export function analyzeAST(
         if (n.step) walk(n.step);
         break;
       }
+      case 'Interval': {
+        if (n.variable) {
+          checkIdentifier(n.variable);
+        }
+        walk(n.start);
+        walk(n.end);
+        break;
+      }
+      case 'AxisDecl': {
+        break;
+      }
+      case 'Where': {
+        walk(n.expr);
+        walk(n.condition);
+        break;
+      }
+      case 'Quantifier': {
+        const subParams = new Set(boundParams);
+        subParams.add(n.variable);
+        if (n.predicate.type === 'BinaryOp' && n.predicate.op === '=') {
+          if (n.predicate.left.type === 'BinaryOp' && n.predicate.left.isImplicit && n.predicate.left.left.type === 'Identifier') {
+            subParams.add(n.predicate.left.left.name);
+          }
+        }
+        walk(n.domain);
+        const predAnalysis = analyzeAST(n.predicate, env, subParams, source);
+        for (const fv of predAnalysis.freeVariables) {
+          if (!subParams.has(fv)) {
+            freeVars.add(fv);
+          }
+        }
+        break;
+      }
       case 'StringLiteral': {
         break;
       }
       case 'FunctionCall': {
         if (!BUILTIN_FUNCTIONS.has(n.callee) && !boundParams.has(n.callee) && !(n.callee in env)) {
-          if (n.callee.length > 1) {
-            checkIdentifier(n.callee, n.span);
-          } else {
-            freeVars.add(n.callee);
-          }
+          checkIdentifier(n.callee);
         }
         if (n.callee === 'graph') {
           const subParams = new Set(boundParams);
@@ -194,6 +202,23 @@ export function analyzeAST(
           }
           break;
         }
+        if (n.callee === 'sum' || n.callee === 'prod' || n.callee === 'integral' || n.callee === 'simpson' || n.callee === 'trapz') {
+          const subParams = new Set(boundParams);
+          for (const arg of n.args) {
+            if (arg.type === 'BinaryOp' && (arg.op === 'in' || arg.op === 'SET_IN') && arg.left.type === 'Identifier') {
+              subParams.add(arg.left.name);
+            } else if (arg.type === 'Range' && (arg as any).variable) {
+              subParams.add((arg as any).variable);
+            }
+          }
+          for (const arg of n.args) {
+            const subRes = analyzeAST(arg, env, subParams, source);
+            for (const fv of subRes.freeVariables) {
+              if (!subParams.has(fv)) freeVars.add(fv);
+            }
+          }
+          break;
+        }
         if (n.callee !== 'unknown') {
           for (const arg of n.args) {
             walk(arg);
@@ -213,14 +238,44 @@ export function analyzeAST(
         walk(n.value);
         break;
       }
+      case 'Unimport': {
+        break;
+      }
       case 'Block': {
         const blockParams = new Set(boundParams);
         for (const stmt of n.statements) {
           if (stmt.type === 'FunctionDef') {
             blockParams.add(stmt.name);
+          } else if (stmt.type === 'Quantifier') {
+            if (stmt.predicate.type === 'BinaryOp' && stmt.predicate.op === '=') {
+              if (stmt.predicate.left.type === 'BinaryOp' && stmt.predicate.left.isImplicit && stmt.predicate.left.left.type === 'Identifier') {
+                blockParams.add(stmt.predicate.left.left.name);
+              }
+            }
           }
         }
+        const isRelationOrBlock = (s: ASTNode | undefined) => {
+          if (!s) return false;
+          if (s.type === 'Assignment' || s.type === 'Block') return true;
+          if (s.type === 'BinaryOp' && ['=', '==', '!=', '<', '<=', '>', '>='].includes(s.op)) return true;
+          return false;
+        };
+        const hasTrailingExpr = n.statements.length > 0 && !isRelationOrBlock(n.statements[n.statements.length - 1]);
         for (const stmt of n.statements) {
+          if (stmt.type === 'Unimport') {
+            blockParams.delete(stmt.name);
+          }
+          if (stmt.type === 'Assignment') {
+            const valAnalysis = analyzeAST(stmt.value, env, blockParams, source);
+            if (valAnalysis.freeVariables.length > 0 || !hasTrailingExpr) {
+              freeVars.add(stmt.target);
+              for (const fv of valAnalysis.freeVariables) {
+                if (!blockParams.has(fv)) freeVars.add(fv);
+              }
+              blockParams.add(stmt.target);
+              continue;
+            }
+          }
           const stmtAnalysis = analyzeAST(stmt, env, blockParams, source);
           for (const fv of stmtAnalysis.freeVariables) {
             if (!blockParams.has(fv)) {

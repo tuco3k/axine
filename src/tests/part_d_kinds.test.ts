@@ -7,7 +7,7 @@ describe('Part D: User-Defined Kinds', () => {
   it('declares a user-defined kind with axioms marked as declared-not-verified (Gate D requirement)', () => {
     const env = createInitialEnvironment();
     const declSource =
-      'kind LieAlgebra(dim, field) extends VectorSpace(dim, field) { operations: [bracket], axioms: ["antisymmetry", "Jacobi identity"] }';
+      "\\kind :LieAlgebra(:dim, :field) \\extends :VectorSpace(:dim, :field) { \\operations: [:bracket], \\axioms: [\"antisymmetry\", \"Jacobi identity\"] }";
 
     const { value: res } = evaluate(declSource, env);
     expect(res.type).toBe('described');
@@ -28,10 +28,10 @@ describe('Part D: User-Defined Kinds', () => {
   it('user-defined kind appears in kindof() and formats with parameters and extends', () => {
     const env = createInitialEnvironment();
     const declSource =
-      'L := kind LieAlgebra(dim, field) extends VectorSpace(dim, field) { operations: [bracket], axioms: ["antisymmetry", "Jacobi identity"] }';
+      "L := \\kind :LieAlgebra(:dim, :field) \\extends :VectorSpace(:dim, :field) { \\operations: [:bracket], \\axioms: [\"antisymmetry\", \"Jacobi identity\"] }";
     evaluate(declSource, env);
 
-    const { value: kindVal } = evaluate('kindof(L)', env);
+    const { value: kindVal } = evaluate(':kindof(L)', env);
     expect(kindVal.type).toBe('kind');
     if (kindVal.type === 'kind') {
       const formatted = formatKind(kindVal.kind);
@@ -42,7 +42,7 @@ describe('Part D: User-Defined Kinds', () => {
   it('participates in kind subsumption in the lattice and admits operations', () => {
     const env = createInitialEnvironment();
     const { value: res } = evaluate(
-      'kind LieAlgebra(dim, field) extends VectorSpace(dim, field) { operations: [bracket], axioms: ["antisymmetry", "Jacobi identity"] }',
+      "\\kind :LieAlgebra(:dim, :field) \\extends :VectorSpace(:dim, :field) { \\operations: [:bracket], \\axioms: [\"antisymmetry\", \"Jacobi identity\"] }",
       env
     );
     if (res.type === 'described') {
@@ -61,11 +61,11 @@ describe('Part D: User-Defined Kinds', () => {
   it('appears in kind error messages when invalid operations or coercions occur', () => {
     const env = createInitialEnvironment();
     evaluate(
-      'L := kind LieAlgebra(dim, field) extends VectorSpace(dim, field) { operations: [bracket], axioms: ["antisymmetry", "Jacobi identity"] }',
+      "L := \\kind :LieAlgebra(:dim, :field) \\extends :VectorSpace(:dim, :field) { \\operations: [:bracket], \\axioms: [\"antisymmetry\", \"Jacobi identity\"] }",
       env
     );
 
     // Attempting invalid coercion from Scalar to LieAlgebra
-    expect(() => evaluate('coerce(5, to: L)', env)).toThrowError(/Cannot coerce Scalar\(Natural\) to Kind\(LieAlgebra\(dim, field\) extends VectorSpace\)/);
+    expect(() => evaluate(':coerce(5, :to: L)', env)).toThrowError(/Cannot coerce Scalar\(Natural\) to Kind\(LieAlgebra\(dim, field\) extends VectorSpace\)/);
   });
 });

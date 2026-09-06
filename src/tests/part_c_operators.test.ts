@@ -3,11 +3,12 @@ import { evaluate } from '../core/evaluator';
 import { createInitialEnvironment } from '../core/evaluator';
 import { parse } from '../core/parser';
 import { formatAST } from '../core/formatter';
+import { valueToNumber } from '../core/numeric/tower';
 
 describe('Part C: User-Defined Operators', () => {
   it('parses, evaluates, renders, and round-trips an infix user-defined operator (Gate C requirement)', () => {
     const env = createInitialEnvironment();
-    const declSource = 'operator \u229b (a, b) := a * b - b * a precedence: 45 associativity: left';
+    const declSource = "\\operator \u229b (a, b) := a * b - b * a \\precedence: 45 \\associativity: :left";
     
     // Parse decl
     const ast = parse(declSource);
@@ -50,7 +51,7 @@ describe('Part C: User-Defined Operators', () => {
 
   it('parses, evaluates, and round-trips a prefix user-defined operator', () => {
     const env = createInitialEnvironment();
-    const declSource = 'operator prefix \u22c4 (f) := f + 10';
+    const declSource = "\\operator \\prefix \u22c4 (f) := f + 10";
     
     const ast = parse(declSource);
     expect(ast.type).toBe('OperatorDecl');
@@ -79,7 +80,8 @@ describe('Part C: User-Defined Operators', () => {
 
   it('parses, evaluates, and round-trips a postfix user-defined operator', () => {
     const env = createInitialEnvironment();
-    const declSource = 'operator postfix \u00b0 (x) := x * pi / 180';
+    evaluate('\\import "constants/pi.ax"', env);
+    const declSource = "\\operator \\postfix ° (x) := x * :pi / 180";
 
     const ast = parse(declSource);
     expect(ast.type).toBe('OperatorDecl');
@@ -94,10 +96,7 @@ describe('Part C: User-Defined Operators', () => {
 
     // Evaluate postfix application
     const { value: res } = evaluate('180 \u00b0', env);
-    expect(res.type).toBe('float');
-    if (res.type === 'float') {
-      expect(res.value).toBeCloseTo(Math.PI, 5);
-    }
+    expect(valueToNumber(res)).toBeCloseTo(Math.PI, 5);
 
     // Round-trip formatting
     const exprAst = parse('180\u00b0');

@@ -1,18 +1,18 @@
 # projectile.ax — Projectile motion with gravity and air drag
-import "./physics.ax"
+\import "./physics.ax"
 
-b0 := Body(mass: 1, position: (0, 0), velocity: (10, 15))
-g := 9.8
-c := 0.05
+:b0 = :Body(:mass: 1, :position: (0, 0), :velocity: (10, 15))
+g = 9.8
+c = 0.05
 
-force_fn(b) := (
-  -c * b.velocity[0],
-  -b.mass * g - c * b.velocity[1]
+:force_fn(b) = (
+  -c * b.:velocity[0],
+  -b.:mass * g - c * b.:velocity[1]
 )
 
 # Simulate projectile trajectory using RK4
-traj := simulate(b -> rk4_step(b, force_fn, 0.02), b0, t in 0..3, dt: 0.02)
+:traj = :simulate(b -> :rk4_step(b, :force_fn, 0.02), :b0, t \in 0..3, :dt: 0.02)
 
 # Sample state at t = 1.0s
-b_1 := traj[1.0]
-E_k1 := kinetic_energy(b_1)
+:b_1 = :traj[1.0]
+:E_k1 = :kinetic_energy(:b_1)

@@ -30,7 +30,8 @@ export type TokenType =
   | 'GLOBAL_ASSIGN' // :\u2261 or :==
   | 'DOT' // .
   | 'DOTDOT' // ..
-  | 'EQ'     // = or ==
+  | 'EQ'     // =
+  | 'EQ_EQ'  // ==
   | 'NEQ'    // != or \u2260
   | 'LT'     // <
   | 'LTE'    // <= or \u2264
@@ -109,6 +110,9 @@ export type TokenType =
   | 'CUSTOM_OP'
   | 'VIEW'
   | 'FOR'
+  | 'AXIS'
+  | 'UNIMPORT'
+  | 'WHERE'
   | 'EOF';
 
 export interface Token {
@@ -164,7 +168,41 @@ export type ASTNode =
   | ModuleDeclNode
   | ImportNode
   | ExportNode
-  | ViewDeclNode;
+  | ViewDeclNode
+  | UnimportNode
+  | AxisDeclNode
+  | IntervalNode
+  | WhereNode;
+
+export interface WhereNode {
+  type: 'Where';
+  expr: ASTNode;
+  condition: ASTNode;
+  span: Span;
+}
+
+export interface AxisDeclNode {
+  type: 'AxisDecl';
+  axes: string[];
+  span: Span;
+}
+
+export interface IntervalNode {
+  type: 'Interval';
+  kind: 'closed' | 'open' | 'left_open' | 'right_open';
+  start: ASTNode;
+  end: ASTNode;
+  variable?: string;
+  isInfStart?: boolean;
+  isInfEnd?: boolean;
+  span: Span;
+}
+
+export interface UnimportNode {
+  type: 'Unimport';
+  name: string;
+  span: Span;
+}
 
 export interface RecordDefNode {
   type: 'RecordDef';
@@ -554,11 +592,6 @@ export interface NoneValue {
   type: 'none';
 }
 
-export interface UndefinedValue {
-  type: 'undefined';
-  reason?: string;
-}
-
 import { MathKind } from './kinds';
 
 export type ObstructionReason =
@@ -774,10 +807,13 @@ export interface SpaceValue {
   type: 'space';
   coordinates: string[];
   dimension: number;
+  declaredAxes?: string[];
   entities: SpatialEntity[];
   nestedSpaces?: SpaceValue[];
   bindings?: Record<string, Value>;
   resultVal?: Value;
+  coordinateBounds?: Record<string, [number, number]>;
+  timeVariable?: string;
   span?: Span;
 }
 
@@ -1013,7 +1049,6 @@ export type Value =
   | TupleValue
   | ListValue
   | NoneValue
-  | UndefinedValue
   | UnknownValue
   | MatrixValue
   | GraphTypeValue

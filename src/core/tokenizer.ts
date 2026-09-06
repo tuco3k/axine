@@ -105,7 +105,7 @@ export class Tokenizer {
         continue;
       }
 
-      // Global assignment :\u2261 or :==
+      // Global assignment :equiv or :==
       if (char === ':' && this.peek(1) === '\u2261') {
         this.advance();
         this.advance();
@@ -124,6 +124,333 @@ export class Tokenizer {
         this.advance();
         this.advance();
         tokens.push(this.makeToken('ASSIGN', ':=', startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+
+      if (char === ':' && this.isIdentStart(this.peek(1))) {
+        this.advance(); // consume ':'
+        let name = '';
+        while (this.pos < this.source.length && this.isIdentPart(this.source[this.pos])) {
+          name += this.source[this.pos];
+          this.advance();
+        }
+        tokens.push(this.makeToken('IDENTIFIER', name, startPos, startLine, startCol, leadingWhitespace));
+        continue;
+      }
+
+      if (char === '\\' && this.isIdentStart(this.peek(1))) {
+        this.advance(); // consume '\'
+        let name = '';
+        while (this.pos < this.source.length && this.isIdentPart(this.source[this.pos])) {
+          name += this.source[this.pos];
+          this.advance();
+        }
+        if (name === 'in' || name === 'isin') {
+          tokens.push(this.makeToken('IN', 'in', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'axis') {
+          tokens.push(this.makeToken('AXIS', '\\axis', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'import') {
+          tokens.push(this.makeToken('IMPORT', 'import', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'unimport') {
+          tokens.push(this.makeToken('UNIMPORT', 'unimport', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'where') {
+          tokens.push(this.makeToken('WHERE', 'where', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'if') {
+          tokens.push(this.makeToken('IF', 'if', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'then') {
+          tokens.push(this.makeToken('THEN', 'then', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'else') {
+          tokens.push(this.makeToken('ELSE', 'else', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'and') {
+          tokens.push(this.makeToken('AND', 'and', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'or') {
+          tokens.push(this.makeToken('OR', 'or', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'not') {
+          tokens.push(this.makeToken('NOT', 'not', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'claim') {
+          tokens.push(this.makeToken('CLAIM', 'claim', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'statement') {
+          tokens.push(this.makeToken('IDENTIFIER', 'statement', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'proved_by') {
+          tokens.push(this.makeToken('IDENTIFIER', 'proved_by', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'relevance') {
+          tokens.push(this.makeToken('IDENTIFIER', 'relevance', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'shadow') {
+          tokens.push(this.makeToken('IDENTIFIER', 'shadow', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'expect') {
+          tokens.push(this.makeToken('IDENTIFIER', 'expect', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'rule') {
+          tokens.push(this.makeToken('RULE', 'rule', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'requires') {
+          tokens.push(this.makeToken('REQUIRES', 'requires', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'module') {
+          tokens.push(this.makeToken('MODULE', 'module', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'export') {
+          tokens.push(this.makeToken('EXPORT', 'export', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'from') {
+          tokens.push(this.makeToken('FROM', 'from', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'as') {
+          tokens.push(this.makeToken('AS', 'as', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'is') {
+          tokens.push(this.makeToken('IS', 'is', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'view') {
+          tokens.push(this.makeToken('VIEW', 'view', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'for') {
+          tokens.push(this.makeToken('FOR', 'for', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'step') {
+          tokens.push(this.makeToken('STEP', 'step', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'record') {
+          tokens.push(this.makeToken('RECORD', 'record', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'with') {
+          tokens.push(this.makeToken('WITH', 'with', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'dimension') {
+          tokens.push(this.makeToken('DIMENSION', 'dimension', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'unit') {
+          tokens.push(this.makeToken('UNIT', 'unit', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'operator') {
+          tokens.push(this.makeToken('OPERATOR', 'operator', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'prefix') {
+          tokens.push(this.makeToken('PREFIX', 'prefix', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'postfix') {
+          tokens.push(this.makeToken('POSTFIX', 'postfix', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'infix') {
+          tokens.push(this.makeToken('INFIX', 'infix', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'precedence') {
+          tokens.push(this.makeToken('PRECEDENCE', 'precedence', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'associativity') {
+          tokens.push(this.makeToken('ASSOCIATIVITY', 'associativity', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'kind') {
+          tokens.push(this.makeToken('KIND', 'kind', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'extends') {
+          tokens.push(this.makeToken('EXTENDS', 'extends', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'operations') {
+          tokens.push(this.makeToken('OPERATIONS', 'operations', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'axioms') {
+          tokens.push(this.makeToken('AXIOMS', 'axioms', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'left') {
+          tokens.push(this.makeToken('IDENTIFIER', 'left', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'right') {
+          tokens.push(this.makeToken('IDENTIFIER', 'right', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'true') {
+          tokens.push(this.makeToken('IDENTIFIER', 'true', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'false') {
+          tokens.push(this.makeToken('IDENTIFIER', 'false', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'none') {
+          tokens.push(this.makeToken('IDENTIFIER', 'none', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'notin') {
+          tokens.push(this.makeToken('SET_NOTIN', '\u2209', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'inf' || name === 'infty') {
+          tokens.push(this.makeToken('IDENTIFIER', 'inf', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'oint') {
+          tokens.push(this.makeToken('CONTOUR_INTEGRAL', '\u222e', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'int') {
+          tokens.push(this.makeToken('INTEGRAL', '\u222b', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'iint') {
+          tokens.push(this.makeToken('DOUBLE_INTEGRAL', '\u222c', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'iiint') {
+          tokens.push(this.makeToken('TRIPLE_INTEGRAL', '\u222d', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'otimes') {
+          tokens.push(this.makeToken('TENSOR_PROD', '\u2297', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'oplus') {
+          tokens.push(this.makeToken('DIRECT_SUM', '\u2295', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'forall') {
+          tokens.push(this.makeToken('FORALL', '\u2200', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'exists') {
+          if (this.pos < this.source.length && this.source[this.pos] === '!') {
+            this.advance();
+            tokens.push(this.makeToken('EXISTS_UNIQUE', '\u2203!', startPos, startLine, startCol, leadingWhitespace));
+            continue;
+          }
+          tokens.push(this.makeToken('EXISTS', '\u2203', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'le' || name === 'leq') {
+          tokens.push(this.makeToken('LTE', '<=', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'ge' || name === 'geq') {
+          tokens.push(this.makeToken('GTE', '>=', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'ne' || name === 'neq') {
+          tokens.push(this.makeToken('NEQ', '!=', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'subset') {
+          tokens.push(this.makeToken('SET_SUBSET', '\u2282', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'subseteq') {
+          tokens.push(this.makeToken('SET_SUBSETEQ', '\u2286', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'cup' || name === 'union') {
+          tokens.push(this.makeToken('SET_UNION', '\u222a', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'cap' || name === 'intersect') {
+          tokens.push(this.makeToken('SET_INTERSECT', '\u2229', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'setminus') {
+          tokens.push(this.makeToken('SET_DIFF', '\\', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'iso') {
+          tokens.push(this.makeToken('ISO', '\u2245', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'homotopic') {
+          tokens.push(this.makeToken('HOMOTOPY', '\u2243', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'equiv') {
+          tokens.push(this.makeToken('EQUIV', '\u2261', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'dagger' || name === 'adj') {
+          tokens.push(this.makeToken('DAGGER', '\u2020', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'nabla' || name === 'grad' || name === 'del') {
+          tokens.push(this.makeToken('NABLA', '\u2207', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'laplacian') {
+          tokens.push(this.makeToken('LAPLACIAN', '\u2206', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'wedge') {
+          tokens.push(this.makeToken('WEDGE', '\u2227', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'hodge' || name === 'star') {
+          tokens.push(this.makeToken('HODGE_STAR', '\u22c6', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'tensor') {
+          tokens.push(this.makeToken('TENSOR_PROD', '\u2297', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'direct_sum') {
+          tokens.push(this.makeToken('DIRECT_SUM', '\u2295', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'cdot' || name === 'times') {
+          tokens.push(this.makeToken('STAR', '*', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        tokens.push(this.makeToken('IDENTIFIER', name, startPos, startLine, startCol, leadingWhitespace));
         continue;
       }
 
@@ -152,7 +479,7 @@ export class Tokenizer {
       if (char === '=' && this.peek(1) === '=') {
         this.advance();
         this.advance();
-        tokens.push(this.makeToken('EQ', '==', startPos, startLine, startCol, leadingWhitespace));
+        tokens.push(this.makeToken('EQ_EQ', '==', startPos, startLine, startCol, leadingWhitespace));
         continue;
       }
 
@@ -496,8 +823,10 @@ export class Tokenizer {
           break;
         default:
           if (this.isIdentStart(char)) {
-            const token = this.readIdentifier(startPos, startLine, startCol, leadingWhitespace);
-            tokens.push(token);
+            const wordTokens = this.readWordOrSplit(startPos, startLine, startCol, leadingWhitespace);
+            for (const tok of wordTokens) {
+              tokens.push(tok);
+            }
           } else if (this.isCustomOpChar(char)) {
             this.advance();
             tokens.push(this.makeToken('CUSTOM_OP', char, startPos, startLine, startCol, leadingWhitespace));
@@ -607,133 +936,40 @@ export class Tokenizer {
     return this.makeToken('SUPERSCRIPT_DIGITS', digits, startPos, startLine, startCol, leadingWhitespace);
   }
 
-  private readIdentifier(startPos: number, startLine: number, startCol: number, leadingWhitespace: boolean): Token {
+  private readWordOrSplit(startPos: number, startLine: number, startCol: number, leadingWhitespace: boolean): Token[] {
     let name = '';
     while (this.pos < this.source.length && this.isIdentPart(this.source[this.pos])) {
       name += this.source[this.pos];
       this.advance();
     }
 
-    switch (name) {
-      case 'in':
-        return this.makeToken('IN', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'step':
-        return this.makeToken('STEP', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'if':
-        return this.makeToken('IF', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'then':
-        return this.makeToken('THEN', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'else':
-        return this.makeToken('ELSE', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'and':
-        return this.makeToken('AND', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'or':
-        return this.makeToken('OR', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'not':
-        return this.makeToken('NOT', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'claim':
-        return this.makeToken('CLAIM', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'iint':
-        return this.makeToken('DOUBLE_INTEGRAL', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'iiint':
-        return this.makeToken('TRIPLE_INTEGRAL', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'oint':
-        return this.makeToken('CONTOUR_INTEGRAL', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'grad':
-      case 'del':
-        return this.makeToken('NABLA', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'laplacian':
-        return this.makeToken('LAPLACIAN', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'wedge':
-        return this.makeToken('WEDGE', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'hodge':
-      case 'star':
-        return this.makeToken('HODGE_STAR', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'tensor':
-        return this.makeToken('TENSOR_PROD', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'direct_sum':
-      case 'oplus':
-        return this.makeToken('DIRECT_SUM', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'forall':
-        return this.makeToken('FORALL', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'exists':
-        if (this.pos < this.source.length && this.source[this.pos] === '!') {
-          this.advance();
-          return this.makeToken('EXISTS_UNIQUE', name + '!', startPos, startLine, startCol, leadingWhitespace);
+    const result: Token[] = [];
+        let curPos = startPos;
+        let curCol = startCol;
+        let i = 0;
+        while (i < name.length) {
+          let tokenStr = name[i];
+          while (i + 1 < name.length && this.isCombiningDiacritic(name[i + 1])) {
+            tokenStr += name[i + 1];
+            i++;
+          }
+          const isNum = this.isDigit(tokenStr[0]);
+          result.push({
+            type: isNum ? 'NUMBER' : 'IDENTIFIER',
+            value: tokenStr,
+            span: {
+              start: curPos,
+              end: curPos + tokenStr.length,
+              line: startLine,
+              col: curCol,
+            },
+            leadingWhitespace: result.length === 0 ? leadingWhitespace : false,
+          });
+          curPos += tokenStr.length;
+          curCol += tokenStr.length;
+          i++;
         }
-        return this.makeToken('EXISTS', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'notin':
-        return this.makeToken('SET_NOTIN', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'subset':
-        return this.makeToken('SET_SUBSET', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'subseteq':
-        return this.makeToken('SET_SUBSETEQ', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'union':
-        return this.makeToken('SET_UNION', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'intersect':
-        return this.makeToken('SET_INTERSECT', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'setminus':
-        return this.makeToken('SET_DIFF', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'iso':
-        return this.makeToken('ISO', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'homotopic':
-        return this.makeToken('HOMOTOPY', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'equiv':
-        return this.makeToken('EQUIV', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'dagger':
-      case 'adj':
-        return this.makeToken('DAGGER', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'record':
-        return this.makeToken('RECORD', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'with':
-        return this.makeToken('WITH', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'dimension':
-        return this.makeToken('DIMENSION', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'unit':
-        return this.makeToken('UNIT', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'operator':
-        return this.makeToken('OPERATOR', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'prefix':
-        return this.makeToken('PREFIX', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'postfix':
-        return this.makeToken('POSTFIX', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'infix':
-        return this.makeToken('INFIX', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'precedence':
-        return this.makeToken('PRECEDENCE', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'associativity':
-        return this.makeToken('ASSOCIATIVITY', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'kind':
-        return this.makeToken('KIND', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'extends':
-        return this.makeToken('EXTENDS', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'operations':
-        return this.makeToken('OPERATIONS', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'axioms':
-        return this.makeToken('AXIOMS', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'rule':
-        return this.makeToken('RULE', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'requires':
-        return this.makeToken('REQUIRES', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'module':
-        return this.makeToken('MODULE', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'export':
-        return this.makeToken('EXPORT', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'import':
-        return this.makeToken('IMPORT', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'from':
-        return this.makeToken('FROM', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'as':
-        return this.makeToken('AS', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'is':
-        return this.makeToken('IS', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'view':
-        return this.makeToken('VIEW', name, startPos, startLine, startCol, leadingWhitespace);
-      case 'for':
-        return this.makeToken('FOR', name, startPos, startLine, startCol, leadingWhitespace);
-      default:
-        return this.makeToken('IDENTIFIER', name, startPos, startLine, startCol, leadingWhitespace);
-    }
+        return result;
   }
 
   private readString(quote: string, startPos: number, startLine: number, startCol: number, leadingWhitespace: boolean): Token {
@@ -822,6 +1058,17 @@ export class Tokenizer {
       char === '\u2124' ||
       char === '\u211a' ||
       char === '\u2115' ||
+      char === "'" ||
+      char === '\u2032'
+    );
+  }
+
+  private isCombiningDiacritic(char: string): boolean {
+    return (
+      char === '\u0304' || // combining macron / bar
+      char === '\u0302' || // combining circumflex / hat
+      char === '\u0307' || // combining dot
+      char === '\u0308' || // combining diaeresis / double dot
       char === "'" ||
       char === '\u2032'
     );

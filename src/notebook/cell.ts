@@ -298,8 +298,6 @@ export class CellView {
         return `lambda (${val.params.join(', ')})`;
       case 'none':
         return 'none';
-      case 'undefined':
-        return 'undefined';
       case 'expression':
         return val.text;
       case 'builtin':

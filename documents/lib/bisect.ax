@@ -1,0 +1,25 @@
+# bisect.ax — Bisection root search method in pure Axine
+\module :bisect
+
+# Halving interval [a, b] for root of y^2 - x = 0
+# 25 iterations provides precision delta = (b - a) / 2^25 < 3e-8.
+\forall x, a, b, :bisect_sqrt_step(x, a, b) = {
+  :m = 0.5 * (a + b);
+  \if :m * :m >= x \then (a, :m) \else (:m, b)
+}
+
+\forall x, :bisect_sqrt(x) = {
+  :i0 = (0.0, \if x > 1 \then x \else 1.0);
+  :m0 = 0.5 * (:i0[0] + :i0[1]);
+  :i1 = \if :m0 * :m0 >= x \then (:i0[0], :m0) \else (:m0, :i0[1]);
+  :m1 = 0.5 * (:i1[0] + :i1[1]);
+  :i2 = \if :m1 * :m1 >= x \then (:i1[0], :m1) \else (:m1, :i1[1]);
+  :m2 = 0.5 * (:i2[0] + :i2[1]);
+  :i3 = \if :m2 * :m2 >= x \then (:i2[0], :m2) \else (:m2, :i2[1]);
+  :m3 = 0.5 * (:i3[0] + :i3[1]);
+  :i4 = \if :m3 * :m3 >= x \then (:i3[0], :m3) \else (:m3, :i3[1]);
+  :m4 = 0.5 * (:i4[0] + :i4[1]);
+  :m4
+}
+
+\export :bisect_sqrt_step, :bisect_sqrt

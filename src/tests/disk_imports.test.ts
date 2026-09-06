@@ -42,27 +42,27 @@ describe('Phase 13 Part C & Gate C: Module Imports from Disk & Resolution Order'
     // 1. Create helper.ax and importer.ax in testDir
     const helperContent = `
 # Geometry helpers
-area_circle(r) := 3.14159 * r^2
-hypotenuse(a, b) := (a^2 + b^2)^(1/2)
+:area_circle(r) := 3.14159 * r^2
+:hypotenuse(a, b) := (a^2 + b^2)^(1/2)
 `;
     fs.writeFileSync(path.join(testDir, 'geometry_helper.ax'), helperContent, 'utf-8');
 
     const importerContent = `
-import "geometry_helper.ax"
+\\import "geometry_helper.ax"
 
-c_area := area_circle(5)
-h_val := hypotenuse(3, 4)
+:c_area := :area_circle(5)
+:h_val := :hypotenuse(3, 4)
 `;
     const env = evalDocument(importerContent);
 
-    expect(env['c_area']).toBeDefined();
-    expect(env['h_val']).toBeDefined();
-    expect(valueToNumber(env['h_val'])).toBe(5);
+    expect(env['c_area'] || env[':c_area']).toBeDefined();
+    expect(env['h_val'] || env[':h_val']).toBeDefined();
+    expect(valueToNumber(env['h_val'] || env[':h_val'])).toBe(5);
   });
 
   it('fails with detailed resolution order and searched paths when imported file is moved or missing', () => {
     const importerContent = `
-import "missing_physics_tool.ax"
+\\import "missing_physics_tool.ax"
 
 x := 10
 `;
@@ -86,29 +86,29 @@ x := 10
   it('allows a disk file to import physics.ax from the stdlib without losing access', () => {
     // Disk file in testDir importing bundled stdlib physics.ax
     const diskFileContent = `
-import "physics.ax"
+\\import "physics.ax"
 
-b := Body(mass: 2, position: (0, 0), velocity: (10, 0))
-ke := kinetic_energy(b)
+b := :Body(:mass: 2, :position: (0, 0), :velocity: (10, 0))
+:ke := :kinetic_energy(b)
 `;
     const env = evalDocument(diskFileContent);
 
     expect(env['b']).toBeDefined();
-    expect(env['ke']).toBeDefined();
-    expect(valueToNumber(env['ke'])).toBe(100);
+    expect(env['ke'] || env[':ke']).toBeDefined();
+    expect(valueToNumber(env['ke'] || env[':ke'])).toBe(100);
   });
 
   it('resolves disk files registered via directory handle in browser environment', () => {
     Evaluator.setDiskFiles({
-      'custom_math.ax': `square(n) := n * n`,
+      'custom_math.ax': `:square(n) := n * n`,
     });
 
     const doc = `
-import "custom_math.ax"
-res := square(7)
+\\import "custom_math.ax"
+:res := :square(7)
 `;
     const env = evalDocument(doc);
-    expect(env['res']).toBeDefined();
-    expect(valueToNumber(env['res'])).toBe(49);
+    expect(env['res'] || env[':res']).toBeDefined();
+    expect(valueToNumber(env['res'] || env[':res'])).toBe(49);
   });
 });

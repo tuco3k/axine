@@ -8,7 +8,7 @@ describe('Error Box Wrapping & Import Value Semantics', () => {
   it('asserts import does not evaluate to none and produces a module descriptor with exported bindings', () => {
     Evaluator.initVirtualFiles();
     const env = createInitialEnvironment();
-    const { value: modVal } = evaluate('import "physics.ax"', env);
+    const { value: modVal } = evaluate("\\import \"physics.ax\"", env);
 
     expect(modVal.type).toBe('module');
     expect(modVal.type).not.toBe('none');
@@ -28,7 +28,7 @@ describe('Error Box Wrapping & Import Value Semantics', () => {
   it('asserts selective from-import evaluates to module with only selected bindings', () => {
     Evaluator.initVirtualFiles();
     const env = createInitialEnvironment();
-    const { value: modVal } = evaluate('from "physics.ax" import Body, gravity_force', env);
+    const { value: modVal } = evaluate("\\from \"physics.ax\" \\import :Body, :gravity_force", env);
 
     expect(modVal.type).toBe('module');
     expect(modVal.type).not.toBe('none');
@@ -40,8 +40,8 @@ describe('Error Box Wrapping & Import Value Semantics', () => {
     Evaluator.initVirtualFiles();
     // Intentionally trigger a detailed error by referencing invalid record field and invalid function args
     const lines = [
-      'import "physics.ax"',
-      'b := Body(radius: 0.5, mass: 1.0, position: (0, 0), velocity: (0, 0))'
+      '\\import "physics.ax"',
+      ':b := :Body(:radius: 0.5, :mass: 1.0, :position: (0, 0), :velocity: (0, 0))'
     ];
     const results: LineResultMessage[] = [];
     processDocumentLines(1, lines, (msg: LineResultMessage) => results.push(msg));

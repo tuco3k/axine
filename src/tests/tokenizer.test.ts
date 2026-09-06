@@ -49,8 +49,8 @@ describe('Tokenizer', () => {
     ]);
   });
 
-  it('tokenizes assignments and ranges', () => {
-    const tokens = tokenize('f(x) := x^2, x in -10..10 step 0.01');
+  it('tokenizes assignments and ranges with backslash keywords', () => {
+    const tokens = tokenize('f(x) := x^2, x \\in -10..10 \\step 0.01');
     expect(tokens.map(t => [t.type, t.value])).toEqual([
       ['IDENTIFIER', 'f'],
       ['LPAREN', '('],
@@ -69,6 +69,19 @@ describe('Tokenizer', () => {
       ['NUMBER', '10'],
       ['STEP', 'step'],
       ['NUMBER', '0.01'],
+      ['EOF', ''],
+    ]);
+  });
+
+  it('tokenizes bare words as single-letter juxtaposed identifiers', () => {
+    const tokens = tokenize('import');
+    expect(tokens.map(t => [t.type, t.value])).toEqual([
+      ['IDENTIFIER', 'i'],
+      ['IDENTIFIER', 'm'],
+      ['IDENTIFIER', 'p'],
+      ['IDENTIFIER', 'o'],
+      ['IDENTIFIER', 'r'],
+      ['IDENTIFIER', 't'],
       ['EOF', ''],
     ]);
   });

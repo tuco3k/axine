@@ -11,6 +11,7 @@ import {
   BracketOpNode,
   QuantifierNode,
   SetOpNode,
+  IntervalNode,
   Span,
   Token,
   TokenType,
@@ -150,7 +151,7 @@ export const BUILTIN_FUNCTIONS = new Set([
 ]);
 
 export const CONSTANTS = new Set([
-  'pi', 'e', 'tau', 'phi', 'none', 'true', 'false',
+  'true', 'false',
   'R', 'C', 'Z', 'Q', 'N',
   'Reals', 'Complexes', 'Integers', 'Rationals', 'Naturals',
   '\u211d', '\u2102', '\u2124', '\u211a', '\u2115' // ℝ, ℂ, ℤ, ℚ, ℕ
@@ -158,6 +159,7 @@ export const CONSTANTS = new Set([
 
 // Precedence levels
 export const PREC_NONE = 0;
+export const PREC_WHERE = 4;
 export const PREC_OR = 5;
 export const PREC_AND = 6;
 export const PREC_NOT = 7;
@@ -184,6 +186,7 @@ export class Parser {
   private readonly knownVariables: Set<string>;
   private pos: number = 0;
   private parsingIntegrand: boolean = false;
+  private pipeDepth: number = 0;
 
   constructor(tokens: Token[], options?: ParserOptions) {
     this.tokens = tokens;
@@ -255,6 +258,31 @@ export class Parser {
 
   private tryParseDefinition(): ASTNode | null {
     const startPos = this.pos;
+
+    // Check for \axis[X, Y]
+    if (this.peek().type === 'AXIS') {
+      const axisTok = this.advance();
+      this.expect('LBRACKET', '[');
+      const axes: string[] = [];
+      while (this.peek().type !== 'RBRACKET' && this.peek().type !== 'EOF') {
+        const idTok = this.expect('IDENTIFIER', 'axis identifier');
+        axes.push(idTok.value);
+        if (this.peek().type === 'COMMA') {
+          this.advance();
+        }
+      }
+      const rBracket = this.expect('RBRACKET', ']');
+      return {
+        type: 'AxisDecl',
+        axes,
+        span: {
+          start: axisTok.span.start,
+          end: rBracket.span.end,
+          line: axisTok.span.line,
+          col: axisTok.span.col,
+        },
+      };
+    }
 
     // Check for claim <name> { ... }
     if (this.peek().type === 'CLAIM') {
@@ -363,8 +391,12 @@ export class Parser {
         } else if (this.peek().type === 'ASSOCIATIVITY') {
           this.advance();
           this.expect('COLON', ':');
-          const assocToken = this.expect('IDENTIFIER', 'left or right');
-          associativity = assocToken.value === 'right' ? 'right' : 'left';
+          let assocVal = 'left';
+          if (this.peek().type === 'IDENTIFIER') {
+            const assocToken = this.advance();
+            assocVal = assocToken.value.replace(/^:/, '');
+          }
+          associativity = assocVal === 'right' ? 'right' : 'left';
         }
       }
 
@@ -533,7 +565,7 @@ export class Parser {
         this.advance();
       }
       const targetTypeToken = this.expect('IDENTIFIER', 'view target type name');
-      if (this.peek().type === 'ASSIGN' || this.peek().type === 'GLOBAL_ASSIGN') {
+      if (this.peek().type === 'EQ' || this.peek().type === 'ASSIGN' || this.peek().type === 'GLOBAL_ASSIGN') {
         this.advance();
       }
       const viewFunction = this.parseExpression(PREC_NONE);
@@ -550,7 +582,61 @@ export class Parser {
       };
     }
 
-    // Check for f(x, y) := expr OR f(x, y) :\u2261 expr
+    if (this.peek().type === 'UNIMPORT') {
+      const uTok = this.advance();
+      let name = '';
+      if (this.peek().type === 'IDENTIFIER') {
+        const idTok = this.advance();
+        name = idTok.value;
+      }
+      return {
+        type: 'Unimport',
+        name,
+        span: {
+          start: uTok.span.start,
+          end: this.peek(-1).span.end,
+          line: uTok.span.line,
+          col: uTok.span.col,
+        },
+      };
+    }
+
+    // Check for unimport: ident- or :ident- on its own line / statement
+    if (this.peek().type === 'IDENTIFIER') {
+      let p = 0;
+      let combinedName = '';
+      while (this.peek(p).type === 'IDENTIFIER' && (p === 0 || !this.peek(p).leadingWhitespace)) {
+        combinedName += this.peek(p).value;
+        p++;
+      }
+      if (this.peek(p).type === 'MINUS' && !this.peek(p).leadingWhitespace) {
+        const minusTok = this.peek(p);
+        const nextTok = this.peek(p + 1);
+        if (
+          nextTok.type === 'EOF' ||
+          nextTok.type === 'SEMICOLON' ||
+          nextTok.type === 'RBRACE' ||
+          nextTok.span.line > minusTok.span.line
+        ) {
+          const firstTok = this.peek();
+          for (let i = 0; i <= p; i++) {
+            this.advance();
+          }
+          return {
+            type: 'Unimport',
+            name: combinedName,
+            span: {
+              start: firstTok.span.start,
+              end: minusTok.span.end,
+              line: firstTok.span.line,
+              col: firstTok.span.col,
+            },
+          };
+        }
+      }
+    }
+
+    // Check for f(x, y) = expr OR f(x, y) := expr OR f(x, y) :== expr
     if (
       this.peek().type === 'IDENTIFIER' &&
       this.peek(1).type === 'LPAREN'
@@ -576,7 +662,10 @@ export class Parser {
         }
       }
 
-      if (validSig && this.peek(p).type === 'RPAREN' && (this.peek(p + 1).type === 'ASSIGN' || this.peek(p + 1).type === 'GLOBAL_ASSIGN')) {
+      const nextTokType = this.peek(p + 1).type;
+      const isDefOp = nextTokType === 'ASSIGN' || nextTokType === 'GLOBAL_ASSIGN' || (nextTokType === 'EQ' && nameToken.value.length > 1);
+
+      if (validSig && this.peek(p).type === 'RPAREN' && isDefOp) {
         this.advance(); // consume name
         this.advance(); // consume (
         const paramNames: string[] = [];
@@ -588,9 +677,11 @@ export class Parser {
           }
         }
         this.expect('RPAREN', ')');
-        this.advance(); // consume := or :\u2261
+        const defOpTok = this.advance(); // consume = or := or :==
 
-        this.knownFunctions.add(nameToken.value);
+        if (defOpTok.type === 'ASSIGN' || defOpTok.type === 'GLOBAL_ASSIGN' || nameToken.value.length > 1) {
+          this.knownFunctions.add(nameToken.value);
+        }
         const body = this.parseExpression(PREC_NONE);
         const span: Span = {
           start: nameToken.span.start,
@@ -608,10 +699,10 @@ export class Parser {
       }
     }
 
-    // Check for variable :\u2261 expr or variable :== expr (Global assignment)
+    // Check for variable :equiv expr or variable :== expr (Global assignment)
     if (this.peek().type === 'IDENTIFIER' && this.peek(1).type === 'GLOBAL_ASSIGN') {
       const targetToken = this.advance();
-      this.advance(); // consume :\u2261 or :==
+      this.advance(); // consume :equiv or :==
       const value = this.parseExpression(PREC_NONE);
       const span: Span = {
         start: targetToken.span.start,
@@ -627,7 +718,7 @@ export class Parser {
       };
     }
 
-    // Check for variable := expr (Local/standard assignment)
+    // Check for variable := expr (Assignment)
     if (this.peek().type === 'IDENTIFIER' && this.peek(1).type === 'ASSIGN') {
       const targetToken = this.advance();
       this.advance(); // consume :=
@@ -843,6 +934,27 @@ export class Parser {
         }
       }
 
+      // Infix binary BAR_SEP: a | b (divides / bitwise or)
+      if (this.peek().type === 'BAR_SEP' && this.pipeDepth === 0 && precedence < PREC_COMPARE) {
+        this.advance(); // consume |
+        const right = this.parseExpression(PREC_COMPARE);
+        const span: Span = {
+          start: left.span.start,
+          end: right.span.end,
+          line: left.span.line,
+          col: left.span.col,
+        };
+        left = {
+          type: 'BinaryOp',
+          op: '|',
+          left,
+          right,
+          isImplicit: false,
+          span,
+        };
+        continue;
+      }
+
       // Infix operators
       const token = this.peek();
       const infixPrec = this.getInfixPrecedence(token.type);
@@ -855,16 +967,93 @@ export class Parser {
       // Right-associative for '^', left-associative for others
       const rightPrec = token.type === 'CARET' ? infixPrec - 1 : infixPrec;
 
-      // Handle 'in' for ranges: x in a..b (step c) or x in collection
-      if (token.type === 'IN') {
-        if (left.type !== 'Identifier') {
-          throw createError(`Expected variable before 'in'`, left.span, {
-            expected: 'a variable name (e.g. x in -10..10)',
-            suggestion: `Replace '${this.source.slice(left.span.start, left.span.end)}' with a variable name`,
-            source: this.source,
-          });
+      // Handle '\where' constraint
+      if (token.type === 'WHERE') {
+        const cond = this.parseExpression(PREC_WHERE);
+        const span: Span = {
+          start: left.span.start,
+          end: cond.span.end,
+          line: left.span.line,
+          col: left.span.col,
+        };
+        left = {
+          type: 'Where',
+          expr: left,
+          condition: cond,
+          span,
+        };
+        continue;
+      }
+
+      // Handle 'in' or '\in' or '\u2208' (Set membership / interval / range relation)
+      if (token.type === 'IN' || token.type === 'SET_IN') {
+        const varName = left.type === 'Identifier' ? left.name : undefined;
+
+        // Check for Interval: [a, b], (a, b), [a, b), (a, b]
+        if (this.peek().type === 'LBRACKET' || this.peek().type === 'LPAREN') {
+          const isLeftClosed = this.peek().type === 'LBRACKET';
+          this.advance(); // consume [ or (
+          const startExpr = this.parseExpression(PREC_NONE);
+          this.expect('COMMA', ',');
+          const endExpr = this.parseExpression(PREC_NONE);
+          const nextType = this.peek().type;
+          let isRightClosed = true;
+          let rDelimTok: Token;
+          if (nextType === 'RBRACKET') {
+            rDelimTok = this.advance();
+            isRightClosed = true;
+          } else if (nextType === 'RPAREN') {
+            rDelimTok = this.advance();
+            isRightClosed = false;
+          } else {
+            throw createError(`Expected ']' or ')' to close interval`, this.peek().span, {
+              expected: "']' or ')'",
+              source: this.source,
+            });
+          }
+
+          let kind: IntervalNode['kind'] = 'closed';
+          if (isLeftClosed && isRightClosed) kind = 'closed';
+          else if (!isLeftClosed && !isRightClosed) kind = 'open';
+          else if (!isLeftClosed && isRightClosed) kind = 'left_open';
+          else kind = 'right_open';
+
+          const isInfStart =
+            (startExpr.type === 'Identifier' && (startExpr.name === 'inf' || startExpr.name === 'infty')) ||
+            (startExpr.type === 'UnaryOp' && startExpr.op === '-' && startExpr.operand.type === 'Identifier' && (startExpr.operand.name === 'inf' || startExpr.operand.name === 'infty'));
+          const isInfEnd = endExpr.type === 'Identifier' && (endExpr.name === 'inf' || endExpr.name === 'infty');
+
+          const intervalNode: IntervalNode = {
+            type: 'Interval',
+            kind,
+            start: startExpr,
+            end: endExpr,
+            variable: varName,
+            isInfStart,
+            isInfEnd,
+            span: {
+              start: left.span.start,
+              end: rDelimTok.span.end,
+              line: left.span.line,
+              col: left.span.col,
+            },
+          };
+
+          left = {
+            type: 'SetOp',
+            op: 'in',
+            left,
+            right: intervalNode,
+            span: {
+              start: left.span.start,
+              end: rDelimTok.span.end,
+              line: left.span.line,
+              col: left.span.col,
+            },
+          };
+          continue;
         }
-        const varName = left.name;
+
         const rangeStart = this.parseExpression(PREC_IN);
         if (this.peek().type === 'DOTDOT') {
           this.advance();
@@ -882,7 +1071,7 @@ export class Parser {
           };
           left = {
             type: 'Range',
-            variable: varName,
+            variable: varName ?? '',
             start: rangeStart,
             end: rangeEnd,
             step: stepExpr,
@@ -1075,7 +1264,6 @@ export class Parser {
         token.type === 'SET_DIFF' ||
         token.type === 'SET_SUBSET' ||
         token.type === 'SET_SUBSETEQ' ||
-        token.type === 'SET_IN' ||
         token.type === 'SET_NOTIN'
       ) {
         const opMap: Record<string, SetOpNode['op']> = {
@@ -1084,7 +1272,6 @@ export class Parser {
           SET_DIFF: 'setminus',
           SET_SUBSET: 'subset',
           SET_SUBSETEQ: 'subseteq',
-          SET_IN: 'in',
           SET_NOTIN: 'notin',
         };
         left = {
@@ -1275,12 +1462,13 @@ export class Parser {
       };
     }
 
-    // Bracket Operators: inner product, norm, floor, ceil
+    // Bracket Operators: inner product, norm, floor, ceil, abs
     if (
       token.type === 'LANGLE' ||
       token.type === 'NORM_BAR' ||
       token.type === 'FLOOR_L' ||
-      token.type === 'CEIL_L'
+      token.type === 'CEIL_L' ||
+      token.type === 'BAR_SEP'
     ) {
       return this.parseBracketOp();
     }
@@ -1318,7 +1506,7 @@ export class Parser {
     }
 
     // Integral: \u222b or integral
-    if (token.type === 'INTEGRAL' || (token.type === 'IDENTIFIER' && (token.value === 'integral' || token.value.startsWith('integral_')))) {
+    if (token.type === 'INTEGRAL' || (token.type === 'IDENTIFIER' && (token.value === 'integral' || token.value === ':integral' || token.value.startsWith('integral_') || token.value.startsWith(':integral_')))) {
       return this.parseIntegral();
     }
 
@@ -1367,7 +1555,7 @@ export class Parser {
     }
 
     // Limit: lim(x -> a, expr), lim sup, lim inf
-    if (token.type === 'IDENTIFIER' && (token.value === 'lim' || token.value === 'limit' || token.value === 'limsup' || token.value === 'liminf') && (this.peek(1).type === 'LPAREN' || this.peek(1).type === 'IDENTIFIER')) {
+    if (token.type === 'IDENTIFIER' && (token.value === 'lim' || token.value === ':lim' || token.value === 'limit' || token.value === ':limit' || token.value === 'limsup' || token.value === ':limsup' || token.value === 'liminf' || token.value === ':liminf') && (this.peek(1).type === 'LPAREN' || this.peek(1).type === 'IDENTIFIER')) {
       return this.parseLimit();
     }
 
@@ -1482,12 +1670,12 @@ export class Parser {
 
       // Check if followed immediately by '(' with standard call syntax
       if (this.peek(1).type === 'LPAREN') {
-        if (isKnownFunc || isConstructor || (name.length > 1 && !this.peek(1).leadingWhitespace)) {
-          // It is a defined function / builtin call / user function call: f(...) or myfunc(...)
+        if (isConstructor || name.length > 1) {
+          // It is a defined function / builtin call / user function call: :sin(...) or MyConstructor(...) or :dist4(...)
           this.advance(); // consume func name
           return this.parseFunctionCallArgs(name, token.span);
         } else {
-          // Single-letter undefined function: implicit multiplication f · (x+1)
+          // Single-letter identifier: f(x) is always f times x. No exceptions, no lookup, no mode.
           this.advance();
           return {
             type: 'Identifier',
@@ -1679,9 +1867,12 @@ export class Parser {
 
     // Special probability notation P(A | B) or P(A)
     if (callee === 'P' || callee === 'Prob') {
-      const event = this.parseExpression(PREC_NONE);
+      let event = this.parseExpression(PREC_NONE);
       let condition: ASTNode | undefined;
-      if (this.peek().type === 'BAR_SEP') {
+      if (event.type === 'BinaryOp' && event.op === '|') {
+        condition = event.right;
+        event = event.left;
+      } else if (this.peek().type === 'BAR_SEP') {
         this.advance(); // consume |
         condition = this.parseExpression(PREC_NONE);
       }
@@ -1757,55 +1948,56 @@ export class Parser {
       col: calleeSpan.col,
     };
 
+    const calleeKey = callee.replace(/^:/, '');
     // ASCII representation mapping to identical AST nodes
-    if ((callee === 'bar' || callee === 'hat' || callee === 'dot' || callee === 'ddot') && args.length === 1 && args[0].type === 'Identifier') {
+    if ((calleeKey === 'bar' || calleeKey === 'hat' || calleeKey === 'dot' || calleeKey === 'ddot') && args.length === 1 && args[0].type === 'Identifier') {
       return {
         type: 'DecoratedIdentifier',
-        decoration: callee,
+        decoration: calleeKey,
         name: args[0].name,
         span,
       };
     }
-    if (callee === 'norm') {
+    if (calleeKey === 'norm') {
       return { type: 'BracketOp', op: 'norm', operands: args, span };
     }
-    if (callee === 'inner') {
+    if (calleeKey === 'inner') {
       return { type: 'BracketOp', op: 'inner_product', operands: args, span };
     }
-    if (callee === 'card') {
+    if (calleeKey === 'card') {
       return { type: 'BracketOp', op: 'card', operands: args, span };
     }
-    if (callee === 'grad' || callee === 'del') {
+    if (calleeKey === 'grad' || calleeKey === 'del') {
       return { type: 'NablaOp', op: 'grad', target: args[0], span };
     }
-    if (callee === 'div') {
+    if (calleeKey === 'div') {
       return { type: 'NablaOp', op: 'div', target: args[0], span };
     }
-    if (callee === 'curl') {
+    if (calleeKey === 'curl') {
       return { type: 'NablaOp', op: 'curl', target: args[0], span };
     }
-    if (callee === 'laplacian') {
+    if (calleeKey === 'laplacian') {
       return { type: 'NablaOp', op: 'laplacian', target: args[0], span };
     }
-    if (callee === 'hodge' || callee === 'star') {
+    if (calleeKey === 'hodge' || calleeKey === 'star') {
       return { type: 'DifferentialFormOp', op: 'hodge_star', operands: args, span };
     }
-    if (callee === 'wedge') {
+    if (calleeKey === 'wedge') {
       return { type: 'DifferentialFormOp', op: 'wedge', operands: args, span };
     }
-    if (callee === 'tensor') {
+    if (calleeKey === 'tensor') {
       return { type: 'TensorOp', op: 'tensor', left: args[0], right: args[1], span };
     }
-    if (callee === 'direct_sum' || callee === 'oplus') {
+    if (calleeKey === 'direct_sum' || calleeKey === 'oplus') {
       return { type: 'TensorOp', op: 'direct_sum', left: args[0], right: args[1], span };
     }
-    if (callee === 'E') {
+    if (calleeKey === 'E') {
       return { type: 'Probability', op: 'expect', event: args[0], span };
     }
-    if (callee === 'Var') {
+    if (calleeKey === 'Var') {
       return { type: 'Probability', op: 'variance', event: args[0], span };
     }
-    if (callee === 'Cov') {
+    if (calleeKey === 'Cov') {
       return { type: 'Probability', op: 'covariance', event: args[0], condition: args[1], span };
     }
 
@@ -1823,26 +2015,41 @@ export class Parser {
 
     // Check for Set-builder: { x in S : P(x) } or { x \u2208 S | P(x) }
     if (this.peek().type === 'IDENTIFIER' && (this.peek(1).type === 'SET_IN' || this.peek(1).type === 'IN')) {
-      const varTok = this.advance();
-      this.advance(); // in or \u2208
-      const domain = this.parseExpression(PREC_COMPARE);
-      if (this.peek().type === 'COLON' || this.peek().type === 'BAR_SEP') {
-        this.advance();
+      let isSetBuilder = false;
+      let k = this.pos + 2;
+      let depth = 0;
+      while (k < this.tokens.length && this.tokens[k].type !== 'RBRACE' && this.tokens[k].type !== 'SEMICOLON' && this.tokens[k].type !== 'EOF') {
+        if (this.tokens[k].type === 'LBRACE' || this.tokens[k].type === 'LPAREN' || this.tokens[k].type === 'LBRACKET') depth++;
+        else if (this.tokens[k].type === 'RBRACE' || this.tokens[k].type === 'RPAREN' || this.tokens[k].type === 'RBRACKET') depth--;
+        else if (depth === 0 && (this.tokens[k].type === 'COLON' || this.tokens[k].type === 'BAR_SEP')) {
+          isSetBuilder = true;
+          break;
+        }
+        k++;
       }
-      const predicate = this.parseExpression(PREC_NONE);
-      const rBrace = this.expect('RBRACE', '}');
-      return {
-        type: 'SetBuilder',
-        variable: varTok.value,
-        domain,
-        predicate,
-        span: {
-          start: lBrace.span.start,
-          end: rBrace.span.end,
-          line: lBrace.span.line,
-          col: lBrace.span.col,
-        },
-      };
+
+      if (isSetBuilder) {
+        const varTok = this.advance();
+        this.advance(); // in or \u2208
+        const domain = this.parseExpression(PREC_COMPARE);
+        if (this.peek().type === 'COLON' || this.peek().type === 'BAR_SEP') {
+          this.advance();
+        }
+        const predicate = this.parseExpression(PREC_NONE);
+        const rBrace = this.expect('RBRACE', '}');
+        return {
+          type: 'SetBuilder',
+          variable: varTok.value,
+          domain,
+          predicate,
+          span: {
+            start: lBrace.span.start,
+            end: rBrace.span.end,
+            line: lBrace.span.line,
+            col: lBrace.span.col,
+          },
+        };
+      }
     }
 
     // Lookahead inside block to pre-register function names in knownFunctions
@@ -1862,7 +2069,7 @@ export class Parser {
         while (q < this.tokens.length && this.tokens[q].type !== 'RPAREN' && this.tokens[q].type !== 'EOF') {
           q++;
         }
-        if (q + 1 < this.tokens.length && (this.tokens[q + 1].type === 'ASSIGN' || this.tokens[q + 1].type === 'GLOBAL_ASSIGN')) {
+        if (q + 1 < this.tokens.length && (this.tokens[q + 1].type === 'ASSIGN' || this.tokens[q + 1].type === 'GLOBAL_ASSIGN' || (this.tokens[q + 1].type === 'EQ' && fnName.length > 1))) {
           this.knownFunctions.add(fnName);
         }
       }
@@ -1917,10 +2124,24 @@ export class Parser {
       if (name) {
         region = { type: 'Identifier', name, span: opTok.span };
       }
+    } else if (this.peek().type === 'IDENTIFIER' && this.peek().value === '_' && this.peek(1).type === 'IDENTIFIER') {
+      const underTok = this.advance();
+      if (this.peek().value === '\u2202' && this.peek(1).type === 'IDENTIFIER') {
+        this.advance();
+        const oTok = this.advance();
+        region = {
+          type: 'Identifier',
+          name: '\u2202' + oTok.value,
+          span: { start: underTok.span.start, end: oTok.span.end, line: underTok.span.line, col: underTok.span.col },
+        };
+      } else {
+        const regTok = this.advance();
+        region = { type: 'Identifier', name: regTok.value, span: regTok.span };
+      }
     } else if (this.peek().type === 'IDENTIFIER' && this.peek().value.startsWith('_')) {
       const regTok = this.advance();
       const name = regTok.value.slice(1);
-      region = { type: 'Identifier', name: name || 'S', span: regTok.span };
+      region = { type: 'Identifier', name: name || (integralType === 'triple' ? 'V' : integralType === 'contour' ? 'C' : 'S'), span: regTok.span };
     }
 
     const prevParsing = this.parsingIntegrand;
@@ -1929,15 +2150,9 @@ export class Parser {
     this.parsingIntegrand = prevParsing;
 
     let differential = integralType === 'triple' ? 'dV' : integralType === 'contour' ? 'dr' : 'dS';
-    if (
-      this.peek().type === 'IDENTIFIER' &&
-      (this.peek().value.startsWith('d') ||
-        this.peek().value.startsWith('dr') ||
-        this.peek().value.startsWith('dS') ||
-        this.peek().value.startsWith('dV'))
-    ) {
-      const diffTok = this.advance();
-      differential = diffTok.value;
+    if (this.isBinder()) {
+      const binder = this.consumeBinder();
+      differential = 'd' + binder.variable;
     }
 
     return {
@@ -2057,19 +2272,59 @@ export class Parser {
       };
     }
 
+    if (token.type === 'BAR_SEP') {
+      this.advance(); // consume |
+      this.pipeDepth++;
+      const v = this.parseExpression(PREC_NONE);
+      this.pipeDepth--;
+      const rBar = this.expect('BAR_SEP', '|');
+      return {
+        type: 'BracketOp',
+        op: 'abs',
+        operands: [v],
+        span: {
+          start: token.span.start,
+          end: rBar.span.end,
+          line: token.span.line,
+          col: token.span.col,
+        },
+      };
+    }
+
     throw createError(`Invalid bracket operator '${token.value}'`, token.span);
   }
 
   private parseQuantifier(): QuantifierNode {
     const qTok = this.advance();
-    const quantifier: QuantifierNode['quantifier'] =
+    const quantifier =
       qTok.type === 'FORALL' ? 'forall' : qTok.type === 'EXISTS_UNIQUE' ? 'exists_unique' : 'exists';
 
-    const varTok = this.expect('IDENTIFIER', 'quantified variable');
+    const vars: Token[] = [this.expect('IDENTIFIER', 'quantified variable')];
+    while (this.peek().type === 'COMMA') {
+      const savedPos = this.pos;
+      this.advance();
+      if (this.peek().type === 'IDENTIFIER') {
+        const nextNext = this.tokens[this.pos + 1];
+        if (
+          nextNext &&
+          (nextNext.type === 'LPAREN' ||
+            nextNext.type === 'ASSIGN' ||
+            nextNext.type === 'EQ')
+        ) {
+          this.pos = savedPos;
+          break;
+        }
+        vars.push(this.advance());
+      } else {
+        this.pos = savedPos;
+        break;
+      }
+    }
+
     let domain: ASTNode = {
       type: 'Identifier',
       name: 'R',
-      span: varTok.span,
+      span: vars[0].span,
     };
     if (this.peek().type === 'SET_IN' || this.peek().type === 'IN') {
       this.advance();
@@ -2079,19 +2334,24 @@ export class Parser {
       this.advance();
     }
     const predicate = this.parseExpression(PREC_NONE);
-    return {
-      type: 'Quantifier',
-      quantifier,
-      variable: varTok.value,
-      domain,
-      predicate,
-      span: {
-        start: qTok.span.start,
-        end: predicate.span.end,
-        line: qTok.span.line,
-        col: qTok.span.col,
-      },
-    };
+
+    let result: ASTNode = predicate;
+    for (let i = vars.length - 1; i >= 0; i--) {
+      result = {
+        type: 'Quantifier',
+        quantifier,
+        variable: vars[i].value,
+        domain,
+        predicate: result,
+        span: {
+          start: qTok.span.start,
+          end: predicate.span.end,
+          line: qTok.span.line,
+          col: qTok.span.col,
+        },
+      };
+    }
+    return result as QuantifierNode;
   }
 
   private parseClaim(): ClaimNode {
@@ -2115,7 +2375,7 @@ export class Parser {
       }
       const keyTok = this.advance();
       this.expect('COLON', ':');
-      const key = keyTok.value;
+      const key = keyTok.value.replace(/^:/, '');
       if (key === 'statement') {
         const val = this.parseExpression(PREC_NONE);
         statement = val.type === 'StringLiteral' ? val.value : (val.type === 'Identifier' ? val.name : '');
@@ -2216,9 +2476,14 @@ export class Parser {
     this.advance(); // // or /
     let varName = 'x';
     if (this.peek().type === 'IDENTIFIER') {
-      let vTok = this.advance().value;
-      if (vTok.startsWith('d') || vTok.startsWith('\u2202')) vTok = vTok.slice(1);
-      if (vTok) varName = vTok;
+      if ((this.peek().value === 'd' || this.peek().value === '\u2202') && this.peek(1).type === 'IDENTIFIER') {
+        this.advance(); // consume 'd' or '\u2202'
+        varName = this.advance().value;
+      } else {
+        let vTok = this.advance().value;
+        if (vTok.startsWith('d') || vTok.startsWith('\u2202')) vTok = vTok.slice(1);
+        if (vTok) varName = vTok;
+      }
     }
     let expr: ASTNode;
     if (this.peek().type === 'IDENTIFIER' && this.peek(1).type === 'LPAREN') {
@@ -2308,9 +2573,9 @@ export class Parser {
         // Parenthesized integrand without comma, e.g. integral(x^2) dx
         const rParen = this.expect('RPAREN', ')');
         body = firstArg;
-        if (this.isBinderToken(this.peek())) {
-          const binder = this.advance();
-          variable = binder.value.slice(1);
+        if (this.isBinder()) {
+          const binder = this.consumeBinder();
+          variable = binder.variable;
           return {
             type: 'BigOp',
             op: 'integral',
@@ -2347,8 +2612,8 @@ export class Parser {
     let subVal: string | null = null;
     const subSpan = opTok.span;
 
-    if (opTok.type === 'IDENTIFIER' && opTok.value.startsWith('integral_')) {
-      subVal = opTok.value.slice(9);
+    if (opTok.type === 'IDENTIFIER' && (opTok.value.startsWith('integral_') || opTok.value.startsWith(':integral_'))) {
+      subVal = opTok.value.replace(/^:?integral_/, '');
     }
 
     if (subVal !== null) {
@@ -2388,6 +2653,9 @@ export class Parser {
           this.advance();
           start = this.parseExpression(PREC_NONE);
           this.expect('RBRACE', '}');
+        } else if (this.peek().type === 'NUMBER') {
+          const numTok = this.advance();
+          start = { type: 'NumberLiteral', raw: numTok.value, span: numTok.span };
         } else {
           const idTok = this.advance();
           start = { type: 'Identifier', name: idTok.value, span: idTok.span };
@@ -2427,9 +2695,9 @@ export class Parser {
     let endSpan = body.span;
 
     // Check and consume binder token (e.g. dx, dy, dt, dS)
-    if (this.isBinderToken(this.peek())) {
-      const binder = this.advance();
-      variable = binder.value.slice(1);
+    if (this.isBinder()) {
+      const binder = this.consumeBinder();
+      variable = binder.variable;
       endSpan = binder.span;
     }
 
@@ -2600,7 +2868,7 @@ export class Parser {
     if (token.type === 'NORM_BAR') {
       return false;
     }
-    if (this.parsingIntegrand && this.isBinderToken(token)) {
+    if (this.parsingIntegrand && this.isBinder()) {
       return false;
     }
     if (left && token.span.line > left.span.line) {
@@ -2617,12 +2885,47 @@ export class Parser {
     ].includes(type);
   }
 
-  private isBinderToken(token: Token): boolean {
-    if (token.type !== 'IDENTIFIER') return false;
-    const val = token.value;
-    if (val.length < 2 || val[0] !== 'd') return false;
-    if (val === 'det' || val === 'dim') return false;
-    return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(val.slice(1));
+  private isBinder(): boolean {
+    const tok0 = this.peek();
+    if (tok0.type !== 'IDENTIFIER') return false;
+    const val = tok0.value;
+    if (val.length >= 2 && val.startsWith('d')) {
+      if (val === 'det' || val === 'dim') return false;
+      return true;
+    }
+    if (val === 'd') {
+      const tok1 = this.peek(1);
+      if (tok1.type === 'IDENTIFIER') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private consumeBinder(): { variable: string; span: Span } {
+    const tok0 = this.advance();
+    if (tok0.value.length >= 2 && tok0.value.startsWith('d')) {
+      return {
+        variable: tok0.value.slice(1),
+        span: tok0.span,
+      };
+    }
+    if (tok0.value === 'd' && this.peek().type === 'IDENTIFIER') {
+      const tok1 = this.advance();
+      return {
+        variable: tok1.value,
+        span: {
+          start: tok0.span.start,
+          end: tok1.span.end,
+          line: tok0.span.line,
+          col: tok0.span.col,
+        },
+      };
+    }
+    return {
+      variable: 'x',
+      span: tok0.span,
+    };
   }
 
   private canBeginExpression(type: TokenType): boolean {
@@ -2657,6 +2960,8 @@ export class Parser {
 
   private getInfixPrecedence(type: TokenType): number {
     switch (type) {
+      case 'WHERE':
+        return PREC_WHERE;
       case 'OR':
         return PREC_OR;
       case 'AND':
@@ -2665,6 +2970,7 @@ export class Parser {
       case 'DOTDOT':
         return PREC_IN;
       case 'EQ':
+      case 'EQ_EQ':
       case 'NEQ':
       case 'LT':
       case 'LTE':
@@ -2714,7 +3020,8 @@ export class Parser {
       case 'DOUBLE_SLASH': return '/';
       case 'PERCENT': return '%';
       case 'CARET': return '^';
-      case 'EQ': return token.value === '==' ? '==' : '=';
+      case 'EQ': return '=';
+      case 'EQ_EQ': return '==';
       case 'NEQ': return '!=';
       case 'LT': return '<';
       case 'LTE': return '<=';

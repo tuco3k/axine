@@ -86,7 +86,24 @@ export class SpaceViewport {
     // Initialize fixed coordinates for non-display axes
     for (const c of coords) {
       if (!this.displayAxes.includes(c)) {
-        this.fixedCoords[c] = options.fixedCoords?.[c] ?? 0.0;
+        this.fixedCoords[c] = options.fixedCoords?.[c] ?? (this.space.coordinateBounds?.[c]?.[0] ?? 0.0);
+      }
+    }
+
+    if (this.space.coordinateBounds) {
+      const b0 = this.space.coordinateBounds[this.displayAxes[0]];
+      if (b0) {
+        this.bounds2D.minX = b0[0];
+        this.bounds2D.maxX = b0[1];
+        this.defaultBounds2D.minX = b0[0];
+        this.defaultBounds2D.maxX = b0[1];
+      }
+      const b1 = this.space.coordinateBounds[this.displayAxes[1]];
+      if (b1) {
+        this.bounds2D.minY = b1[0];
+        this.bounds2D.maxY = b1[1];
+        this.defaultBounds2D.minY = b1[0];
+        this.defaultBounds2D.maxY = b1[1];
       }
     }
 
@@ -107,8 +124,10 @@ export class SpaceViewport {
 
     this.buildUI();
 
-    this.canvas = document.createElement('canvas');
-    this.canvas.className = 'space-viewport-canvas doc-inline-canvas';
+    this.canvas = typeof document !== 'undefined' ? document.createElement('canvas') : ({} as any);
+    if (this.canvas.className !== undefined) {
+      this.canvas.className = 'space-viewport-canvas doc-inline-canvas';
+    }
     const ctx = this.canvas.getContext?.('2d') || ({
       save: () => {},
       restore: () => {},
@@ -132,10 +151,12 @@ export class SpaceViewport {
     } as any);
     this.ctx = ctx;
 
-    const canvasWrapper = document.createElement('div');
-    canvasWrapper.className = 'space-canvas-wrapper';
-    canvasWrapper.appendChild(this.canvas);
-    this.container.appendChild(canvasWrapper);
+    if (typeof document !== 'undefined') {
+      const canvasWrapper = document.createElement('div');
+      canvasWrapper.className = 'space-canvas-wrapper';
+      canvasWrapper.appendChild(this.canvas);
+      this.container.appendChild?.(canvasWrapper);
+    }
 
     this.initDefaultBounds();
     this.setupEvents();
@@ -163,6 +184,7 @@ export class SpaceViewport {
   }
 
   private buildUI(): void {
+    if (typeof document === 'undefined') return;
     const header = document.createElement('div');
     header.className = 'space-viewport-header';
 
@@ -326,11 +348,12 @@ export class SpaceViewport {
       varLabel.className = 'space-slider-label';
       varLabel.textContent = `${c} = `;
 
+      const bounds = this.space.coordinateBounds?.[c];
       const slider = document.createElement('input');
       slider.type = 'range';
       slider.className = 'space-range-slider';
-      slider.min = '-10';
-      slider.max = '10';
+      slider.min = bounds ? String(bounds[0]) : '-10';
+      slider.max = bounds ? String(bounds[1]) : '10';
       slider.step = '0.05';
       slider.value = String(this.fixedCoords[c]);
 
@@ -599,7 +622,7 @@ export class SpaceViewport {
   }
 
   public render(): void {
-    const rect = this.canvas.getBoundingClientRect();
+    const rect = this.canvas?.getBoundingClientRect?.() || { width: 600, height: 300 };
     const width = Math.floor(rect.width) || this.canvas.clientWidth || 600;
     const height = Math.floor(rect.height) || this.canvas.clientHeight || 300;
     const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
@@ -663,6 +686,9 @@ export class SpaceViewport {
     }
 
     // Sample roots along 1D domain
+    if (!this.space.declaredAxes || this.space.declaredAxes.length === 0) {
+      return;
+    }
     const N = 400;
     const stepSample = (maxX - minX) / N;
 
@@ -799,6 +825,9 @@ export class SpaceViewport {
     this.ctx.fillText(this.displayAxes[1], axisXPos + 8, 14);
 
     // Extract and Render Contours via Marching Squares
+    if (!this.space.declaredAxes || this.space.declaredAxes.length === 0) {
+      return;
+    }
     const resolution = 160;
 
     for (let eIdx = 0; eIdx < this.space.entities.length; eIdx++) {
@@ -946,6 +975,9 @@ export class SpaceViewport {
     this.ctx.fillText(this.space.coordinates[2] || 'z', zAxisEnd[0] + 4, zAxisEnd[1]);
 
     // Sample 3D Marching Cubes Mesh
+    if (!this.space.declaredAxes || this.space.declaredAxes.length === 0) {
+      return;
+    }
     const resolution3D = 36;
 
     for (let eIdx = 0; eIdx < this.space.entities.length; eIdx++) {

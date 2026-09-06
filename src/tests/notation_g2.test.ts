@@ -19,17 +19,17 @@ describe('Gate G2: Notation Coverage & AST Parity', () => {
   it('parses multiple and contour integrals with AST parity between Unicode and ASCII', () => {
     // \u222c is double integral
     const uniDouble = parse('\u222c_S F \u00b7 dS');
-    const ascDouble = parse('iint_S F \u00b7 dS');
+    const ascDouble = parse('\\iint_S F \u00b7 dS');
     expect(stripSpan(uniDouble)).toEqual(stripSpan(ascDouble));
 
     // \u222d is triple integral
     const uniTriple = parse('\u222d_V f dV');
-    const ascTriple = parse('iiint_V f dV');
+    const ascTriple = parse('\\iiint_V f dV');
     expect(stripSpan(uniTriple)).toEqual(stripSpan(ascTriple));
 
     // \u222e is contour integral
     const uniContour = parse('\u222e_C F \u00b7 dr');
-    const ascContour = parse('oint_C F \u00b7 dr');
+    const ascContour = parse('\\oint_C F \u00b7 dr');
     expect(stripSpan(uniContour)).toEqual(stripSpan(ascContour));
 
     // Region integral over boundary
@@ -41,24 +41,24 @@ describe('Gate G2: Notation Coverage & AST Parity', () => {
   it('parses grad, div, curl, laplacian with AST parity between Unicode and ASCII', () => {
     // Grad: \u2207 f vs grad(f)
     const uniGrad = parse('\u2207 f');
-    const ascGrad = parse('grad(f)');
-    const ascDel = parse('del(f)');
+    const ascGrad = parse(':grad(f)');
+    const ascDel = parse(':del(f)');
     expect(stripSpan(uniGrad)).toEqual(stripSpan(ascGrad));
     expect(stripSpan(uniGrad)).toEqual(stripSpan(ascDel));
 
     // Div: \u2207 \u00b7 F vs div(F)
     const uniDiv = parse('\u2207 \u00b7 F');
-    const ascDiv = parse('div(F)');
+    const ascDiv = parse(':div(F)');
     expect(stripSpan(uniDiv)).toEqual(stripSpan(ascDiv));
 
     // Curl: \u2207 \u00d7 F vs curl(F)
     const uniCurl = parse('\u2207 \u00d7 F');
-    const ascCurl = parse('curl(F)');
+    const ascCurl = parse(':curl(F)');
     expect(stripSpan(uniCurl)).toEqual(stripSpan(ascCurl));
 
     // Laplacian: \u2207\u00b2 f vs laplacian(f)
     const uniLaplacian = parse('\u2207\u00b2 f');
-    const ascLaplacian = parse('laplacian(f)');
+    const ascLaplacian = parse(':laplacian(f)');
     expect(stripSpan(uniLaplacian)).toEqual(stripSpan(ascLaplacian));
   });
 
@@ -66,13 +66,13 @@ describe('Gate G2: Notation Coverage & AST Parity', () => {
   it('parses wedge and hodge star with AST parity', () => {
     // Wedge: \u2227 vs wedge(u, v)
     const uniWedge = parse('u \u2227 v');
-    const ascWedge = parse('wedge(u, v)');
+    const ascWedge = parse(':wedge(u, v)');
     expect(stripSpan(uniWedge)).toEqual(stripSpan(ascWedge));
 
     // Hodge Star: \u22c6 w vs hodge(w) / star(w)
     const uniStar = parse('\u22c6 w');
-    const ascHodge = parse('hodge(w)');
-    const ascStar = parse('star(w)');
+    const ascHodge = parse(':hodge(w)');
+    const ascStar = parse(':star(w)');
     expect(stripSpan(uniStar)).toEqual(stripSpan(ascHodge));
     expect(stripSpan(uniStar)).toEqual(stripSpan(ascStar));
   });
@@ -81,13 +81,13 @@ describe('Gate G2: Notation Coverage & AST Parity', () => {
   it('parses tensor product and direct sum with AST parity', () => {
     // Tensor: \u2297 vs tensor(u, v)
     const uniTensor = parse('u \u2297 v');
-    const ascTensor = parse('tensor(u, v)');
+    const ascTensor = parse(':tensor(u, v)');
     expect(stripSpan(uniTensor)).toEqual(stripSpan(ascTensor));
 
     // Direct Sum: \u2295 vs direct_sum(u, v) / oplus(u, v)
     const uniDirectSum = parse('u \u2295 v');
-    const ascDirectSum = parse('direct_sum(u, v)');
-    const ascOplus = parse('oplus(u, v)');
+    const ascDirectSum = parse(':direct_sum(u, v)');
+    const ascOplus = parse(':oplus(u, v)');
     expect(stripSpan(uniDirectSum)).toEqual(stripSpan(ascDirectSum));
     expect(stripSpan(uniDirectSum)).toEqual(stripSpan(ascOplus));
   });
@@ -96,12 +96,12 @@ describe('Gate G2: Notation Coverage & AST Parity', () => {
   it('parses inner product and norm brackets with AST parity', () => {
     // Inner product: \u27e8u, v\u27e9 vs inner(u, v)
     const uniInner = parse('\u27e8u, v\u27e9');
-    const ascInner = parse('inner(u, v)');
+    const ascInner = parse(':inner(u, v)');
     expect(stripSpan(uniInner)).toEqual(stripSpan(ascInner));
 
     // Norm: \u2016v\u2016 vs norm(v)
     const uniNorm = parse('\u2016v\u2016');
-    const ascNorm = parse('norm(v)');
+    const ascNorm = parse(':norm(v)');
     expect(stripSpan(uniNorm)).toEqual(stripSpan(ascNorm));
 
     // Floor & Ceil brackets
@@ -118,48 +118,48 @@ describe('Gate G2: Notation Coverage & AST Parity', () => {
   it('parses forall, exists, exists! with AST parity', () => {
     // Forall: \u2200 x \u2208 S, P(x) vs forall x in S, P(x)
     const uniForall = parse('\u2200 x \u2208 S, P(x)');
-    const ascForall = parse('forall x in S, P(x)');
+    const ascForall = parse("\\forall x \\in S, P(x)");
     expect(stripSpan(uniForall)).toEqual(stripSpan(ascForall));
 
     // Exists: \u2203 x \u2208 S, P(x) vs exists x in S, P(x)
     const uniExists = parse('\u2203 x \u2208 S, P(x)');
-    const ascExists = parse('exists x in S, P(x)');
+    const ascExists = parse("\\exists x \\in S, P(x)");
     expect(stripSpan(uniExists)).toEqual(stripSpan(ascExists));
 
     // Exists unique: \u2203! x \u2208 S, P(x) vs exists! x in S, P(x)
     const uniExistsUnique = parse('\u2203! x \u2208 S, P(x)');
-    const ascExistsUnique = parse('exists! x in S, P(x)');
+    const ascExistsUnique = parse("\\exists! x \\in S, P(x)");
     expect(stripSpan(uniExistsUnique)).toEqual(stripSpan(ascExistsUnique));
   });
 
   // 7. Set Relations & Operations
   it('parses set operators with AST parity', () => {
     // In: \u2208 vs in
-    expect(stripSpan(parse('x \u2208 S'))).toEqual(stripSpan(parse('x in S')));
+    expect(stripSpan(parse('x \u2208 S'))).toEqual(stripSpan(parse("x \\in S")));
 
     // Not in: \u2209 vs notin
-    expect(stripSpan(parse('x \u2209 S'))).toEqual(stripSpan(parse('x notin S')));
+    expect(stripSpan(parse('x \u2209 S'))).toEqual(stripSpan(parse('x \\notin S')));
 
     // Subset: \u2282 vs subset
-    expect(stripSpan(parse('A \u2282 B'))).toEqual(stripSpan(parse('A subset B')));
+    expect(stripSpan(parse('A \u2282 B'))).toEqual(stripSpan(parse('A \\subset B')));
 
     // Subsequence/SubsetEq: \u2286 vs subseteq
-    expect(stripSpan(parse('A \u2286 B'))).toEqual(stripSpan(parse('A subseteq B')));
+    expect(stripSpan(parse('A \u2286 B'))).toEqual(stripSpan(parse('A \\subseteq B')));
 
     // Union: \u222a vs union
-    expect(stripSpan(parse('A \u222a B'))).toEqual(stripSpan(parse('A union B')));
+    expect(stripSpan(parse('A \u222a B'))).toEqual(stripSpan(parse('A \\union B')));
 
     // Intersect: \u2229 vs intersect
-    expect(stripSpan(parse('A \u2229 B'))).toEqual(stripSpan(parse('A intersect B')));
+    expect(stripSpan(parse('A \u2229 B'))).toEqual(stripSpan(parse('A \\intersect B')));
 
     // Set minus / diff: \u2216 vs setminus
-    expect(stripSpan(parse('A \u2216 B'))).toEqual(stripSpan(parse('A setminus B')));
+    expect(stripSpan(parse('A \u2216 B'))).toEqual(stripSpan(parse('A \\setminus B')));
   });
 
   // 8. Set-Builder Notation
   it('parses set-builder notation with colon and bar separators', () => {
     const sbColon = parse('{ x \u2208 S : x > 0 }');
-    const sbBar = parse('{ x in S | x > 0 }');
+    const sbBar = parse("{ x \\in S | x > 0 }");
     expect(stripSpan(sbColon)).toEqual(stripSpan(sbBar));
     expect(sbColon.type).toBe('SetBuilder');
   });
@@ -167,28 +167,28 @@ describe('Gate G2: Notation Coverage & AST Parity', () => {
   // 9. Equivalences & Isomorphisms
   it('parses equivalence, isomorphism, and homotopy relations with AST parity', () => {
     // Iso: \u2245 vs iso
-    expect(stripSpan(parse('G \u2245 H'))).toEqual(stripSpan(parse('G iso H')));
+    expect(stripSpan(parse('G \u2245 H'))).toEqual(stripSpan(parse('G \\iso H')));
 
     // Homotopy: \u2243 vs homotopic
-    expect(stripSpan(parse('X \u2243 Y'))).toEqual(stripSpan(parse('X homotopic Y')));
+    expect(stripSpan(parse('X \u2243 Y'))).toEqual(stripSpan(parse('X \\homotopic Y')));
 
     // Equiv: \u223c vs equiv
-    expect(stripSpan(parse('a \u223c b'))).toEqual(stripSpan(parse('a equiv b')));
+    expect(stripSpan(parse('a \u223c b'))).toEqual(stripSpan(parse('a \\equiv b')));
   });
 
   // 10. Decorated Identifiers & Diacritics
   it('parses decorated identifiers with combining diacritics and function aliases', () => {
     // Bar: x\u0304 vs bar(x)
-    expect(stripSpan(parse('x\u0304'))).toEqual(stripSpan(parse('bar(x)')));
+    expect(stripSpan(parse('x\u0304'))).toEqual(stripSpan(parse(':bar(x)')));
 
     // Hat: x\u0302 vs hat(x)
-    expect(stripSpan(parse('x\u0302'))).toEqual(stripSpan(parse('hat(x)')));
+    expect(stripSpan(parse('x\u0302'))).toEqual(stripSpan(parse(':hat(x)')));
 
     // Dot: x\u0307 vs dot(x)
-    expect(stripSpan(parse('x\u0307'))).toEqual(stripSpan(parse('dot(x)')));
+    expect(stripSpan(parse('x\u0307'))).toEqual(stripSpan(parse(':dot(x)')));
 
     // Ddot: x\u0308 vs ddot(x)
-    expect(stripSpan(parse('x\u0308'))).toEqual(stripSpan(parse('ddot(x)')));
+    expect(stripSpan(parse('x\u0308'))).toEqual(stripSpan(parse(':ddot(x)')));
   });
 
   // 11. Matrix Postfix: Transpose, Adjoint, Inverse
@@ -198,9 +198,9 @@ describe('Gate G2: Notation Coverage & AST Parity', () => {
     expect(transpose.type).toBe('MatrixPostfix');
     expect((transpose as any).op).toBe('transpose');
 
-    // Adjoint: A^\u2020 vs A^dagger
+    // Adjoint: A^\u2020 vs A^\dagger
     const uniAdjoint = parse('A^\u2020');
-    const ascAdjoint = parse('A^dagger');
+    const ascAdjoint = parse('A^\\dagger');
     expect(stripSpan(uniAdjoint)).toEqual(stripSpan(ascAdjoint));
     expect(uniAdjoint.type).toBe('MatrixPostfix');
     expect((uniAdjoint as any).op).toBe('adjoint');
@@ -238,12 +238,12 @@ describe('Gate G2: Notation Coverage & AST Parity', () => {
     expect((expBracket as any).op).toBe('expect');
 
     // Variance: Var(X)
-    const varX = parse('Var(X)');
+    const varX = parse(':Var(X)');
     expect(varX.type).toBe('Probability');
     expect((varX as any).op).toBe('variance');
 
     // Covariance: Cov(X, Y)
-    const covXY = parse('Cov(X, Y)');
+    const covXY = parse(':Cov(X, Y)');
     expect(covXY.type).toBe('Probability');
     expect((covXY as any).op).toBe('covariance');
   });

@@ -99,7 +99,7 @@ describe('Phase 2 Operation Table & Reduction Model Gate', () => {
       '(3 * 4 + 5 * 6) / (2 + 4)',
       '2^3^2 - 500',
       '((10 + 20) * (30 - 15)) / ((5 + 5) * 3)',
-      '(sin(0) + cos(0)) * (2 + 3)',
+      '(:sin(0) + :cos(0)) * (2 + 3)',
     ];
 
     for (const expr of expressions) {
@@ -131,8 +131,8 @@ describe('Phase 2 Operation Table & Reduction Model Gate', () => {
       { name: 'double integral', code: '\u222c_S F \u00b7 dS' },
       { name: 'triple integral', code: '\u222d_V f dV' },
       { name: 'integral', code: '\u222b e^(-x^2) dx' },
-      { name: 'sum', code: '\u03a3(i in 1..n, i)' },
-      { name: 'product', code: '\u03a0(i in 1..n, i)' },
+      { name: 'sum', code: "Σ(i \\in 1..n, i)" },
+      { name: 'product', code: "Π(i \\in 1..n, i)" },
       { name: 'gradient', code: '\u2207 f' },
       { name: 'laplacian', code: '\u2207\u00b2 f' },
       { name: 'wedge product', code: 'u \u2227 v' },
@@ -183,7 +183,7 @@ describe('Phase 2 Operation Table & Reduction Model Gate', () => {
     });
 
     it('float(1/3) evaluates to float 0.3333333333333333', () => {
-      const res = evaluate('float(1/3)');
+      const res = evaluate(':float(1/3)');
       expect(res.value.type).toBe('float');
       const f = res.value as FloatValue;
       expect(f.value).toBeCloseTo(1 / 3, 15);

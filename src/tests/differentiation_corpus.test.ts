@@ -94,21 +94,21 @@ describe('Gate H1: 40 Differentiation Problems Corpus', () => {
     {
       id: 9,
       name: 'Product rule polynomial and trig',
-      expr: '(x^2) * sin(x)',
+      expr: '(x^2) * :sin(x)',
       varName: 'x',
       expectedRules: ['power-rule', 'sin-rule', 'product-rule']
     },
     {
       id: 10,
       name: 'Product rule exponential and trig',
-      expr: 'exp(x) * cos(x)',
+      expr: ':exp(x) * :cos(x)',
       varName: 'x',
       expectedRules: ['exp-rule', 'cos-rule', 'product-rule']
     },
     {
       id: 11,
       name: 'Product rule linear and logarithmic',
-      expr: 'x * ln(x)',
+      expr: 'x * :ln(x)',
       varName: 'x',
       domain: [0.5, 5.0],
       expectedRules: ['identity-rule', 'ln-rule', 'product-rule']
@@ -126,7 +126,7 @@ describe('Gate H1: 40 Differentiation Problems Corpus', () => {
     {
       id: 13,
       name: 'Quotient rule sinc function',
-      expr: 'sin(x) / x',
+      expr: ':sin(x) / x',
       varName: 'x',
       domain: [0.5, 5.0],
       expectedRules: ['quotient-rule']
@@ -134,7 +134,7 @@ describe('Gate H1: 40 Differentiation Problems Corpus', () => {
     {
       id: 14,
       name: 'Quotient rule exponential over power',
-      expr: 'exp(x) / (x^2)',
+      expr: ':exp(x) / (x^2)',
       varName: 'x',
       domain: [0.5, 5.0],
       expectedRules: ['quotient-rule']
@@ -151,21 +151,21 @@ describe('Gate H1: 40 Differentiation Problems Corpus', () => {
     {
       id: 16,
       name: 'Chain rule sin of quadratic',
-      expr: 'sin(x^2)',
+      expr: ':sin(x^2)',
       varName: 'x',
       expectedRules: ['sin-rule']
     },
     {
       id: 17,
       name: 'Chain rule cos of linear',
-      expr: 'cos(3 * x)',
+      expr: ':cos(3 * x)',
       varName: 'x',
       expectedRules: ['cos-rule']
     },
     {
       id: 18,
       name: 'Chain rule tan of linear',
-      expr: 'tan(2 * x)',
+      expr: ':tan(2 * x)',
       varName: 'x',
       domain: [-0.6, 0.6],
       expectedRules: ['tan-rule']
@@ -173,14 +173,14 @@ describe('Gate H1: 40 Differentiation Problems Corpus', () => {
     {
       id: 19,
       name: 'Chain rule exponential of linear',
-      expr: 'exp(2 * x)',
+      expr: ':exp(2 * x)',
       varName: 'x',
       expectedRules: ['exp-rule']
     },
     {
       id: 20,
       name: 'Chain rule ln of quadratic',
-      expr: 'ln(x^2 + 1)',
+      expr: ':ln(x^2 + 1)',
       varName: 'x',
       expectedRules: ['ln-rule']
     },
@@ -189,21 +189,21 @@ describe('Gate H1: 40 Differentiation Problems Corpus', () => {
     {
       id: 21,
       name: 'Trig sin',
-      expr: 'sin(x)',
+      expr: ':sin(x)',
       varName: 'x',
       expectedRules: ['sin-rule']
     },
     {
       id: 22,
       name: 'Trig cos',
-      expr: 'cos(x)',
+      expr: ':cos(x)',
       varName: 'x',
       expectedRules: ['cos-rule']
     },
     {
       id: 23,
       name: 'Trig tan',
-      expr: 'tan(x)',
+      expr: ':tan(x)',
       varName: 'x',
       domain: [-1.2, 1.2],
       expectedRules: ['tan-rule']
@@ -211,7 +211,7 @@ describe('Gate H1: 40 Differentiation Problems Corpus', () => {
     {
       id: 24,
       name: 'Inverse trig asin',
-      expr: 'asin(x)',
+      expr: ':asin(x)',
       varName: 'x',
       domain: [-0.8, 0.8],
       expectedRules: ['asin-rule']
@@ -219,7 +219,7 @@ describe('Gate H1: 40 Differentiation Problems Corpus', () => {
     {
       id: 25,
       name: 'Inverse trig acos',
-      expr: 'acos(x)',
+      expr: ':acos(x)',
       varName: 'x',
       domain: [-0.8, 0.8],
       expectedRules: ['acos-rule']
@@ -227,7 +227,7 @@ describe('Gate H1: 40 Differentiation Problems Corpus', () => {
     {
       id: 26,
       name: 'Inverse trig atan',
-      expr: 'atan(x)',
+      expr: ':atan(x)',
       varName: 'x',
       expectedRules: ['atan-rule']
     },
@@ -236,21 +236,21 @@ describe('Gate H1: 40 Differentiation Problems Corpus', () => {
     {
       id: 27,
       name: 'Hyperbolic sinh',
-      expr: 'sinh(x)',
+      expr: ':sinh(x)',
       varName: 'x',
       expectedRules: ['sinh-rule']
     },
     {
       id: 28,
       name: 'Hyperbolic cosh',
-      expr: 'cosh(x)',
+      expr: ':cosh(x)',
       varName: 'x',
       expectedRules: ['cosh-rule']
     },
     {
       id: 29,
       name: 'Hyperbolic tanh',
-      expr: 'tanh(x)',
+      expr: ':tanh(x)',
       varName: 'x',
       expectedRules: ['tanh-rule']
     },
@@ -259,7 +259,7 @@ describe('Gate H1: 40 Differentiation Problems Corpus', () => {
     {
       id: 30,
       name: 'Natural exponential',
-      expr: 'exp(x)',
+      expr: ':exp(x)',
       varName: 'x',
       expectedRules: ['exp-rule']
     },
@@ -273,7 +273,7 @@ describe('Gate H1: 40 Differentiation Problems Corpus', () => {
     {
       id: 32,
       name: 'Natural logarithm',
-      expr: 'ln(x)',
+      expr: ':ln(x)',
       varName: 'x',
       domain: [0.5, 5.0],
       expectedRules: ['ln-rule']
@@ -281,7 +281,7 @@ describe('Gate H1: 40 Differentiation Problems Corpus', () => {
     {
       id: 33,
       name: 'General base logarithm',
-      expr: 'log(x, 10)',
+      expr: ':log(x, 10)',
       varName: 'x',
       domain: [0.5, 5.0],
       expectedRules: ['log-base-rule']
@@ -299,7 +299,7 @@ describe('Gate H1: 40 Differentiation Problems Corpus', () => {
     {
       id: 35,
       name: 'Nested composite chain rule',
-      expr: 'sin(exp(x^2))',
+      expr: ':sin(:exp(x^2))',
       varName: 'x',
       domain: [-1.2, 1.2],
       expectedRules: ['sin-rule']
@@ -368,19 +368,19 @@ describe('Gate H1: 5 Explicit Differentiation Refusals', () => {
 
   it('Refusal 2: Function with no derivative rule implemented', () => {
     expect(() => {
-      computeSymbolicDerivative('gamma(x)', 'x');
+      computeSymbolicDerivative(':gamma(x)', 'x');
     }).toThrow("No derivative rule implemented for function 'gamma'");
   });
 
-  it('Refusal 3: Non-differentiable corner point requested: abs(x) at x = 0', () => {
+  it('Refusal 3: Non-differentiable corner point requested: :abs(x) at x = 0', () => {
     expect(() => {
-      differentiateAtPoint('abs(x)', 'x', 0);
+      differentiateAtPoint(':abs(x)', 'x', 0);
     }).toThrow("Function 'abs' is non-differentiable at x = 0 (corner point: left derivative -1 != right derivative +1)");
   });
 
-  it('Refusal 4: Vertical tangent / cusp point requested: sqrt(x) at x = 0', () => {
+  it('Refusal 4: Vertical tangent / cusp point requested: :sqrt(x) at x = 0', () => {
     expect(() => {
-      differentiateAtPoint('sqrt(x)', 'x', 0);
+      differentiateAtPoint(':sqrt(x)', 'x', 0);
     }).toThrow("Function 'sqrt' is non-differentiable at x = 0 (infinite vertical derivative limit)");
   });
 

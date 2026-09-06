@@ -327,9 +327,9 @@ describe('Phase 13 Part D: Multiple Documents & Tabs', () => {
 
     // Document B has its own fresh environment
     const envB = createInitialEnvironment();
-    expect(() => {
-      evaluate('x + 1', envB);
-    }).toThrow();
+    expect(envB['x']).toBeUndefined();
+    const resB = evaluate('x + 1', envB);
+    expect(resB.value.type === 'space' || resB.value.type === 'expression').toBe(true);
 
     // Verify via processDocumentLines
     const linesA = ['x := 42', 'x * 2'];
@@ -341,8 +341,7 @@ describe('Phase 13 Part D: Multiple Documents & Tabs', () => {
     const linesB = ['x + 1'];
     const resultsB: any[] = [];
     processDocumentLines(2, linesB, (msg) => resultsB.push(msg));
-    expect(resultsB[0].error).toBeDefined();
-    expect(resultsB[0].error.message).toContain("Variable 'x' is not assigned a value");
+    expect(resultsB[0].result.type === 'space' || resultsB[0].result.type === 'expression').toBe(true);
   });
 
   it('supports creating multiple tab sessions with independent names and states', () => {

@@ -88,8 +88,8 @@ describe('Line Classifier & Discrimination Predicates', () => {
       expect(classifyLine('2 ++ 3', env).state).toBe('ERROR');
     });
 
-    it('"velocty * 2" -> ERROR (undeclared identifier)', () => {
-      expect(classifyLine('velocty * 2', env).state).toBe('ERROR');
+    it('"velocty * 2" -> MATH (pure relational variable product)', () => {
+      expect(classifyLine('velocty * 2', env).state).toBe('MATH');
     });
 
     it('"f(x) := " -> INCOMPLETE', () => {
@@ -104,7 +104,7 @@ describe('Line Classifier & Discrimination Predicates', () => {
   describe('Valid Math and Definitions', () => {
     it('parses valid math expressions as MATH', () => {
       expect(classifyLine('2 + 2', env).state).toBe('MATH');
-      expect(classifyLine('sin(pi / 2)', env).state).toBe('MATH');
+      expect(classifyLine(':sin(:pi / 2)', env).state).toBe('MATH');
       expect(classifyLine('1/3 + 1/3 + 1/3', env).state).toBe('MATH');
     });
 

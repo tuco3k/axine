@@ -203,7 +203,7 @@ describe('Phase 2: The Sampler', () => {
     });
 
     it('4. y = sin(x) (Over -2pi..2pi, assert |y - sin(x)| < tolerance)', () => {
-      const fn = compile('y - sin(x)', ['x', 'y']);
+      const fn = compile('y - :sin(x)', ['x', 'y']);
       const res = sample2D(fn, [-2 * Math.PI, 2 * Math.PI], [-1.5, 1.5], 250);
       expect(res.polylines.length).toBeGreaterThan(0);
 

@@ -7,7 +7,7 @@ import { processDocumentLines, LineResultMessage } from '../core/worker';
 describe('Large Rational Typesetting & Flattening Prevention', () => {
   it('computes sum(1//n, n in 1..50) and asserts innerText does not flatten into a single integer', () => {
     Evaluator.initVirtualFiles();
-    const lines = ['h50 := sum(1//n, n in 1..50)', 'h50'];
+    const lines = [':h50 := :sum(1//n, n \\in 1..50)', ':h50'];
     const results: LineResultMessage[] = [];
     processDocumentLines(1, lines, (msg: LineResultMessage) => results.push(msg));
 

@@ -1,5 +1,6 @@
 import {
   ASTNode,
+  AssignmentNode,
   BigOpNode,
   BudgetLimits,
   ClaimNode,
@@ -10,6 +11,8 @@ import {
   Environment,
   FunctionCallNode,
   FunctionValue,
+  QuantifierNode,
+  IntervalNode,
   LambdaValue,
   ListValue,
   RangeNode,
@@ -55,8 +58,7 @@ import {
   subValues,
   valueToNumber,
 } from './numeric/tower';
-import { FLOAT_CONSTANTS } from './numeric/float';
-import { BUILTIN_FUNCTIONS, CONSTANTS, parse, parseProgram } from './parser';
+import { BUILTIN_FUNCTIONS, parse, parseProgram } from './parser';
 import { analyzeAST } from './analyzer';
 import { solveAlgebraic } from './algebra';
 import { AlgebraicSimplifier } from './algebra/simplify';
@@ -68,15 +70,8 @@ import { MathKind, formatKind, admitsOperations, canCoerceKind, inferKindOfValue
 
 export function createInitialEnvironment(): Environment {
   const env: Environment = {};
-
-  // Add constants
-  for (const [name, val] of Object.entries(FLOAT_CONSTANTS)) {
-    env[name] = { type: 'float', value: val };
-  }
-  env['none'] = { type: 'none' };
   env['true'] = { type: 'boolean', value: true };
   env['false'] = { type: 'boolean', value: false };
-
   return env;
 }
 
@@ -274,6 +269,59 @@ export function resolveModuleCode(
   };
 }
 
+export function substituteExpressions(ast: ASTNode, substMap: Record<string, ASTNode>): ASTNode {
+  if (Object.keys(substMap).length === 0) return ast;
+  switch (ast.type) {
+    case 'Identifier':
+      if (substMap[ast.name]) {
+        return substMap[ast.name];
+      }
+      return ast;
+    case 'Assignment':
+      return {
+        ...ast,
+        value: substituteExpressions(ast.value, substMap),
+      };
+    case 'BinaryOp':
+      return {
+        ...ast,
+        left: substituteExpressions(ast.left, substMap),
+        right: substituteExpressions(ast.right, substMap),
+      };
+    case 'UnaryOp':
+      return {
+        ...ast,
+        operand: substituteExpressions(ast.operand, substMap),
+      };
+    case 'PostfixOp':
+      return {
+        ...ast,
+        operand: substituteExpressions(ast.operand, substMap),
+      };
+    case 'FunctionCall':
+      return {
+        ...ast,
+        args: ast.args.map(a => substituteExpressions(a, substMap)),
+      };
+    case 'Where':
+      return {
+        ...ast,
+        expr: substituteExpressions(ast.expr, substMap),
+        condition: substituteExpressions(ast.condition, substMap),
+      };
+    default:
+      return ast;
+  }
+}
+
+export function substituteAliases(ast: ASTNode, aliasMap: Record<string, string>): ASTNode {
+  const substMap: Record<string, ASTNode> = {};
+  for (const [k, v] of Object.entries(aliasMap)) {
+    substMap[k] = { type: 'Identifier', name: v, span: ast.span };
+  }
+  return substituteExpressions(ast, substMap);
+}
+
 export class Evaluator {
   public static virtualFiles: Map<string, string> = new Map();
   public static diskFiles: Map<string, string> = new Map();
@@ -330,6 +378,7 @@ export class Evaluator {
   public declaredKinds: Map<string, any> = new Map();
   public userRules: any[] = [];
   public declaredViews: Map<string, Value> = new Map();
+  private activeRuleCalls: Set<string> = new Set();
 
   constructor(
     env: Environment = createInitialEnvironment(),
@@ -361,32 +410,141 @@ export class Evaluator {
 
   public evaluate(ast: ASTNode): Value {
     try {
+      if (ast.type === 'AxisDecl') {
+        (this.env as any).__declaredAxes__ = ast.axes;
+        return {
+          type: 'space',
+          coordinates: ast.axes,
+          dimension: ast.axes.length,
+          declaredAxes: ast.axes,
+          entities: [],
+          span: ast.span,
+        };
+      }
+
       if (ast.type === 'Block') {
         return this.evalBlockAsSpace(ast, this.env);
       }
 
+      const declaredAxes: string[] | undefined = (this.env as any).__declaredAxes__;
+
+      if (ast.type === 'Assignment') {
+        const valAnalysis = analyzeAST(ast.value, this.env, new Set(), this.source);
+        if (valAnalysis.freeVariables.length > 0) {
+          const coordinates = declaredAxes ?? [ast.target, ...valAnalysis.freeVariables].sort((a, b) => a.localeCompare(b));
+          const uniqueCoords = [...new Set(coordinates)];
+          const canGraph = declaredAxes === undefined || uniqueCoords.every(v => declaredAxes.includes(v));
+          const comp = compileAST(ast, uniqueCoords, this.env);
+          return {
+            type: 'space',
+            coordinates: uniqueCoords,
+            dimension: uniqueCoords.length,
+            declaredAxes,
+            entities: canGraph && comp.success ? [{
+              coordinates: uniqueCoords,
+              ast,
+              compiledFn: comp.fn,
+              dimension: uniqueCoords.length,
+              source: formatAST(ast),
+            }] : [],
+            span: ast.span,
+          };
+        }
+
+        const val = this.evalNode(ast.value, this.env);
+        if (val.type === 'record_constructor' && val.name === 'Record') {
+          val.name = ast.target;
+        }
+        this.env[ast.target] = val;
+        return val;
+      }
+
+      if (ast.type === 'BinaryOp' && ast.op === '=') {
+        let boundVar: string | undefined;
+        let boundVal: Value | undefined;
+
+        if (ast.left.type === 'Identifier') {
+          try {
+            const rVal = this.evalNode(ast.right, this.env);
+            if (rVal && rVal.type !== 'expression' && rVal.type !== 'space' && rVal.type !== 'unknown') {
+              boundVar = ast.left.name;
+              boundVal = rVal;
+            }
+          } catch {}
+        }
+        if (!boundVar && ast.right.type === 'Identifier') {
+          try {
+            const lVal = this.evalNode(ast.left, this.env);
+            if (lVal && lVal.type !== 'expression' && lVal.type !== 'space' && lVal.type !== 'unknown') {
+              boundVar = ast.right.name;
+              boundVal = lVal;
+            }
+          } catch {}
+        }
+
+        if (boundVar && boundVal) {
+          if (boundVal.type === 'record_constructor' && boundVal.name === 'Record') {
+            boundVal.name = boundVar;
+          }
+          this.env[boundVar] = boundVal;
+          if (declaredAxes !== undefined || boundVar.length === 1) {
+            const coordinates = declaredAxes ?? [boundVar];
+            const canGraph = declaredAxes === undefined || declaredAxes.includes(boundVar);
+            const comp = compileAST(ast, coordinates, this.env);
+            return {
+              type: 'space',
+              coordinates,
+              dimension: coordinates.length,
+              declaredAxes,
+              entities: canGraph && comp.success ? [{
+                coordinates,
+                ast,
+                compiledFn: comp.fn,
+                dimension: coordinates.length,
+                source: formatAST(ast),
+              }] : [],
+              resultVal: boundVal,
+              span: ast.span,
+            };
+          }
+          return boundVal;
+        }
+      }
+
       const analysis = analyzeAST(ast, this.env, new Set(), this.source);
       const isRelation = ast.type === 'BinaryOp' && ['=', '==', '!=', '<', '<=', '>', '>='].includes(ast.op);
+      const isBareIdentifierOrProduct = (n: ASTNode): boolean => {
+        if (n.type === 'Identifier') return true;
+        if (n.type === 'BinaryOp' && n.op === '*' && n.isImplicit) {
+          return isBareIdentifierOrProduct(n.left) && isBareIdentifierOrProduct(n.right);
+        }
+        return false;
+      };
 
-      if (isRelation && !analysis.isDefinition && analysis.freeVariables.length > 0) {
-        const coordinates = [...analysis.freeVariables].sort((a, b) => a.localeCompare(b));
+      if ((isRelation || isBareIdentifierOrProduct(ast)) && analysis.freeVariables.length > 0 && !analysis.isDefinition) {
+        const canGraph = declaredAxes === undefined || (
+          analysis.freeVariables.every(v => declaredAxes.includes(v))
+        );
+        const coordinates = declaredAxes ?? [...analysis.freeVariables].sort((a, b) => a.localeCompare(b));
         const comp = compileAST(ast, coordinates, this.env);
-        if (comp.success) {
-          const entity: SpatialEntity = {
+        const entities: SpatialEntity[] = [];
+        if (comp.success && isRelation && canGraph) {
+          entities.push({
             coordinates,
             ast,
             compiledFn: comp.fn,
             dimension: coordinates.length,
             source: formatAST(ast),
-          };
-          return {
-            type: 'space',
-            coordinates,
-            dimension: coordinates.length,
-            entities: [entity],
-            span: ast.span,
-          };
+          });
         }
+        return {
+          type: 'space',
+          coordinates,
+          dimension: coordinates.length,
+          declaredAxes,
+          entities,
+          span: ast.span,
+        };
       }
 
       return this.evalNode(ast, this.env);
@@ -401,51 +559,275 @@ export class Evaluator {
     }
   }
 
-  private evalBlockAsSpace(node: BlockNode, currentEnv: Environment): Value {
+  private evalBlockAsSpace(node: BlockNode, currentEnv: Environment, parentCoords: string[] = []): Value {
     const blockEnv: Environment = Object.create(currentEnv);
     const analysis = analyzeAST(node, currentEnv, new Set(), this.source);
-    const coordinates = [...analysis.freeVariables].sort((a, b) => a.localeCompare(b));
+    const coordinates = [...new Set([...parentCoords, ...analysis.freeVariables])].sort((a, b) => a.localeCompare(b));
     const entities: SpatialEntity[] = [];
     const nestedSpaces: SpaceValue[] = [];
     let lastVal: Value = { type: 'none' };
+    let hasContradiction = false;
+    let coordinateBounds: Record<string, [number, number]> | undefined;
+    let timeVariable: string | undefined;
+
+    let declaredAxes: string[] | undefined = undefined;
+    for (const stmt of node.statements) {
+      if (stmt.type === 'AxisDecl') {
+        declaredAxes = stmt.axes;
+      }
+    }
+
+    const substMap: Record<string, ASTNode> = {};
+    const intermediateDefinitions = new Set<ASTNode>();
+    if (declaredAxes) {
+      // First pass: identify explicit aliases
+      for (const stmt of node.statements) {
+        if (stmt.type === 'BinaryOp' && stmt.op === '=') {
+          if (stmt.left.type === 'Identifier' && declaredAxes.includes(stmt.left.name) &&
+              stmt.right.type === 'Identifier' && !declaredAxes.includes(stmt.right.name)) {
+            substMap[stmt.right.name] = stmt.left;
+            intermediateDefinitions.add(stmt);
+          } else if (stmt.right.type === 'Identifier' && declaredAxes.includes(stmt.right.name) &&
+                     stmt.left.type === 'Identifier' && !declaredAxes.includes(stmt.left.name)) {
+            substMap[stmt.left.name] = stmt.right;
+            intermediateDefinitions.add(stmt);
+          }
+        } else if (stmt.type === 'Assignment') {
+          if (declaredAxes.includes(stmt.target) && stmt.value.type === 'Identifier' && !declaredAxes.includes(stmt.value.name)) {
+            substMap[stmt.value.name] = { type: 'Identifier', name: stmt.target, span: stmt.span };
+            intermediateDefinitions.add(stmt);
+          }
+        }
+      }
+      // Second pass: identify intermediate definitions
+      for (const stmt of node.statements) {
+        if (intermediateDefinitions.has(stmt)) continue;
+        if (stmt.type === 'BinaryOp' && stmt.op === '=') {
+          if (stmt.left.type === 'Identifier' && !declaredAxes.includes(stmt.left.name) && !substMap[stmt.left.name]) {
+            const rwRight = substituteExpressions(stmt.right, substMap);
+            const a = analyzeAST(rwRight, blockEnv, new Set(), this.source);
+            if (a.freeVariables.length > 0 && a.freeVariables.every(v => declaredAxes!.includes(v))) {
+              substMap[stmt.left.name] = rwRight;
+              intermediateDefinitions.add(stmt);
+            }
+          }
+        } else if (stmt.type === 'Assignment') {
+          if (!declaredAxes.includes(stmt.target) && !substMap[stmt.target]) {
+            const rwValue = substituteExpressions(stmt.value, substMap);
+            const a = analyzeAST(rwValue, blockEnv, new Set(), this.source);
+            if (a.freeVariables.length > 0 && a.freeVariables.every(v => declaredAxes!.includes(v))) {
+              substMap[stmt.target] = rwValue;
+              intermediateDefinitions.add(stmt);
+            }
+          }
+        }
+      }
+    }
 
     for (const stmt of node.statements) {
       this.budget.check('block', stmt.span);
-      if (stmt.type === 'Block') {
-        const childVal = this.evalBlockAsSpace(stmt, blockEnv);
+      if (intermediateDefinitions.has(stmt) && declaredAxes) {
+        if (stmt.type === 'Assignment') {
+          try {
+            const val = this.evalNode(stmt.value, blockEnv);
+            if (val && val.type !== 'expression' && val.type !== 'space' && val.type !== 'unknown') {
+              blockEnv[stmt.target] = val;
+              lastVal = val;
+            }
+          } catch {}
+        } else if (stmt.type === 'BinaryOp' && stmt.op === '=') {
+          if (stmt.left.type === 'Identifier') {
+            try {
+              const val = this.evalNode(stmt.right, blockEnv);
+              if (val && val.type !== 'expression' && val.type !== 'space' && val.type !== 'unknown') {
+                blockEnv[stmt.left.name] = val;
+                lastVal = val;
+              }
+            } catch {}
+          }
+        }
+        continue;
+      }
+      if (stmt.type === 'AxisDecl') {
+        lastVal = { type: 'none' };
+      } else if (stmt.type === 'Quantifier') {
+        lastVal = this.evalNode(stmt, blockEnv);
+      } else if (stmt.type === 'Block') {
+        const childVal = this.evalBlockAsSpace(stmt, blockEnv, coordinates);
         if (childVal.type === 'space') {
+          const mergedCoords = new Set([...coordinates, ...childVal.coordinates]);
+          const finalChildCoords = [...mergedCoords].sort((a, b) => a.localeCompare(b));
+          childVal.coordinates = finalChildCoords;
+          childVal.dimension = finalChildCoords.length;
           nestedSpaces.push(childVal);
         }
         lastVal = childVal;
-      } else if (stmt.type === 'Assignment' || stmt.type === 'GlobalAssignment' || stmt.type === 'FunctionDef') {
-        lastVal = this.evalNode(stmt, blockEnv);
-      } else {
-        const stmtAnalysis = analyzeAST(stmt, blockEnv, new Set(), this.source);
-        if (stmtAnalysis.freeVariables.length > 0 && coordinates.length > 0) {
-          const comp = compileAST(stmt, coordinates, blockEnv);
+      } else if (stmt.type === 'Assignment') {
+        const rewrittenValue = substituteExpressions(stmt.value, substMap);
+        const rewrittenStmt: AssignmentNode = { ...stmt, value: rewrittenValue };
+        const valAnalysis = analyzeAST(rewrittenValue, blockEnv, new Set(), this.source);
+        const stmtVars = [stmt.target, ...valAnalysis.freeVariables];
+        const canGraph = declaredAxes === undefined || (
+          stmtVars.length > 0 &&
+          stmtVars.every(v => declaredAxes!.includes(v))
+        );
+
+        if (canGraph) {
+          const stmtCoords = declaredAxes ?? [...new Set([stmt.target, ...valAnalysis.freeVariables])].sort((a, b) => a.localeCompare(b));
+          const comp = compileAST(rewrittenStmt, stmtCoords.length > 0 ? stmtCoords : [stmt.target], blockEnv);
           if (comp.success) {
             entities.push({
-              coordinates,
-              ast: stmt,
+              coordinates: stmtCoords.length > 0 ? stmtCoords : [stmt.target],
+              ast: rewrittenStmt,
               compiledFn: comp.fn,
-              dimension: coordinates.length,
-              source: formatAST(stmt),
+              dimension: (stmtCoords.length > 0 ? stmtCoords : [stmt.target]).length,
+              source: formatAST(rewrittenStmt),
             });
-            continue;
           }
+        }
+
+        try {
+          const val = this.evalNode(stmt.value, blockEnv);
+          blockEnv[stmt.target] = val;
+          lastVal = val;
+        } catch {
+          // Free variables in assignment RHS
+        }
+      } else if (stmt.type === 'Interval' || (stmt.type === 'SetOp' && stmt.op === 'in' && stmt.right.type === 'Interval')) {
+        const interval = stmt.type === 'Interval' ? stmt : (stmt.right as IntervalNode);
+        const varName = stmt.type === 'Interval' ? stmt.variable : (stmt.left.type === 'Identifier' ? stmt.left.name : undefined);
+        let startNum = 0;
+        let endNum = 10;
+        try {
+          const sVal = this.evalNode(interval.start, blockEnv);
+          startNum = sVal.type === 'rational' ? Number(sVal.n) / Number(sVal.d) : sVal.type === 'float' ? sVal.value : 0;
+        } catch {
+          startNum = 0;
+        }
+        try {
+          const eVal = this.evalNode(interval.end, blockEnv);
+          endNum = eVal.type === 'rational' ? Number(eVal.n) / Number(eVal.d) : eVal.type === 'float' ? eVal.value : 10;
+        } catch {
+          endNum = 10;
+        }
+        if (varName) {
+          if (!coordinateBounds) coordinateBounds = {};
+          coordinateBounds[varName] = [startNum, endNum];
+          if (varName === 'time' || varName === ':time' || varName === 't') {
+            timeVariable = varName;
+          }
+        }
+        lastVal = { type: 'none' };
+      } else if (stmt.type === 'GlobalAssignment' || stmt.type === 'FunctionDef' || stmt.type === 'Unimport') {
+        lastVal = this.evalNode(stmt, blockEnv);
+      } else {
+        const rewrittenStmt = substituteExpressions(stmt, substMap);
+        const stmtAnalysis = analyzeAST(rewrittenStmt, blockEnv, new Set(), this.source);
+        const isRel = rewrittenStmt.type === 'BinaryOp' && ['=', '==', '!=', '<', '<=', '>', '>='].includes(rewrittenStmt.op);
+        const canGraph = declaredAxes === undefined || (
+          stmtAnalysis.freeVariables.every(v => declaredAxes!.includes(v))
+        );
+
+        if (canGraph && (stmtAnalysis.freeVariables.length > 0 || isRel)) {
+          const stmtCoords = declaredAxes ?? [...new Set([...coordinates, ...stmtAnalysis.freeVariables])].sort((a, b) => a.localeCompare(b));
+          const comp = compileAST(rewrittenStmt, stmtCoords, blockEnv);
+          if (comp.success) {
+            entities.push({
+              coordinates: stmtCoords,
+              ast: rewrittenStmt,
+              compiledFn: comp.fn,
+              dimension: stmtCoords.length,
+              source: formatAST(rewrittenStmt),
+            });
+          }
+        }
+        if (isRel) {
+          if (stmt.type === 'BinaryOp' && stmt.op === '=') {
+            let boundVar: string | undefined;
+            let boundVal: Value | undefined;
+            if (stmt.left.type === 'Identifier') {
+              try {
+                const rVal = this.evalNode(stmt.right, blockEnv);
+                if (rVal && rVal.type !== 'expression' && rVal.type !== 'space' && rVal.type !== 'unknown') {
+                  boundVar = stmt.left.name;
+                  boundVal = rVal;
+                }
+              } catch {}
+            } else if (stmt.right.type === 'Identifier') {
+              try {
+                const lVal = this.evalNode(stmt.left, blockEnv);
+                if (lVal && lVal.type !== 'expression' && lVal.type !== 'space' && lVal.type !== 'unknown') {
+                  boundVar = stmt.right.name;
+                  boundVal = lVal;
+                }
+              } catch {}
+            }
+            if (boundVar && boundVal) {
+              if (boundVar in blockEnv) {
+                const existing = blockEnv[boundVar];
+                if (existing.type === 'rational' || existing.type === 'float') {
+                  const cmp = compareValues('==', existing, boundVal);
+                  if (cmp.type === 'boolean' && !cmp.value) {
+                    hasContradiction = true;
+                  }
+                }
+              }
+              blockEnv[boundVar] = boundVal;
+              lastVal = boundVal;
+            }
+          }
+          continue;
         }
         lastVal = this.evalNode(stmt, blockEnv);
       }
     }
 
-    if (coordinates.length > 0 || entities.length > 0 || nestedSpaces.length > 0) {
+    if (hasContradiction) {
+      const allCoords = new Set(coordinates);
+      for (const ent of entities) {
+        for (const c of ent.coordinates) allCoords.add(c);
+      }
+      for (const ns of nestedSpaces) {
+        for (const c of ns.coordinates) allCoords.add(c);
+      }
+      const finalCoords = [...allCoords].sort((a, b) => a.localeCompare(b));
       return {
         type: 'space',
-        coordinates,
-        dimension: coordinates.length,
+        coordinates: declaredAxes ?? finalCoords,
+        dimension: (declaredAxes ?? finalCoords).length,
+        declaredAxes,
         entities,
         nestedSpaces: nestedSpaces.length > 0 ? nestedSpaces : undefined,
         bindings: blockEnv,
+        coordinateBounds,
+        timeVariable,
+        resultVal: { type: 'expression', text: '0 = 1' } as any,
+        span: node.span,
+      };
+    }
+
+    const lastStmt = node.statements[node.statements.length - 1];
+    const isRelation = (s: ASTNode | undefined) => s && (s.type === 'Assignment' || (s.type === 'BinaryOp' && ['=', '==', '!=', '<', '<=', '>', '>='].includes(s.op)));
+    const endsInRelation = isRelation(lastStmt);
+    if (nestedSpaces.length > 0 || lastVal.type === 'space' || (entities.length > 0 && endsInRelation) || (entities.length > 0 && coordinateBounds !== undefined) || declaredAxes !== undefined) {
+      const allCoords = new Set(coordinates);
+      for (const ent of entities) {
+        for (const c of ent.coordinates) allCoords.add(c);
+      }
+      for (const ns of nestedSpaces) {
+        for (const c of ns.coordinates) allCoords.add(c);
+      }
+      const finalCoords = [...allCoords].sort((a, b) => a.localeCompare(b));
+      return {
+        type: 'space',
+        coordinates: declaredAxes ?? finalCoords,
+        dimension: (declaredAxes ?? finalCoords).length,
+        declaredAxes,
+        entities,
+        nestedSpaces: nestedSpaces.length > 0 ? nestedSpaces : undefined,
+        bindings: blockEnv,
+        coordinateBounds,
+        timeVariable,
         resultVal: lastVal,
         span: node.span,
       };
@@ -458,6 +840,9 @@ export class Evaluator {
     this.budget.check(undefined, node.span);
 
     switch (node.type) {
+      case 'Interval': {
+        return { type: 'expression', ast: node, text: formatAST(node) };
+      }
       case 'NumberLiteral': {
         const frac = BigFraction.fromString(node.raw, node.span);
         this.budget.checkBigInt(frac.n, node.span);
@@ -473,19 +858,15 @@ export class Evaluator {
       }
       case 'Identifier': {
         const name = node.name;
-        if (name === 'i' && !(name in currentEnv)) {
-          throw createError(
-            `Complex numbers are not supported in v1 (imaginary unit 'i' cannot be evaluated)`,
-            node.span,
-            {
-              expected: 'a real number or defined variable',
-              suggestion: 'Complex arithmetic is deferred to a future version',
-              source: this.source,
-            }
-          );
+        if ((currentEnv as any).__unimported__?.has(name)) {
+          return { type: 'expression', ast: node, text: name };
         }
         if (name in currentEnv) {
-          return currentEnv[name];
+          const val = currentEnv[name];
+          if ((val as any)?.type === 'forall_rule') {
+            return { type: 'expression', ast: node, text: name };
+          }
+          return val;
         }
         if (name === 'none') {
           return { type: 'none' };
@@ -505,27 +886,40 @@ export class Evaluator {
         if (name === 'N' || name === 'Naturals' || name === '\u2115') {
           return { type: 'set_value', elementKind: { name: 'Scalar', subtype: 'natural' }, standardName: '\u2115', isInfinite: true };
         }
-        if (CONSTANTS.has(name) && name in FLOAT_CONSTANTS) {
-          return { type: 'float', value: FLOAT_CONSTANTS[name] };
-        }
         if (BUILTIN_FUNCTIONS.has(name)) {
           return {
             type: 'builtin_function',
             name,
           } as any;
         }
-        if (name === 'i') {
-          throw createError(`Complex numbers and imaginary unit 'i' are unsupported in v1`, node.span, {
-            expected: `real number expression`,
-            suggestion: `Euler's identity requires complex numbers (unavailable in real arithmetic tower)`,
-            source: this.source,
-          });
+        return { type: 'expression', ast: node, text: name };
+      }
+      case 'Where': {
+        const exprVal = this.evalNode(node.expr, currentEnv);
+        const condVal = this.evalNode(node.condition, currentEnv);
+        if (condVal.type === 'boolean') {
+          if (condVal.value) {
+            return exprVal;
+          } else {
+            return { type: 'none' };
+          }
         }
-        throw createError(`Variable '${name}' is not assigned a value`, node.span, {
-          expected: `a value assigned to '${name}'`,
-          suggestion: `Assign a value (e.g. ${name} := 5) or use graph(${name}) to plot it`,
-          source: this.source,
-        });
+        return {
+          type: 'expression',
+          ast: node,
+          text: formatAST(node),
+        };
+      }
+      case 'AxisDecl': {
+        (currentEnv as any).__declaredAxes__ = node.axes;
+        return {
+          type: 'space',
+          coordinates: node.axes,
+          dimension: node.axes.length,
+          declaredAxes: node.axes,
+          entities: [],
+          span: node.span,
+        };
       }
       case 'UnaryOp': {
         const userOp = this.userOperators.get(node.op) || (currentEnv as any).__operators__?.get(node.op) || (this.env as any).__operators__?.get(node.op);
@@ -614,6 +1008,20 @@ export class Evaluator {
           });
         }
 
+        if (node.op === '*' && node.left.type === 'Identifier') {
+          const idName = node.left.name;
+          const binding = currentEnv[idName] || currentEnv[idName.replace(/^:/, '')] || currentEnv[':' + idName.replace(/^:/, '')];
+          if (binding && (binding as any).type === 'forall_rule') {
+            return this.invokeForallRule(binding as any, [node.right], currentEnv, {
+              type: 'FunctionCall',
+              callee: idName,
+              args: [node.right],
+              isBare: true,
+              span: node.span,
+            });
+          }
+        }
+
         const left = this.evalNode(node.left, currentEnv);
 
         if (node.op === '*' && (left.type === 'function' || left.type === 'lambda')) {
@@ -638,7 +1046,24 @@ export class Evaluator {
             return modValues(left, right, node.span);
           case '^':
             return powValues(left, right, node.span);
-          case '=':
+          case '=': {
+            if (node.left.type === 'Identifier' && left.type === 'expression') {
+              if (right.type !== 'expression' && right.type !== 'space' && right.type !== 'unknown') {
+                if (right.type === 'record_constructor' && right.name === 'Record') {
+                  right.name = node.left.name;
+                }
+                currentEnv[node.left.name] = right;
+              }
+            } else if (node.right.type === 'Identifier' && right.type === 'expression') {
+              if (left.type !== 'expression' && left.type !== 'space' && left.type !== 'unknown') {
+                if (left.type === 'record_constructor' && left.name === 'Record') {
+                  left.name = node.right.name;
+                }
+                currentEnv[node.right.name] = left;
+              }
+            }
+            return compareValues(node.op, left, right, node.span);
+          }
           case '==':
           case '!=':
           case '<':
@@ -765,6 +1190,30 @@ export class Evaluator {
         }
         return fnVal;
       }
+      case 'Unimport': {
+        delete currentEnv[node.name];
+        if (!(currentEnv as any).__unimported__) {
+          (currentEnv as any).__unimported__ = new Set();
+        }
+        (currentEnv as any).__unimported__.add(node.name);
+        if (node.name === 'pi') {
+          (currentEnv as any).__unimported__.add('π');
+          (currentEnv as any).__unimported__.add('pi');
+          delete currentEnv['π'];
+          delete currentEnv['pi'];
+        } else if (node.name === 'tau') {
+          (currentEnv as any).__unimported__.add('τ');
+          (currentEnv as any).__unimported__.add('tau');
+          delete currentEnv['τ'];
+          delete currentEnv['tau'];
+        } else if (node.name === 'phi') {
+          (currentEnv as any).__unimported__.add('ϕ');
+          (currentEnv as any).__unimported__.add('phi');
+          delete currentEnv['ϕ'];
+          delete currentEnv['phi'];
+        }
+        return { type: 'none' };
+      }
       case 'Block': {
         return this.evalBlockAsSpace(node, currentEnv);
       }
@@ -794,14 +1243,22 @@ export class Evaluator {
         }
         const updatedFields = { ...targetVal.fields };
         for (const update of node.updates) {
-          if (!(update.name in updatedFields)) {
-            const avail = Object.keys(targetVal.fields).join(', ');
-            throw createError(
-              `Field '${update.name}' does not exist on record '${targetVal.typeName}'. Available fields: ${avail || '(none)'}`,
-              update.value.span
-            );
+          const rawName = update.name.replace(/^:/, '');
+          let targetKey = update.name;
+          if (!(targetKey in updatedFields)) {
+            if (rawName in updatedFields) {
+              targetKey = rawName;
+            } else if (`:${rawName}` in updatedFields) {
+              targetKey = `:${rawName}`;
+            } else {
+              const avail = Object.keys(targetVal.fields).join(', ');
+              throw createError(
+                `Field '${update.name}' does not exist on record '${targetVal.typeName}'. Available fields: ${avail || '(none)'}`,
+                update.value.span
+              );
+            }
           }
-          updatedFields[update.name] = this.evalNode(update.value, currentEnv);
+          updatedFields[targetKey] = this.evalNode(update.value, currentEnv);
         }
         return {
           type: 'record',
@@ -1067,8 +1524,15 @@ export class Evaluator {
           }
         }
         if (targetVal.type === 'record') {
+          const rawProp = prop.replace(/^:/, '');
           if (prop in targetVal.fields) {
             return targetVal.fields[prop];
+          }
+          if (rawProp in targetVal.fields) {
+            return targetVal.fields[rawProp];
+          }
+          if (`:${rawProp}` in targetVal.fields) {
+            return targetVal.fields[`:${rawProp}`];
           }
           const availableFields = Object.keys(targetVal.fields).join(', ');
           throw createError(
@@ -1241,25 +1705,100 @@ export class Evaluator {
         return { type: 'expression', ast: node, text: formatAST(node) };
       }
       case 'Quantifier': {
+        if (node.quantifier === 'forall') {
+          const params: string[] = [node.variable];
+          let currPred: ASTNode = node.predicate;
+          while (currPred.type === 'Quantifier' && currPred.quantifier === 'forall') {
+            params.push((currPred as QuantifierNode).variable);
+            currPred = (currPred as QuantifierNode).predicate;
+          }
+
+          if (currPred.type === 'BinaryOp' && currPred.op === '=') {
+            const left = currPred.left;
+            let fnName: string | undefined;
+            if (
+              left.type === 'BinaryOp' &&
+              left.op === '*' &&
+              left.left.type === 'Identifier' &&
+              left.right.type === 'Identifier' &&
+              left.right.name === params[0]
+            ) {
+              fnName = left.left.name;
+            } else if (left.type === 'FunctionCall') {
+              fnName = left.callee;
+            }
+            if (fnName) {
+              const rule = {
+                type: 'forall_rule',
+                name: fnName,
+                params,
+                param: params[0],
+                body: currPred.right,
+                env: currentEnv,
+              };
+              currentEnv[fnName] = rule as any;
+              const clean = fnName.replace(/^:/, '');
+              currentEnv[clean] = rule as any;
+              currentEnv[':' + clean] = rule as any;
+              return { type: 'none' };
+            }
+          }
+        }
         return { type: 'expression', ast: node, text: formatAST(node) };
       }
       case 'SetOp': {
         try {
           const leftVal = this.evalNode(node.left, currentEnv);
+          if (node.right.type === 'Interval') {
+            const interval = node.right as IntervalNode;
+            const sVal = this.evalNode(interval.start, currentEnv);
+            const eVal = this.evalNode(interval.end, currentEnv);
+            const numLeft = leftVal.type === 'rational' ? Number(leftVal.n) / Number(leftVal.d) : leftVal.type === 'float' ? leftVal.value : NaN;
+            const numStart = sVal.type === 'rational' ? Number(sVal.n) / Number(sVal.d) : sVal.type === 'float' ? sVal.value : (interval.isInfStart ? -Infinity : NaN);
+            const numEnd = eVal.type === 'rational' ? Number(eVal.n) / Number(eVal.d) : eVal.type === 'float' ? eVal.value : (interval.isInfEnd ? Infinity : NaN);
+
+            if (!isNaN(numLeft) && !isNaN(numStart) && !isNaN(numEnd)) {
+              let inside = false;
+              const kind = (interval as any).kind || (interval as any).boundaryType || 'closed';
+              if (kind === 'closed') {
+                inside = numLeft >= numStart && numLeft <= numEnd;
+              } else if (kind === 'open') {
+                inside = numLeft > numStart && numLeft < numEnd;
+              } else if (kind === 'left_open' || kind === 'half-open-left') {
+                inside = numLeft > numStart && numLeft <= numEnd;
+              } else if (kind === 'right_open' || kind === 'half-open-right') {
+                inside = numLeft >= numStart && numLeft < numEnd;
+              }
+              return { type: 'boolean', value: node.op === 'in' ? inside : !inside };
+            }
+          }
           const rightVal = this.evalNode(node.right, currentEnv);
           if (node.op === 'in' || node.op === 'notin') {
-            if (rightVal.type === 'list' || rightVal.type === 'tuple') {
-              const found = rightVal.elements.some(e => {
-                try {
-                  return (compareValues('==', leftVal, e, node.span) as any).value === true;
-                } catch {
-                  return false;
-                }
-              });
-              const res = node.op === 'in' ? found : !found;
-              return { type: 'boolean', value: res };
+            if (rightVal.type === 'set_value') {
+              if (rightVal.standardName === '\u211d' || rightVal.standardName === 'Reals' || rightVal.standardName === 'R') {
+                const isReal = leftVal.type === 'rational' || leftVal.type === 'float';
+                return { type: 'boolean', value: node.op === 'in' ? isReal : !isReal };
+              }
+              if (rightVal.standardName === '\u2124' || rightVal.standardName === 'Integers' || rightVal.standardName === 'Z') {
+                const isInt = leftVal.type === 'rational' && leftVal.d === 1n;
+                return { type: 'boolean', value: node.op === 'in' ? isInt : !isInt };
+              }
+              if (rightVal.standardName === '\u2115' || rightVal.standardName === 'Naturals' || rightVal.standardName === 'N') {
+                const isNat = leftVal.type === 'rational' && leftVal.d === 1n && leftVal.n >= 0n;
+                return { type: 'boolean', value: node.op === 'in' ? isNat : !isNat };
+              }
+              if (!rightVal.isInfinite && rightVal.elements) {
+                const found = rightVal.elements.some(e => {
+                  try {
+                    return (compareValues('==', leftVal, e, node.span) as any).value === true;
+                  } catch {
+                    return false;
+                  }
+                });
+                return { type: 'boolean', value: node.op === 'in' ? found : !found };
+              }
             }
-            if (rightVal.type === 'set_value' && !rightVal.isInfinite && rightVal.elements) {
+            if (rightVal.type === 'list' || rightVal.type === 'tuple') {
               const found = rightVal.elements.some(e => {
                 try {
                   return (compareValues('==', leftVal, e, node.span) as any).value === true;
@@ -1322,7 +1861,7 @@ export class Evaluator {
   }
 
   private evalFunctionCall(node: FunctionCallNode, currentEnv: Environment): Value {
-    const callee = node.callee;
+    const callee = node.callee.replace(/^:/, '');
 
     if (callee === 'graph') {
       if (node.args.length === 0) return { type: 'none' };
@@ -1425,7 +1964,7 @@ export class Evaluator {
       const val = this.evalNode(node.args[0], currentEnv);
       let targetKind: MathKind;
       const targetArg = node.args[1];
-      if (targetArg.type === 'NamedArg' && targetArg.name === 'to') {
+      if (targetArg.type === 'NamedArg' && (targetArg.name === 'to' || targetArg.name.replace(/^:/, '') === 'to')) {
         const toVal = this.evalNode(targetArg.value, currentEnv);
         targetKind = toVal.type === 'kind' ? toVal.kind : inferKindOfValue(toVal);
       } else {
@@ -1450,8 +1989,8 @@ export class Evaluator {
       }
       let targetUnitName = '';
       const toArg = node.args[1];
-      if (toArg.type === 'NamedArg' && toArg.name === 'to') {
-        targetUnitName = toArg.value.type === 'Identifier' ? toArg.value.name : '';
+      if (toArg.type === 'NamedArg' && (toArg.name === 'to' || toArg.name.replace(/^:/, '') === 'to')) {
+        targetUnitName = toArg.value.type === 'Identifier' ? toArg.value.name.replace(/^:/, '') : '';
       } else if (toArg.type === 'Identifier') {
         targetUnitName = toArg.name;
       }
@@ -1549,8 +2088,10 @@ export class Evaluator {
           reason = arg0.name as UnknownReason;
         } else if (arg0.type === 'StringLiteral') {
           reason = arg0.value as UnknownReason;
+        } else if (this.source && arg0.span && arg0.span.end > arg0.span.start) {
+          reason = this.source.slice(arg0.span.start, arg0.span.end).replace(/\s+/g, '') as UnknownReason;
         } else if (arg0.type === 'UnaryOp' || arg0.type === 'BinaryOp') {
-          reason = formatAST(arg0).replace(/\s+/g, '') as UnknownReason;
+          reason = formatAST(arg0).replace(/[:·\s]+/g, '') as UnknownReason;
         } else {
           const val0 = this.evalNode(arg0, currentEnv);
           reason = String((val0 as any).value ?? val0.type) as UnknownReason;
@@ -1781,6 +2322,16 @@ export class Evaluator {
       if (calleeVal.type === 'lambda') {
         return this.invokeLambda(calleeVal, node.args, currentEnv, node.span);
       }
+      if ((calleeVal as any).type === 'forall_rule') {
+        return this.invokeForallRule(calleeVal, node.args, currentEnv, node);
+      }
+    }
+
+    // Check if callee is in environment directly as forall_rule
+    const cleanCallee = callee.replace(/^:/, '');
+    const directBinding = currentEnv[callee] || currentEnv[cleanCallee] || currentEnv[':' + cleanCallee];
+    if (directBinding && (directBinding as any).type === 'forall_rule') {
+      return this.invokeForallRule(directBinding, node.args, currentEnv, node);
     }
 
     // Check builtin function
@@ -1794,6 +2345,31 @@ export class Evaluator {
       suggestion: `Define ${callee}(x) := ... before calling it`,
       source: this.source,
     });
+  }
+
+  private invokeForallRule(rule: any, args: ASTNode[], currentEnv: Environment, node: FunctionCallNode): Value {
+    const argVals = args.map(a => this.evalNode(a, currentEnv));
+    const argKey = argVals.map(v => JSON.stringify(v, (_, val) => typeof val === 'bigint' ? val.toString() + 'n' : val)).join(',');
+    const callKey = `${rule.name}(${argKey})`;
+    if (this.activeRuleCalls.has(callKey)) {
+      return { type: 'expression', ast: node, text: formatAST(node) };
+    }
+    this.activeRuleCalls.add(callKey);
+    try {
+      const callEnv = Object.create(rule.env);
+      const params = rule.params || [rule.param];
+      for (let i = 0; i < params.length; i++) {
+        if (i < argVals.length) {
+          callEnv[params[i]] = argVals[i];
+          const clean = params[i].replace(/^:/, '');
+          callEnv[clean] = argVals[i];
+          callEnv[':' + clean] = argVals[i];
+        }
+      }
+      return this.evalNode(rule.body, callEnv);
+    } finally {
+      this.activeRuleCalls.delete(callKey);
+    }
   }
 
   private invokeUserFunction(
@@ -2283,7 +2859,7 @@ export class Evaluator {
     let startVal = 0;
     let varName = 'x';
     for (const arg of node.args) {
-      if (arg.type === 'NamedArg' && arg.name === 'from') {
+      if (arg.type === 'NamedArg' && arg.name.replace(/^[:\\]/, '') === 'from') {
         startVal = valueToNumber(this.evalNode(arg.value, currentEnv), arg.value.span);
       }
     }
@@ -3300,12 +3876,42 @@ export class Evaluator {
 
     // Evaluate module statements
     const parsedAST = parseProgram(code);
+    const evalModStmt = (stmt: ASTNode) => {
+      if (stmt.type === 'BinaryOp' && stmt.op === '=') {
+        if (stmt.left.type === 'Identifier') {
+          try {
+            const rVal = this.evalNode(stmt.right, modEnv);
+            if (rVal && rVal.type !== 'expression' && rVal.type !== 'space' && rVal.type !== 'unknown') {
+              if (rVal.type === 'record_constructor' && rVal.name === 'Record') {
+                rVal.name = stmt.left.name;
+              }
+              modEnv[stmt.left.name] = rVal;
+              return;
+            }
+          } catch {}
+        }
+        if (stmt.right.type === 'Identifier') {
+          try {
+            const lVal = this.evalNode(stmt.left, modEnv);
+            if (lVal && lVal.type !== 'expression' && lVal.type !== 'space' && lVal.type !== 'unknown') {
+              if (lVal.type === 'record_constructor' && lVal.name === 'Record') {
+                lVal.name = stmt.right.name;
+              }
+              modEnv[stmt.right.name] = lVal;
+              return;
+            }
+          } catch {}
+        }
+      }
+      this.evalNode(stmt, modEnv);
+    };
+
     if (parsedAST.type === 'Block') {
       for (const stmt of parsedAST.statements) {
-        this.evalNode(stmt, modEnv);
+        evalModStmt(stmt);
       }
     } else {
-      this.evalNode(parsedAST, modEnv);
+      evalModStmt(parsedAST);
     }
 
     // Collect exported symbols
@@ -3315,11 +3921,21 @@ export class Evaluator {
     for (const [k, v] of Object.entries(modEnv)) {
       if (k.startsWith('__')) continue;
       if (exportedSymbols) {
-        if (exportedSymbols.has(k)) {
+        if (
+          exportedSymbols.has(k) ||
+          exportedSymbols.has(':' + k) ||
+          exportedSymbols.has(k.replace(/^:/, ''))
+        ) {
           exports[k] = v;
+          const cleanK = k.replace(/^:/, '');
+          exports[cleanK] = v;
+          exports[':' + cleanK] = v;
         }
       } else {
         exports[k] = v;
+        const cleanK = k.replace(/^:/, '');
+        exports[cleanK] = v;
+        exports[':' + cleanK] = v;
       }
     }
 
@@ -3768,7 +4384,7 @@ export class Evaluator {
 
     for (let i = 1; i < node.args.length; i++) {
       const arg = node.args[i];
-      if (arg.type === 'NamedArg' && arg.name === 'is') {
+      if (arg.type === 'NamedArg' && (arg.name === 'is' || arg.name.replace(/^:/, '') === 'is')) {
         if (arg.value.type === 'StringLiteral') {
           quantityName = arg.value.value;
         } else if (arg.value.type === 'Identifier') {

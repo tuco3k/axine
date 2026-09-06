@@ -1,0 +1,7 @@
+# ceil.ax — Ceiling function defined via floor relation
+\module :ceil
+\import "floor.ax"
+
+\forall x, :ceil(x) = \if :floor(x) = x \then x \else :floor(x) + 1
+
+\export :ceil

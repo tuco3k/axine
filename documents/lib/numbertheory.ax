@@ -1,0 +1,15 @@
+# numbertheory.ax — GCD and primality testing defined as recurrences
+\module :numbertheory
+
+# Euclidean algorithm recurrence for GCD
+\forall a, b, :gcd(a, b) = \if b = 0 \then a \else :gcd(b, a % b)
+
+# LCM definition
+\forall a, b, :lcm(a, b) = (a * b) / :gcd(a, b)
+
+# Primality trial division helper
+\forall n, d, :isprime_step(n, d) = \if d * d > n \then \true \else (\if (n % d) = 0 \then \false \else :isprime_step(n, d + 1))
+
+\forall n, :isprime(n) = \if n < 2 \then \false \else :isprime_step(n, 2)
+
+\export :gcd, :lcm, :isprime

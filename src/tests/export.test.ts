@@ -303,21 +303,21 @@ plot(t, cos(omega * t))
     const { evaluate, createInitialEnvironment } = await import('../core/evaluator');
 
     const env = createInitialEnvironment();
-    const res1 = evaluate('isolate(x^2 - 5x + 6 = 0, for: x)', env);
-    const res2 = evaluate('isolate(x^2 = 4, for: x)', env);
-    const res3 = evaluate('simplify((x^2 - 1)/(x - 1))', env);
-    const res4 = evaluate('d//dx (x^3 * sin x)', env);
-    const res5 = evaluate('check(3/4 * pi * r^2, is: "sphere volume")', env);
+    const res1 = evaluate(":isolate(x^2 - 5*x + 6 = 0, :for: x)", env);
+    const res2 = evaluate(":isolate(x^2 = 4, :for: x)", env);
+    const res3 = evaluate(':simplify((x^2 - 1)/(x - 1))', env);
+    const res4 = evaluate('d//dx (x^3 * :sin(x))', env);
+    const res5 = evaluate(":check(3/4 * :pi * r^2, :is: \"sphere volume\")", env);
 
     const records: DocumentLineRecord[] = [
-      { lineIndex: 0, text: 'isolate(x^2 - 5x + 6 = 0, for: x)', classification: { state: 'COMPLETE' } as any, result: res1.value, durationMs: 2 },
-      { lineIndex: 1, text: 'isolate(x^2 = 4, for: x)', classification: { state: 'COMPLETE' } as any, result: res2.value, durationMs: 2 },
-      { lineIndex: 2, text: 'simplify((x^2 - 1)/(x - 1))', classification: { state: 'COMPLETE' } as any, result: res3.value, durationMs: 2 },
-      { lineIndex: 3, text: 'd//dx (x^3 * sin x)', classification: { state: 'COMPLETE' } as any, result: res4.value, durationMs: 2 },
-      { lineIndex: 4, text: 'check(3/4 * pi * r^2, is: "sphere volume")', classification: { state: 'COMPLETE' } as any, result: res5.value, durationMs: 2 },
+      { lineIndex: 0, text: ':isolate(x^2 - 5*x + 6 = 0, :for: x)', classification: { state: 'COMPLETE' } as any, result: res1.value, durationMs: 2 },
+      { lineIndex: 1, text: ':isolate(x^2 = 4, :for: x)', classification: { state: 'COMPLETE' } as any, result: res2.value, durationMs: 2 },
+      { lineIndex: 2, text: ':simplify((x^2 - 1)/(x - 1))', classification: { state: 'COMPLETE' } as any, result: res3.value, durationMs: 2 },
+      { lineIndex: 3, text: 'd//dx (x^3 * :sin(x))', classification: { state: 'COMPLETE' } as any, result: res4.value, durationMs: 2 },
+      { lineIndex: 4, text: ':check(3/4 * :pi * r^2, :is: "sphere volume")', classification: { state: 'COMPLETE' } as any, result: res5.value, durationMs: 2 },
     ];
 
-    const docText = `isolate(x^2 - 5x + 6 = 0, for: x)\nisolate(x^2 = 4, for: x)\nsimplify((x^2 - 1)/(x - 1))\nd//dx (x^3 * sin x)\ncheck(3/4 * pi * r^2, is: "sphere volume")\n`;
+    const docText = `:isolate(x^2 - 5*x + 6 = 0, :for: x)\n:isolate(x^2 = 4, :for: x)\n:simplify((x^2 - 1)/(x - 1))\nd//dx (x^3 * :sin(x))\n:check(3/4 * :pi * r^2, :is: "sphere volume")\n`;
 
     // 1. Default (Expanded) export
     const htmlExpanded = exportToHtml('deriv_test.ax', docText, records, 'light');

@@ -67,10 +67,31 @@ function getNodePrecedence(node: ASTNode): number {
     case 'StringLiteral':
     case 'FunctionDef':
     case 'Range':
+    case 'AxisDecl':
+    case 'Interval':
       return PREC_NONE;
     default:
       return PREC_NONE;
   }
+}
+
+const KEYWORDS = new Set([
+  'in', 'step', 'if', 'then', 'else', 'and', 'or', 'not', 'claim', 'where',
+  'iint', 'iiint', 'oint', 'grad', 'del', 'laplacian', 'wedge', 'hodge', 'star',
+  'tensor', 'direct_sum', 'oplus', 'forall', 'exists', 'notin', 'subset',
+  'subseteq', 'union', 'intersect', 'setminus', 'iso', 'homotopic', 'equiv',
+  'dagger', 'adj', 'record', 'with', 'dimension', 'unit', 'operator',
+  'prefix', 'postfix', 'infix', 'precedence', 'associativity', 'kind',
+  'extends', 'operations', 'axioms', 'rule', 'requires', 'module',
+  'export', 'import', 'from', 'as', 'is', 'view', 'for', 'true', 'false', 'none',
+  'left', 'right'
+]);
+
+function formatIdent(name: string): string {
+  if (name.length > 1 && !KEYWORDS.has(name) && /^[a-zA-Z_]/.test(name)) {
+    return ':' + name;
+  }
+  return name;
 }
 
 function formatNode(node: ASTNode, parentPrec: number): string {
@@ -82,7 +103,7 @@ function formatNode(node: ASTNode, parentPrec: number): string {
       return `"${node.value}"`;
     }
     case 'Identifier': {
-      return node.name;
+      return formatIdent(node.name);
     }
     case 'Tuple': {
       return `(${node.elements.map(e => formatNode(e, PREC_NONE)).join(', ')})`;
@@ -94,44 +115,45 @@ function formatNode(node: ASTNode, parentPrec: number): string {
       return `{\n  ${node.statements.map(s => formatNode(s, PREC_NONE)).join(';\n  ')}\n}`;
     }
     case 'Range': {
-      let res = `${node.variable} in ${formatNode(node.start, PREC_IN)}..${formatNode(node.end, PREC_IN)}`;
+      let res = `${formatIdent(node.variable)} \\in ${formatNode(node.start, PREC_IN)}..${formatNode(node.end, PREC_IN)}`;
       if (node.step) {
-        res += ` step ${formatNode(node.step, PREC_IN)}`;
+        res += ` \\step ${formatNode(node.step, PREC_IN)}`;
       }
       return res;
     }
     case 'Diff': {
       const op = node.isPartial ? '\u2202//\u2202' : 'd//d';
-      return `${op}${node.variable} ${formatNode(node.expr, PREC_UNARY)}`;
+      return `${op}${formatIdent(node.variable)} ${formatNode(node.expr, PREC_UNARY)}`;
     }
     case 'BigOp': {
       if (node.op === 'integral') {
+        const diffVar = node.variable.length > 1 ? `d:${node.variable}` : `d${node.variable}`;
         if (node.start && node.end) {
-          return `\u222b_${formatNode(node.start, PREC_POSTFIX)}^${formatNode(node.end, PREC_POSTFIX)} ${formatNode(node.body, PREC_NONE)} d${node.variable}`;
+          return `\u222b_${formatNode(node.start, PREC_POSTFIX)}^${formatNode(node.end, PREC_POSTFIX)} ${formatNode(node.body, PREC_NONE)} ${diffVar}`;
         }
-        return `\u222b ${formatNode(node.body, PREC_NONE)} d${node.variable}`;
+        return `\u222b ${formatNode(node.body, PREC_NONE)} ${diffVar}`;
       }
       const sym = node.op === 'sum' ? 'Σ' : 'Π';
       const startStr = node.start ? formatNode(node.start, PREC_IN) : '1';
       const endStr = node.end ? formatNode(node.end, PREC_IN) : 'n';
-      return `${sym}(${node.variable} in ${startStr}..${endStr}, ${formatNode(node.body, PREC_NONE)})`;
+      return `${sym}(${formatIdent(node.variable)} \\in ${startStr}..${endStr}, ${formatNode(node.body, PREC_NONE)})`;
     }
     case 'Limit': {
       const dirStr = node.direction === 'right' ? '+' : (node.direction === 'left' ? '-' : '');
-      return `lim(${node.variable} -> ${formatNode(node.target, PREC_NONE)}${dirStr}, ${formatNode(node.expr, PREC_NONE)})`;
+      return `lim(${formatIdent(node.variable)} -> ${formatNode(node.target, PREC_NONE)}${dirStr}, ${formatNode(node.expr, PREC_NONE)})`;
     }
     case 'Claim': {
-      return `claim ${node.name} {\n  statement: "${node.statement}",\n  proved_by: "${node.provedBy}",\n  relevance: "${node.relevance}",\n  kind: "${node.kind}",\n  shadow: ${formatNode(node.shadow, PREC_NONE)},\n  expect: ${formatNode(node.expect, PREC_NONE)}\n}`;
+      return `\\claim ${node.name} {\n  \\statement: "${node.statement}",\n  \\proved_by: "${node.provedBy}",\n  \\relevance: "${node.relevance}",\n  \\kind: "${node.kind}",\n  \\shadow: ${formatNode(node.shadow, PREC_NONE)},\n  \\expect: ${formatNode(node.expect, PREC_NONE)}\n}`;
     }
     case 'If': {
-      const res = `if ${formatNode(node.condition, PREC_NONE)} then ${formatNode(node.thenBranch, PREC_NONE)} else ${formatNode(node.elseBranch, PREC_NONE)}`;
+      const res = `\\if ${formatNode(node.condition, PREC_NONE)} \\then ${formatNode(node.thenBranch, PREC_NONE)} \\else ${formatNode(node.elseBranch, PREC_NONE)}`;
       if (parentPrec > PREC_NONE) {
         return `(${res})`;
       }
       return res;
     }
     case 'Lambda': {
-      const paramsStr = node.params.length === 1 ? node.params[0] : `(${node.params.join(', ')})`;
+      const paramsStr = node.params.length === 1 ? formatIdent(node.params[0]) : `(${node.params.map(formatIdent).join(', ')})`;
       const res = `${paramsStr} -> ${formatNode(node.body, PREC_NONE)}`;
       if (parentPrec > PREC_NONE) {
         return `(${res})`;
@@ -141,25 +163,29 @@ function formatNode(node: ASTNode, parentPrec: number): string {
     case 'NamedArg': {
       return `${node.name}: ${formatNode(node.value, PREC_NONE)}`;
     }
+    case 'Unimport': {
+      return `\\unimport ${formatIdent(node.name)}`;
+    }
     case 'Assignment': {
-      return `${node.target} := ${formatNode(node.value, PREC_NONE)}`;
+      return `${formatIdent(node.target)} = ${formatNode(node.value, PREC_NONE)}`;
     }
     case 'GlobalAssignment': {
-      return `${node.target} :\u2261 ${formatNode(node.value, PREC_NONE)}`;
+      return `${formatIdent(node.target)} = ${formatNode(node.value, PREC_NONE)}`;
     }
     case 'FunctionDef': {
-      return `${node.name}(${node.params.join(', ')}) := ${formatNode(node.body, PREC_NONE)}`;
+      return `${formatIdent(node.name)}(${node.params.map(formatIdent).join(', ')}) = ${formatNode(node.body, PREC_NONE)}`;
     }
     case 'FunctionCall': {
+      const calleeStr = formatIdent(node.callee);
       if (node.isBare && node.args.length === 1) {
         const argStr = formatNode(node.args[0], PREC_BARE_CALL);
-        const res = `${node.callee}(${argStr})`;
+        const res = `${calleeStr}(${argStr})`;
         if (parentPrec > PREC_BARE_CALL) {
           return `(${res})`;
         }
         return res;
       }
-      return `${node.callee}(${node.args.map(a => formatNode(a, PREC_NONE)).join(', ')})`;
+      return `${calleeStr}(${node.args.map(a => formatNode(a, PREC_NONE)).join(', ')})`;
     }
     case 'PostfixOp': {
       if (node.op === '!') {
@@ -181,7 +207,7 @@ function formatNode(node: ASTNode, parentPrec: number): string {
     case 'UnaryOp': {
       if (node.op === 'not') {
         const operandStr = formatNode(node.operand, PREC_NOT);
-        const res = `not ${operandStr}`;
+        const res = `\\not ${operandStr}`;
         if (parentPrec > PREC_NOT) return `(${res})`;
         return res;
       }
@@ -198,58 +224,60 @@ function formatNode(node: ASTNode, parentPrec: number): string {
       return res;
     }
     case 'MemberAccess': {
-      return `${formatNode(node.target, PREC_POSTFIX)}.${node.property}`;
+      return `${formatNode(node.target, PREC_POSTFIX)}.${formatIdent(node.property)}`;
     }
     case 'RecordDef': {
-      return `record { ${node.fields.join(', ')} }`;
+      return `\\record { ${node.fields.map(formatIdent).join(', ')} }`;
     }
     case 'RecordWith': {
-      const updatesStr = node.updates.map(u => `${u.name}: ${formatNode(u.value, PREC_NONE)}`).join(', ');
-      return `${formatNode(node.target, PREC_COMPARE)} with { ${updatesStr} }`;
+      const updatesStr = node.updates.map(u => `${formatIdent(u.name)}: ${formatNode(u.value, PREC_NONE)}`).join(', ');
+      return `${formatNode(node.target, PREC_COMPARE)} \\with { ${updatesStr} }`;
     }
     case 'DimensionDecl': {
-      return `dimension ${node.dimensions.join(', ')}`;
+      return `\\dimension ${node.dimensions.map(formatIdent).join(', ')}`;
     }
     case 'UnitDecl': {
       if (node.dimension) {
-        return `unit ${node.name} : ${node.dimension}`;
+        return `\\unit ${formatIdent(node.name)} : ${formatIdent(node.dimension)}`;
       }
-      return `unit ${node.name} = ${formatNode(node.definition!, PREC_NONE)}`;
+      return `\\unit ${formatIdent(node.name)} = ${formatNode(node.definition!, PREC_NONE)}`;
     }
     case 'OperatorDecl': {
-      const fixStr = node.fixity !== 'infix' ? `${node.fixity} ` : '';
-      let res = `operator ${fixStr}${node.op} (${node.params.join(', ')}) := ${formatNode(node.body, PREC_NONE)}`;
-      if (node.precedence !== undefined) res += ` precedence: ${node.precedence}`;
-      if (node.associativity) res += ` associativity: ${node.associativity}`;
+      const fixStr = node.fixity !== 'infix' ? `\\${node.fixity} ` : '';
+      let res = `\\operator ${fixStr}${node.op} (${node.params.join(', ')}) = ${formatNode(node.body, PREC_NONE)}`;
+      if (node.precedence !== undefined) res += ` \\precedence: ${node.precedence}`;
+      if (node.associativity) res += ` \\associativity: :${node.associativity}`;
       return res;
     }
     case 'KindDecl': {
-      const paramStr = node.params.length > 0 ? `(${node.params.join(', ')})` : '';
-      const extStr = node.extendsKind ? ` extends ${node.extendsKind.name}${node.extendsKind.args.length > 0 ? `(${node.extendsKind.args.join(', ')})` : ''}` : '';
+      const paramStr = node.params.length > 0 ? `(${node.params.map(formatIdent).join(', ')})` : '';
+      const extStr = node.extendsKind ? ` \\extends ${formatIdent(node.extendsKind.name)}${node.extendsKind.args.length > 0 ? `(${node.extendsKind.args.map(formatIdent).join(', ')})` : ''}` : '';
       let body = '';
-      if (node.operations.length > 0) body += `operations: [${node.operations.join(', ')}]`;
+      if (node.operations.length > 0) {
+        body += `\\operations: [${node.operations.map(formatIdent).join(', ')}]`;
+      }
       if (node.axioms.length > 0) {
         if (body) body += ', ';
-        body += `axioms: [${node.axioms.map(a => `"${a}"`).join(', ')}]`;
+        body += `\\axioms: [${node.axioms.map(a => `"${a}"`).join(', ')}]`;
       }
-      return `kind ${node.name}${paramStr}${extStr} { ${body} }`;
+      return `\\kind ${formatIdent(node.name)}${paramStr}${extStr} { ${body} }`;
     }
     case 'RuleDecl': {
-      let res = `rule ${formatNode(node.pattern, PREC_NONE)} => ${formatNode(node.replacement, PREC_NONE)}`;
-      if (node.requires) res += ` requires: ${formatNode(node.requires, PREC_NONE)}`;
+      let res = `\\rule ${formatNode(node.pattern, PREC_NONE)} => ${formatNode(node.replacement, PREC_NONE)}`;
+      if (node.requires) res += ` \\requires: ${formatNode(node.requires, PREC_NONE)}`;
       return res;
     }
     case 'ModuleDecl': {
-      return `module ${node.name}`;
+      return `\\module ${formatIdent(node.name)}`;
     }
     case 'Export': {
-      return `export ${node.symbols.join(', ')}`;
+      return `\\export ${node.symbols.map(formatIdent).join(', ')}`;
     }
     case 'Import': {
       if (node.importedSymbols) {
-        return `from "${node.path}" import ${node.importedSymbols.join(', ')}`;
+        return `\\from "${node.path}" \\import ${node.importedSymbols.map(formatIdent).join(', ')}`;
       }
-      return `import "${node.path}"${node.asName ? ` as ${node.asName}` : ''}`;
+      return `\\import "${node.path}"${node.asName ? ` \\as ${formatIdent(node.asName)}` : ''}`;
     }
     case 'Index': {
       return `${formatNode(node.target, PREC_POSTFIX)}[${formatNode(node.index, PREC_NONE)}]`;
@@ -336,6 +364,22 @@ function formatNode(node: ASTNode, parentPrec: number): string {
       if (node.condition) return `P(${formatNode(node.event, PREC_NONE)} | ${formatNode(node.condition, PREC_NONE)})`;
       return `P(${formatNode(node.event, PREC_NONE)})`;
     }
+    case 'Interval': {
+      const lBracket = (node.kind === 'closed' || node.kind === 'right_open') ? '[' : '(';
+      const rBracket = (node.kind === 'closed' || node.kind === 'left_open') ? ']' : ')';
+      const startStr = formatNode(node.start, PREC_NONE);
+      const endStr = formatNode(node.end, PREC_NONE);
+      if (node.variable) {
+        return `${formatIdent(node.variable)} \u2208 ${lBracket}${startStr}, ${endStr}${rBracket}`;
+      }
+      return `${lBracket}${startStr}, ${endStr}${rBracket}`;
+    }
+    case 'AxisDecl': {
+      return `\\axis[${node.axes.map(formatIdent).join(', ')}]`;
+    }
+    case 'Where': {
+      return `${formatNode(node.expr, PREC_NONE)} \\where ${formatNode(node.condition, PREC_NONE)}`;
+    }
     case 'BinaryOp': {
       return formatBinaryOp(node, parentPrec);
     }
@@ -377,6 +421,14 @@ function formatBinaryOp(node: BinaryOpNode, parentPrec: number): string {
     res = `${leftStr} · ${rightStr}`;
   } else if (node.op === '^') {
     res = `${leftStr}^${rightStr}`;
+  } else if (node.op === 'and') {
+    res = `${leftStr} \\and ${rightStr}`;
+  } else if (node.op === 'or') {
+    res = `${leftStr} \\or ${rightStr}`;
+  } else if (node.op === 'in') {
+    res = `${leftStr} \\in ${rightStr}`;
+  } else if (node.op === 'is') {
+    res = `${leftStr} \\is ${rightStr}`;
   } else {
     res = `${leftStr} ${node.op} ${rightStr}`;
   }

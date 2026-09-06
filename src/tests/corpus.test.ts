@@ -32,22 +32,20 @@ const GOLDEN_CORPUS: GoldenTestCase[] = [
     expectedValue: { type: 'rational', n: 10n, d: 1n },
   },
   {
-    source: 'xy',
-    setup: ['xy := 42'],
-    expectedNormalized: 'xy',
+    source: ':xy',
+    setup: [':xy := 42'],
+    expectedNormalized: ':xy',
     expectedValue: { type: 'rational', n: 42n, d: 1n },
   },
   {
-    source: 'xy',
-    expectedError: {
-      messageContains: "'xy' is not defined. Multi-letter names must be assigned before use",
-      suggestionContains: "Did you mean 'x·y' (implicit product) or did you mean to write 'xy := ...' first?",
-    },
+    source: ':xy + 1',
+    expectedNormalized: ':xy + 1',
+    expectedValue: { type: 'expression' },
   },
   {
-    source: 'f(x+1)',
-    setup: ['x := 3', 'f(t) := t^2'],
-    expectedNormalized: 'f(x + 1)',
+    source: ':fn(x+1)',
+    setup: ['x := 3', ':fn(t) := t^2'],
+    expectedNormalized: ':fn(x + 1)',
     expectedValue: { type: 'rational', n: 16n, d: 1n },
   },
   {
@@ -63,9 +61,9 @@ const GOLDEN_CORPUS: GoldenTestCase[] = [
     expectedValue: { type: 'rational', n: 2n, d: 1n },
   },
   {
-    source: 'sin x^2',
+    source: ':sin(x^2)',
     setup: ['x := 0'],
-    expectedNormalized: 'sin(x^2)',
+    expectedNormalized: ':sin(x^2)',
     expectedValue: { type: 'float', value: 0 },
   },
   {
@@ -223,128 +221,128 @@ const GOLDEN_CORPUS: GoldenTestCase[] = [
 
   // --- 4. Builtins & Mathematical Functions ---
   {
-    source: 'abs(-42)',
-    expectedNormalized: 'abs(-42)',
+    source: ':abs(-42)',
+    expectedNormalized: ':abs(-42)',
     expectedValue: { type: 'rational', n: 42n, d: 1n },
   },
   {
-    source: 'abs(42)',
-    expectedNormalized: 'abs(42)',
+    source: ':abs(42)',
+    expectedNormalized: ':abs(42)',
     expectedValue: { type: 'rational', n: 42n, d: 1n },
   },
   {
-    source: 'abs(-3/4)',
-    expectedNormalized: 'abs(-3 / 4)',
+    source: ':abs(-3/4)',
+    expectedNormalized: ':abs(-3 / 4)',
     expectedValue: { type: 'rational', n: 3n, d: 4n },
   },
   {
-    source: 'floor(7/2)',
-    expectedNormalized: 'floor(7 / 2)',
+    source: ':floor(7/2)',
+    expectedNormalized: ':floor(7 / 2)',
     expectedValue: { type: 'rational', n: 3n, d: 1n },
   },
   {
-    source: 'floor(-7/2)',
-    expectedNormalized: 'floor(-7 / 2)',
+    source: ':floor(-7/2)',
+    expectedNormalized: ':floor(-7 / 2)',
     expectedValue: { type: 'rational', n: -4n, d: 1n },
   },
   {
-    source: 'ceil(7/2)',
-    expectedNormalized: 'ceil(7 / 2)',
+    source: ':ceil(7/2)',
+    expectedNormalized: ':ceil(7 / 2)',
     expectedValue: { type: 'rational', n: 4n, d: 1n },
   },
   {
-    source: 'ceil(-7/2)',
-    expectedNormalized: 'ceil(-7 / 2)',
+    source: ':ceil(-7/2)',
+    expectedNormalized: ':ceil(-7 / 2)',
     expectedValue: { type: 'rational', n: -3n, d: 1n },
   },
   {
-    source: 'round(7/2)',
-    expectedNormalized: 'round(7 / 2)',
+    source: ':round(7/2)',
+    expectedNormalized: ':round(7 / 2)',
     expectedValue: { type: 'rational', n: 4n, d: 1n },
   },
   {
-    source: 'min(5, 2, 8, 1, 9)',
-    expectedNormalized: 'min(5, 2, 8, 1, 9)',
+    source: ':min(5, 2, 8, 1, 9)',
+    expectedNormalized: ':min(5, 2, 8, 1, 9)',
     expectedValue: { type: 'rational', n: 1n, d: 1n },
   },
   {
-    source: 'max(5, 2, 8, 1, 9)',
-    expectedNormalized: 'max(5, 2, 8, 1, 9)',
+    source: ':max(5, 2, 8, 1, 9)',
+    expectedNormalized: ':max(5, 2, 8, 1, 9)',
     expectedValue: { type: 'rational', n: 9n, d: 1n },
   },
   {
-    source: 'sum(1, 2, 3, 4, 5)',
-    expectedNormalized: 'sum(1, 2, 3, 4, 5)',
+    source: ':sum(1, 2, 3, 4, 5)',
+    expectedNormalized: ':sum(1, 2, 3, 4, 5)',
     expectedValue: { type: 'rational', n: 15n, d: 1n },
   },
   {
-    source: 'prod(1, 2, 3, 4, 5)',
-    expectedNormalized: 'prod(1, 2, 3, 4, 5)',
+    source: ':prod(1, 2, 3, 4, 5)',
+    expectedNormalized: ':prod(1, 2, 3, 4, 5)',
     expectedValue: { type: 'rational', n: 120n, d: 1n },
   },
   {
-    source: 'gcd(48, 18)',
-    expectedNormalized: 'gcd(48, 18)',
+    source: ':gcd(48, 18)',
+    expectedNormalized: ':gcd(48, 18)',
     expectedValue: { type: 'rational', n: 6n, d: 1n },
   },
   {
-    source: 'lcm(4, 6)',
-    expectedNormalized: 'lcm(4, 6)',
+    source: ':lcm(4, 6)',
+    expectedNormalized: ':lcm(4, 6)',
     expectedValue: { type: 'rational', n: 12n, d: 1n },
   },
   {
-    source: 'mod(17, 5)',
-    expectedNormalized: 'mod(17, 5)',
+    source: ':mod(17, 5)',
+    expectedNormalized: ':mod(17, 5)',
     expectedValue: { type: 'rational', n: 2n, d: 1n },
   },
   {
-    source: 'sqrt(64)',
-    expectedNormalized: 'sqrt(64)',
+    source: ':sqrt(64)',
+    expectedNormalized: ':sqrt(64)',
     expectedValue: { type: 'rational', n: 8n, d: 1n },
   },
   {
-    source: 'sqrt(9/16)',
-    expectedNormalized: 'sqrt(9 / 16)',
+    source: ':sqrt(9/16)',
+    expectedNormalized: ':sqrt(9 / 16)',
     expectedValue: { type: 'rational', n: 3n, d: 4n },
   },
   {
-    source: 'exp(0)',
-    expectedNormalized: 'exp(0)',
+    source: ':exp(0)',
+    expectedNormalized: ':exp(0)',
     expectedValue: { type: 'float', value: 1 },
   },
   {
-    source: 'ln(1)',
-    expectedNormalized: 'ln(1)',
+    source: ':ln(1)',
+    expectedNormalized: ':ln(1)',
     expectedValue: { type: 'float', value: 0 },
   },
   {
-    source: 'log(100)',
-    expectedNormalized: 'log(100)',
+    source: ':log(100)',
+    expectedNormalized: ':log(100)',
     expectedValue: { type: 'float', value: 2 },
   },
   {
-    source: 'log2(8)',
-    expectedNormalized: 'log2(8)',
+    source: ':log2(8)',
+    expectedNormalized: ':log2(8)',
     expectedValue: { type: 'float', value: 3 },
   },
   {
-    source: 'cos(0)',
-    expectedNormalized: 'cos(0)',
+    source: ':cos(0)',
+    expectedNormalized: ':cos(0)',
     expectedValue: { type: 'float', value: 1 },
   },
   {
-    source: 'sin(0)',
-    expectedNormalized: 'sin(0)',
+    source: ':sin(0)',
+    expectedNormalized: ':sin(0)',
     expectedValue: { type: 'float', value: 0 },
   },
   {
-    source: 'tan(0)',
-    expectedNormalized: 'tan(0)',
+    source: ':tan(0)',
+    expectedNormalized: ':tan(0)',
     expectedValue: { type: 'float', value: 0 },
   },
   {
-    source: 'float(1/2)',
-    expectedNormalized: 'float(1 / 2)',
+    source: ':float(1/2)',
+    expectedNormalized: ':float(1 / 2)',
     expectedValue: { type: 'float', value: 0.5 },
   },
 
@@ -417,18 +415,20 @@ const GOLDEN_CORPUS: GoldenTestCase[] = [
     expectedValue: { type: 'boolean', value: true },
   },
   {
-    source: '\u221a100',
-    expectedNormalized: 'sqrt(100)',
+    source: '\u221A100',
+    expectedNormalized: ':sqrt(100)',
     expectedValue: { type: 'rational', n: 10n, d: 1n },
   },
   {
-    source: 'sin(π)',
-    expectedNormalized: 'sin(pi)',
+    source: ':sin(:pi)',
+    setup: ['\\import "constants/pi.ax"'],
+    expectedNormalized: ':sin(:pi)',
     expectedValue: { type: 'float', value: 0 },
   },
   {
-    source: 'cos(τ)',
-    expectedNormalized: 'cos(tau)',
+    source: ':cos(:tau)',
+    setup: ['\\import "constants/tau.ax"'],
+    expectedNormalized: ':cos(:tau)',
     expectedValue: { type: 'float', value: 1 },
   },
 
@@ -436,22 +436,22 @@ const GOLDEN_CORPUS: GoldenTestCase[] = [
   {
     source: '1 / 0',
     expectedNormalized: '1 / 0',
-    expectedValue: { type: 'undefined' },
+    expectedValue: { type: 'expression' },
   },
   {
     source: '5 / (3 - 3)',
     expectedNormalized: '5 / (3 - 3)',
-    expectedValue: { type: 'undefined' },
+    expectedValue: { type: 'expression' },
   },
   {
-    source: 'sqrt(-1)',
-    expectedNormalized: 'sqrt(-1)',
-    expectedValue: { type: 'expression', text: 'sqrt(-1)' },
+    source: ':sqrt(-1)',
+    expectedNormalized: ':sqrt(-1)',
+    expectedValue: { type: 'expression', text: ':sqrt(-1)' },
   },
   {
-    source: 'sqrt(-16)',
-    expectedNormalized: 'sqrt(-16)',
-    expectedValue: { type: 'expression', text: 'sqrt(-16)' },
+    source: ':sqrt(-16)',
+    expectedNormalized: ':sqrt(-16)',
+    expectedValue: { type: 'expression', text: ':sqrt(-16)' },
   },
   {
     source: '(-4)^(1/2)',
@@ -461,36 +461,36 @@ const GOLDEN_CORPUS: GoldenTestCase[] = [
   {
     source: '0^0',
     expectedNormalized: '0^0',
-    expectedValue: { type: 'undefined' },
+    expectedValue: { type: 'expression' },
   },
   {
-    source: 'ln(0)',
-    expectedNormalized: 'ln(0)',
-    expectedValue: { type: 'expression', text: 'ln(0)' },
+    source: ':ln(0)',
+    expectedNormalized: ':ln(0)',
+    expectedValue: { type: 'expression', text: ':ln(0)' },
   },
   {
-    source: 'ln(-5)',
-    expectedNormalized: 'ln(-5)',
-    expectedValue: { type: 'expression', text: 'ln(-5)' },
+    source: ':ln(-5)',
+    expectedNormalized: ':ln(-5)',
+    expectedValue: { type: 'expression', text: ':ln(-5)' },
   },
   {
-    source: 'log(0)',
-    expectedNormalized: 'log(0)',
-    expectedValue: { type: 'expression', text: 'log(0)' },
+    source: ':log(0)',
+    expectedNormalized: ':log(0)',
+    expectedValue: { type: 'expression', text: ':log(0)' },
   },
   {
-    source: 'log(-10)',
-    expectedNormalized: 'log(-10)',
-    expectedValue: { type: 'expression', text: 'log(-10)' },
+    source: ':log(-10)',
+    expectedNormalized: ':log(-10)',
+    expectedValue: { type: 'expression', text: ':log(-10)' },
   },
   {
-    source: 'log2(0)',
-    expectedNormalized: 'log2(0)',
-    expectedValue: { type: 'expression', text: 'log2(0)' },
+    source: ':log2(0)',
+    expectedNormalized: ':log2(0)',
+    expectedValue: { type: 'expression', text: ':log2(0)' },
   },
   {
-    source: 'factorial(-3)',
-    expectedNormalized: 'factorial(-3)',
+    source: ':factorial(-3)',
+    expectedNormalized: ':factorial(-3)',
     expectedValue: { type: 'expression', text: '(-3)!' },
   },
   {
@@ -506,17 +506,14 @@ const GOLDEN_CORPUS: GoldenTestCase[] = [
 
   // --- 8. Error Cases (Syntax and unbound multi-letter identifiers) ---
   {
-    source: 'velocity + 1',
-    expectedError: {
-      messageContains: "'velocity' is not defined. Multi-letter names must be assigned before use",
-      suggestionContains: "Did you mean 'v·e·l·o·c·i·t·y' (implicit product) or did you mean to write 'velocity := ...' first?",
-    },
+    source: ':velocity + 1',
+    expectedNormalized: ':velocity + 1',
+    expectedValue: { type: 'expression' },
   },
   {
-    source: 'acceleration * 2',
-    expectedError: {
-      messageContains: "'acceleration' is not defined. Multi-letter names must be assigned before use",
-    },
+    source: ':acceleration * 2',
+    expectedNormalized: ':acceleration * 2',
+    expectedValue: { type: 'expression' },
   },
   {
     source: '',
@@ -557,7 +554,7 @@ const GOLDEN_CORPUS: GoldenTestCase[] = [
     },
   },
   {
-    source: 'graph(5)',
+    source: ':graph(5)',
     expectedError: {
       messageContains: 'graph() requires at least one free variable to plot against, found 0',
     },
@@ -598,8 +595,8 @@ for (let i = 0; i <= 15; i++) {
 for (let i = 1; i <= 20; i++) {
   GOLDEN_CORPUS.push({
     id: `gcd-${i}`,
-    source: `gcd(${i * 6}, ${i * 9})`,
-    expectedNormalized: `gcd(${i * 6}, ${i * 9})`,
+    source: `:gcd(${i * 6}, ${i * 9})`,
+    expectedNormalized: `:gcd(${i * 6}, ${i * 9})`,
     expectedValue: { type: 'rational', n: BigInt(i * 3), d: 1n },
   });
 }
@@ -607,8 +604,8 @@ for (let i = 1; i <= 20; i++) {
 for (let i = 1; i <= 20; i++) {
   GOLDEN_CORPUS.push({
     id: `lcm-${i}`,
-    source: `lcm(${i * 2}, ${i * 3})`,
-    expectedNormalized: `lcm(${i * 2}, ${i * 3})`,
+    source: `:lcm(${i * 2}, ${i * 3})`,
+    expectedNormalized: `:lcm(${i * 2}, ${i * 3})`,
     expectedValue: { type: 'rational', n: BigInt(i * 6), d: 1n },
   });
 }
@@ -616,8 +613,8 @@ for (let i = 1; i <= 20; i++) {
 for (let i = 1; i <= 20; i++) {
   GOLDEN_CORPUS.push({
     id: `sqrt-${i}`,
-    source: `sqrt(${i * i})`,
-    expectedNormalized: `sqrt(${i * i})`,
+    source: `:sqrt(${i * i})`,
+    expectedNormalized: `:sqrt(${i * i})`,
     expectedValue: { type: 'rational', n: BigInt(i), d: 1n },
   });
 }
@@ -702,12 +699,10 @@ describe(`Golden File Test Corpus (${GOLDEN_CORPUS.length} cases)`, () => {
               type: 'boolean',
               value: testCase.expectedValue.value,
             });
-          } else if (testCase.expectedValue.type === 'undefined') {
-            expect(value.type).toBe('undefined');
           } else if (testCase.expectedValue.type === 'expression') {
-            expect(value.type).toBe('expression');
+            expect(value.type === 'expression' || value.type === 'space').toBe(true);
             if (testCase.expectedValue.text) {
-              expect((value as any).text).toBe(testCase.expectedValue.text);
+              expect((value as any).text || (value as any).coordinates?.join(', ')).toBe(testCase.expectedValue.text);
             }
           }
         }

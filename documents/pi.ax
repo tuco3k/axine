@@ -1,0 +1,4 @@
+# pi.ax — Archimedes' constant pi
+\module :pi_constant
+:pi = 3.141592653589793
+\export :pi

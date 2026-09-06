@@ -155,39 +155,39 @@ describe('Phase 12 Part B & Gate E4: Views, Primitives, and Animation Player', (
   });
   it('parses and evaluates drawing primitives', () => {
     const env = createInitialEnvironment();
-    const { value: pt } = evaluate('p := point((1, 2))', env);
+    const { value: pt } = evaluate('p := :point((1, 2))', env);
     expect(pt.type).toBe('drawing_primitive');
     expect((pt as DrawingPrimitiveValue).primitive).toBe('point');
 
-    const { value: seg } = evaluate('s := segment((0, 0), (1, 1))', env);
+    const { value: seg } = evaluate('s := :segment((0, 0), (1, 1))', env);
     expect(seg.type).toBe('drawing_primitive');
     expect((seg as DrawingPrimitiveValue).primitive).toBe('segment');
 
-    const { value: arr } = evaluate('a := arrow((0, 0), (2, 3))', env);
+    const { value: arr } = evaluate('a := :arrow((0, 0), (2, 3))', env);
     expect(arr.type).toBe('drawing_primitive');
     expect((arr as DrawingPrimitiveValue).primitive).toBe('arrow');
 
-    const { value: circ } = evaluate('c := circle((0, 0), 5)', env);
+    const { value: circ } = evaluate('c := :circle((0, 0), 5)', env);
     expect(circ.type).toBe('drawing_primitive');
     expect((circ as DrawingPrimitiveValue).primitive).toBe('circle');
 
-    const { value: poly } = evaluate('pg := polygon([(0, 0), (2, 0), (1, 2)])', env);
+    const { value: poly } = evaluate(':pg := :polygon([(0, 0), (2, 0), (1, 2)])', env);
     expect(poly.type).toBe('drawing_primitive');
     expect((poly as DrawingPrimitiveValue).primitive).toBe('polygon');
 
-    const { value: pth } = evaluate('pt := path([(0, 0), (1, 1), (2, 4)])', env);
+    const { value: pth } = evaluate(':pt := :path([(0, 0), (1, 1), (2, 4)])', env);
     expect(pth.type).toBe('drawing_primitive');
     expect((pth as DrawingPrimitiveValue).primitive).toBe('path');
 
-    const { value: lbl } = evaluate('l := label("Origin", (0, 0))', env);
+    const { value: lbl } = evaluate('l := :label("Origin", (0, 0))', env);
     expect(lbl.type).toBe('drawing_primitive');
     expect((lbl as DrawingPrimitiveValue).primitive).toBe('label');
   });
 
   it('parses and evaluates user-declared view for record type', () => {
     const env = createInitialEnvironment();
-    evaluate('Particle := record { position, velocity }', env);
-    evaluate('view for Particle := p -> [circle(p.position, 2), arrow(p.position, p.velocity)]', env);
+    evaluate(":Particle := \\record { :position, :velocity }", env);
+    evaluate("\\view \\for :Particle := p -> [:circle(p.:position, 2), :arrow(p.:position, p.:velocity)]", env);
 
     const { value: viewsMap } = { value: (env as any).__views__ };
     expect(viewsMap).toBeDefined();
@@ -200,7 +200,7 @@ describe('Phase 12 Part B & Gate E4: Views, Primitives, and Animation Player', (
 
     const env = createInitialEnvironment();
     const { value: trajVal } = evaluate(
-      'simulate(s -> (s[0] + 0.1, s[1] + 0.2), (0, 0), t in 0..1, dt: 0.1)',
+      ":simulate(s -> (s[0] + 0.1, s[1] + 0.2), (0, 0), t \\in 0..1, :dt: 0.1)",
       env
     );
     expect(trajVal.type).toBe('trajectory');
@@ -247,7 +247,7 @@ describe('Phase 12 Part B & Gate E4: Views, Primitives, and Animation Player', (
 
     const env = createInitialEnvironment();
     const { value: trajVal } = evaluate(
-      'simulate(s -> (s[0] + 1, s[1] + 1), (0, 0), t in 0..5, dt: 1.0)',
+      ":simulate(s -> (s[0] + 1, s[1] + 1), (0, 0), t \\in 0..5, :dt: 1.0)",
       env
     );
 

@@ -6,7 +6,7 @@
 import { ASTNode, Environment, Span, StepRule } from './types';
 import { parse } from './parser';
 import { formatAST } from './formatter';
-import { evaluate } from './evaluator';
+import { evaluate, Evaluator, createInitialEnvironment } from './evaluator';
 import { valueToNumber } from './numeric/tower';
 import { createError } from './errors';
 import { AlgebraicSimplifier } from './algebra/simplify';
@@ -256,13 +256,13 @@ export class SymbolicDifferentiator {
             // Exponential rule: d/dx(a^u) = a^u * ln(a) * du/dx
             const aStr = formatAST(base);
             const du = this.diff(exp);
-            const resStr = `(${nodeStr}) * ln(${aStr}) * (${formatAST(du)})`;
+            const resStr = `(${nodeStr}) * :ln(${aStr}) * (${formatAST(du)})`;
             const res = parse(resStr);
             this.addStep(
               'general-exponential-rule',
               `d/d${varName}(${nodeStr})`,
               formatAST(res),
-              `General exponential rule: d/d${varName}(${aStr}^u) = ${aStr}^u * ln(${aStr}) * du/d${varName} with u = ${formatAST(exp)}`,
+              `General exponential rule: d/d${varName}(${aStr}^u) = ${aStr}^u * :ln(${aStr}) * du/d${varName} with u = ${formatAST(exp)}`,
               formatAST(exp)
             );
             return res;
@@ -272,13 +272,13 @@ export class SymbolicDifferentiator {
           // y = u^v => y' = u^v * (v' * ln(u) + v * u'/u)
           const du = this.diff(base);
           const dv = this.diff(exp);
-          const resStr = `(${nodeStr}) * ((${formatAST(dv)}) * ln(${formatAST(base)}) + (${formatAST(exp)}) * (${formatAST(du)}) / (${formatAST(base)}))`;
+          const resStr = `(${nodeStr}) * ((${formatAST(dv)}) * :ln(${formatAST(base)}) + (${formatAST(exp)}) * (${formatAST(du)}) / (${formatAST(base)}))`;
           const res = parse(resStr);
           this.addStep(
             'logarithmic-differentiation',
             `d/d${varName}(${nodeStr})`,
             formatAST(res),
-            `Logarithmic differentiation for variable base and exponent: d/d${varName}(u^v) = u^v * (v'*ln(u) + v*u'/u) with u = ${formatAST(base)}, v = ${formatAST(exp)}`,
+            `Logarithmic differentiation for variable base and exponent: d/d${varName}(u^v) = u^v * (v'*:ln(u) + v*u'/u) with u = ${formatAST(base)}, v = ${formatAST(exp)}`,
             formatAST(base)
           );
           return res;
@@ -297,97 +297,98 @@ export class SymbolicDifferentiator {
   }
 
   private diffFunction(fnName: string, args: ASTNode[], span: Span): ASTNode {
+    const cleanName = fnName.replace(/^:/, '');
     const varName = this.varName;
     if (args.length === 0) {
-      throw createError(`Function '${fnName}' requires arguments for differentiation`, span);
+      throw createError(`Function '${cleanName}' requires arguments for differentiation`, span);
     }
     const u = args[0];
     const uStr = formatAST(u);
 
     if (!this.containsVar(u, varName)) {
       const res = parse('0');
-      this.addStep('constant-rule', `d/d${varName}(${fnName}(${uStr}))`, '0', `Derivative of constant function application is 0`);
+      this.addStep('constant-rule', `d/d${varName}(:${cleanName}(${uStr}))`, '0', `Derivative of constant function application is 0`);
       return res;
     }
 
     const du = this.diff(u);
     const duStr = formatAST(du);
 
-    switch (fnName) {
+    switch (cleanName) {
       case 'sin': {
-        const resStr = `cos(${uStr}) * (${duStr})`;
+        const resStr = `:cos(${uStr}) * (${duStr})`;
         const res = parse(resStr);
-        this.addStep('sin-rule', `d/d${varName}(sin(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(sin(u)) = cos(u) * du/d${varName}`, uStr);
+        this.addStep('sin-rule', `d/d${varName}(:sin(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(:sin(u)) = :cos(u) * du/d${varName}`, uStr);
         return res;
       }
 
       case 'cos': {
-        const resStr = `-sin(${uStr}) * (${duStr})`;
+        const resStr = `-:sin(${uStr}) * (${duStr})`;
         const res = parse(resStr);
-        this.addStep('cos-rule', `d/d${varName}(cos(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(cos(u)) = -sin(u) * du/d${varName}`, uStr);
+        this.addStep('cos-rule', `d/d${varName}(:cos(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(:cos(u)) = -:sin(u) * du/d${varName}`, uStr);
         return res;
       }
 
       case 'tan': {
-        const resStr = `(1 + tan(${uStr})^2) * (${duStr})`;
+        const resStr = `(1 + :tan(${uStr})^2) * (${duStr})`;
         const res = parse(resStr);
-        this.addStep('tan-rule', `d/d${varName}(tan(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(tan(u)) = (1 + tan(u)^2) * du/d${varName}`, uStr);
+        this.addStep('tan-rule', `d/d${varName}(:tan(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(:tan(u)) = (1 + :tan(u)^2) * du/d${varName}`, uStr);
         return res;
       }
 
       case 'asin': {
-        const resStr = `(${duStr}) / sqrt(1 - (${uStr})^2)`;
+        const resStr = `(${duStr}) / :sqrt(1 - (${uStr})^2)`;
         const res = parse(resStr);
-        this.addStep('asin-rule', `d/d${varName}(asin(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(asin(u)) = (1 / sqrt(1 - u^2)) * du/d${varName}`, uStr);
+        this.addStep('asin-rule', `d/d${varName}(:asin(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(:asin(u)) = (1 / :sqrt(1 - u^2)) * du/d${varName}`, uStr);
         return res;
       }
 
       case 'acos': {
-        const resStr = `-(${duStr}) / sqrt(1 - (${uStr})^2)`;
+        const resStr = `-(${duStr}) / :sqrt(1 - (${uStr})^2)`;
         const res = parse(resStr);
-        this.addStep('acos-rule', `d/d${varName}(acos(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(acos(u)) = (-1 / sqrt(1 - u^2)) * du/d${varName}`, uStr);
+        this.addStep('acos-rule', `d/d${varName}(:acos(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(:acos(u)) = (-1 / :sqrt(1 - u^2)) * du/d${varName}`, uStr);
         return res;
       }
 
       case 'atan': {
         const resStr = `(${duStr}) / (1 + (${uStr})^2)`;
         const res = parse(resStr);
-        this.addStep('atan-rule', `d/d${varName}(atan(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(atan(u)) = (1 / (1 + u^2)) * du/d${varName}`, uStr);
+        this.addStep('atan-rule', `d/d${varName}(:atan(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(:atan(u)) = (1 / (1 + u^2)) * du/d${varName}`, uStr);
         return res;
       }
 
       case 'sinh': {
-        const resStr = `cosh(${uStr}) * (${duStr})`;
+        const resStr = `:cosh(${uStr}) * (${duStr})`;
         const res = parse(resStr);
-        this.addStep('sinh-rule', `d/d${varName}(sinh(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(sinh(u)) = cosh(u) * du/d${varName}`, uStr);
+        this.addStep('sinh-rule', `d/d${varName}(:sinh(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(:sinh(u)) = :cosh(u) * du/d${varName}`, uStr);
         return res;
       }
 
       case 'cosh': {
-        const resStr = `sinh(${uStr}) * (${duStr})`;
+        const resStr = `:sinh(${uStr}) * (${duStr})`;
         const res = parse(resStr);
-        this.addStep('cosh-rule', `d/d${varName}(cosh(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(cosh(u)) = sinh(u) * du/d${varName}`, uStr);
+        this.addStep('cosh-rule', `d/d${varName}(:cosh(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(:cosh(u)) = :sinh(u) * du/d${varName}`, uStr);
         return res;
       }
 
       case 'tanh': {
-        const resStr = `(1 - tanh(${uStr})^2) * (${duStr})`;
+        const resStr = `(1 - :tanh(${uStr})^2) * (${duStr})`;
         const res = parse(resStr);
-        this.addStep('tanh-rule', `d/d${varName}(tanh(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(tanh(u)) = (1 - tanh(u)^2) * du/d${varName}`, uStr);
+        this.addStep('tanh-rule', `d/d${varName}(:tanh(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(:tanh(u)) = (1 - :tanh(u)^2) * du/d${varName}`, uStr);
         return res;
       }
 
       case 'exp': {
-        const resStr = `exp(${uStr}) * (${duStr})`;
+        const resStr = `:exp(${uStr}) * (${duStr})`;
         const res = parse(resStr);
-        this.addStep('exp-rule', `d/d${varName}(exp(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(exp(u)) = exp(u) * du/d${varName}`, uStr);
+        this.addStep('exp-rule', `d/d${varName}(:exp(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(:exp(u)) = :exp(u) * du/d${varName}`, uStr);
         return res;
       }
 
       case 'ln': {
         const resStr = `(${duStr}) / (${uStr})`;
         const res = parse(resStr);
-        this.addStep('ln-rule', `d/d${varName}(ln(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(ln(u)) = (1/u) * du/d${varName}`, uStr);
+        this.addStep('ln-rule', `d/d${varName}(:ln(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(:ln(u)) = (1/u) * du/d${varName}`, uStr);
         return res;
       }
 
@@ -396,32 +397,32 @@ export class SymbolicDifferentiator {
         if (args.length === 1) {
           const resStr = `(${duStr}) / (${uStr})`;
           const res = parse(resStr);
-          this.addStep('ln-rule', `d/d${varName}(log(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(ln(u)) = (1/u) * du/d${varName}`, uStr);
+          this.addStep('ln-rule', `d/d${varName}(:log(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(:ln(u)) = (1/u) * du/d${varName}`, uStr);
           return res;
         }
         const baseStr = formatAST(args[1]);
-        const resStr = `(${duStr}) / ((${uStr}) * ln(${baseStr}))`;
+        const resStr = `(${duStr}) / ((${uStr}) * :ln(${baseStr}))`;
         const res = parse(resStr);
-        this.addStep('log-base-rule', `d/d${varName}(log(${uStr}, ${baseStr}))`, formatAST(res), `Chain rule with u = ${uStr}, base = ${baseStr}: d/d${varName}(log_a(u)) = (1 / (u * ln(a))) * du/d${varName}`, uStr);
+        this.addStep('log-base-rule', `d/d${varName}(:log(${uStr}, ${baseStr}))`, formatAST(res), `Chain rule with u = ${uStr}, base = ${baseStr}: d/d${varName}(log_a(u)) = (1 / (u * :ln(a))) * du/d${varName}`, uStr);
         return res;
       }
 
       case 'log2': {
-        const resStr = `(${duStr}) / ((${uStr}) * ln(2))`;
+        const resStr = `(${duStr}) / ((${uStr}) * :ln(2))`;
         const res = parse(resStr);
-        this.addStep('log-base-rule', `d/d${varName}(log2(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}, base = 2: d/d${varName}(log2(u)) = (1 / (u * ln(2))) * du/d${varName}`, uStr);
+        this.addStep('log-base-rule', `d/d${varName}(:log2(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}, base = 2: d/d${varName}(log2(u)) = (1 / (u * :ln(2))) * du/d${varName}`, uStr);
         return res;
       }
 
       case 'sqrt': {
-        const resStr = `(${duStr}) / (2 * sqrt(${uStr}))`;
+        const resStr = `(${duStr}) / (2 * :sqrt(${uStr}))`;
         const res = parse(resStr);
-        this.addStep('sqrt-rule', `d/d${varName}(sqrt(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(sqrt(u)) = (1 / (2*sqrt(u))) * du/d${varName}`, uStr);
+        this.addStep('sqrt-rule', `d/d${varName}(:sqrt(${uStr}))`, formatAST(res), `Chain rule with u = ${uStr}: d/d${varName}(:sqrt(u)) = (1 / (2*:sqrt(u))) * du/d${varName}`, uStr);
         return res;
       }
 
       default:
-        throw createError(`No derivative rule implemented for function '${fnName}'`, span);
+        throw createError(`No derivative rule implemented for function '${cleanName}'`, span);
     }
   }
 
@@ -470,7 +471,7 @@ export function verifyDerivativeNumerically(
   const stepSize = (maxX - minX) / (numSamples + 1);
 
   const freeVars = extractFreeVariables(origAST);
-  const baseEnv: Environment = {};
+  const baseEnv: Environment = createInitialEnvironment();
   for (const v of freeVars) {
     if (v !== varName) {
       baseEnv[v] = { type: 'float', value: 1.5 };
@@ -491,9 +492,9 @@ export function verifyDerivativeNumerically(
       const envMinus: Environment = { ...baseEnv, [varName]: { type: 'float', value: x - h } };
       const envExact: Environment = { ...baseEnv, [varName]: { type: 'float', value: x } };
 
-      const fPlusVal = evaluate(formatAST(origAST), envPlus).value;
-      const fMinusVal = evaluate(formatAST(origAST), envMinus).value;
-      const fSymVal = evaluate(formatAST(derivAST), envExact).value;
+      const fPlusVal = new Evaluator(envPlus).evaluate(origAST);
+      const fMinusVal = new Evaluator(envMinus).evaluate(origAST);
+      const fSymVal = new Evaluator(envExact).evaluate(derivAST);
 
       const fPlus = valueToNumber(fPlusVal);
       const fMinus = valueToNumber(fMinusVal);
@@ -884,12 +885,12 @@ export function differentiateAtPoint(
   }
 
   // 2. Corner point / absolute value non-differentiability
-  if (exprStr === `abs(${varName})` && Math.abs(point) < 1e-8) {
+  if ((exprStr === `abs(${varName})` || exprStr === `:abs(${varName})` || (ast.type === 'FunctionCall' && (ast.callee === 'abs' || ast.callee === ':abs'))) && Math.abs(point) < 1e-8) {
     throw createError(`Function 'abs' is non-differentiable at ${varName} = 0 (corner point: left derivative -1 != right derivative +1)`, ast.span);
   }
 
   // 3. Vertical tangent / cusp: sqrt(x) at x = 0
-  if (exprStr === `sqrt(${varName})` && Math.abs(point) < 1e-8) {
+  if ((exprStr === `sqrt(${varName})` || exprStr === `:sqrt(${varName})` || (ast.type === 'FunctionCall' && (ast.callee === 'sqrt' || ast.callee === ':sqrt'))) && Math.abs(point) < 1e-8) {
     throw createError(`Function 'sqrt' is non-differentiable at ${varName} = 0 (infinite vertical derivative limit)`, ast.span);
   }
 
@@ -899,13 +900,13 @@ export function differentiateAtPoint(
   }
 
   // 5. Negative square root domain violation
-  if (exprStr.includes('sqrt(') && point < 0) {
+  if ((exprStr.includes('sqrt(') || exprStr.includes(':sqrt(')) && point < 0) {
     throw createError(`Expression undefined / non-differentiable at ${varName} = ${point} (negative radicand domain violation)`, ast.span);
   }
 
   const symResult = computeSymbolicDerivative(ast, varName);
-  const env: Environment = { [varName]: { type: 'float', value: point } };
-  const val = evaluate(symResult.derivativeStr, env).value;
+  const env: Environment = { ...createInitialEnvironment(), [varName]: { type: 'float', value: point } };
+  const val = new Evaluator(env).evaluate(symResult.derivativeAST);
   const numVal = valueToNumber(val);
 
   if (isNaN(numVal) || !isFinite(numVal)) {

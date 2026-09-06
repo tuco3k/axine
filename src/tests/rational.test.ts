@@ -10,17 +10,19 @@ describe('Numeric Tower & Exact Rationals', () => {
     expect(sum3).toEqual({ type: 'rational', n: 1n, d: 1n });
   });
 
-  it('handles division by zero as undefined', () => {
+  it('handles division by zero as unreduced standing expression', () => {
     const one = makeRational(1n, 1n);
     const zero = makeRational(0n, 1n);
-    expect(divValues(one, zero)).toEqual({ type: 'undefined' });
+    const res = divValues(one, zero);
+    expect(res.type).toBe('expression');
+    expect((res as any).text).toBe('1 / 0');
   });
 
   it('sqrt(-1) stands unreduced as sqrt(-1) expression', () => {
     const negOne = makeRational(-1n, 1n);
     const res = sqrtValue(negOne);
     expect(res.type).toBe('expression');
-    expect((res as any).text).toBe('sqrt(-1)');
+    expect((res as any).text).toBe(':sqrt(-1)');
   });
 
   it('exact square roots return exact rationals', () => {
@@ -40,9 +42,11 @@ describe('Numeric Tower & Exact Rationals', () => {
     }
   });
 
-  it('0^0 reduces to undefined', () => {
+  it('0^0 reduces to unreduced standing expression', () => {
     const zero = makeRational(0n, 1n);
-    expect(powValues(zero, zero)).toEqual({ type: 'undefined' });
+    const res = powValues(zero, zero);
+    expect(res.type).toBe('expression');
+    expect((res as any).text).toBe('0^0');
   });
 
   it('factorial handles non-negative integers exactly and stands unreduced for negatives/non-integers', () => {

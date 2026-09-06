@@ -354,10 +354,11 @@ export function inferExpressionDimensions(node: ASTNode): DimensionResult {
         return {};
 
       case 'Identifier': {
-        if (CONSTANT_IDENTIFIERS.has(n.name)) {
+        const cleanName = n.name.replace(/^:/, '');
+        if (CONSTANT_IDENTIFIERS.has(cleanName) || cleanName === 'pi' || cleanName === 'tau' || cleanName === 'phi' || cleanName === 'e') {
           return {};
         }
-        return { [n.name]: 1 };
+        return { [cleanName]: 1 };
       }
 
       case 'UnaryOp': {
@@ -423,7 +424,7 @@ export function inferExpressionDimensions(node: ASTNode): DimensionResult {
       }
 
       case 'FunctionCall': {
-        const fnName = n.callee;
+        const fnName = n.callee.replace(/^:/, '');
         if (TRANSCENDENTAL_FUNCTIONS.has(fnName)) {
           if (n.args.length > 0) {
             const argDim = walk(n.args[0]);

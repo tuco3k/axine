@@ -1,11 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { evaluate, createInitialEnvironment } from '../core/evaluator';
 import { SpaceValue } from '../core/types';
 import { sampleSlice } from '../core/sampler';
 import { SpaceViewport } from '../plot/space_viewport';
 
 describe('Rewrite Phase 3: Spaces', () => {
-  const env = createInitialEnvironment();
+  let env = createInitialEnvironment();
+  beforeEach(() => {
+    env = createInitialEnvironment();
+  });
 
   describe('The 8 Phase 3 Dimensionality Test Cases', () => {
     // 1. x = 0 (1 free variable, evaluated in 2D Cartesian plane)
@@ -48,9 +51,9 @@ describe('Rewrite Phase 3: Spaces', () => {
       expect(space.entities.length).toBe(1);
     });
 
-    // 5. y = sin(x) (2D sine wave)
-    it('5. y = sin(x) creates 2D space with coordinates ["x", "y"]', () => {
-      const { value } = evaluate('y = sin(x)', env);
+    // 5. y = :sin(x) (2D sine wave)
+    it('5. y = :sin(x) creates 2D space with coordinates ["x", "y"]', () => {
+      const { value } = evaluate('y = :sin(x)', env);
       expect(value.type).toBe('space');
       const space = value as SpaceValue;
       expect(space.dimension).toBe(2);
@@ -95,11 +98,11 @@ describe('Rewrite Phase 3: Spaces', () => {
       expect(space.nestedSpaces![0].entities.length).toBe(1);
     });
 
-    // 8. sqrt(-1) < 3 (unreduced standing expression, no canvas)
-    it('8. sqrt(-1) < 3 evaluates cleanly to unreduced expression sqrt(-1) < 3', () => {
-      const { value } = evaluate('sqrt(-1) < 3', env);
+    // 8. :sqrt(-1) < 3 (unreduced standing expression, no canvas)
+    it('8. :sqrt(-1) < 3 evaluates cleanly to unreduced expression :sqrt(-1) < 3', () => {
+      const { value } = evaluate(':sqrt(-1) < 3', env);
       expect(value.type).toBe('expression');
-      expect((value as any).text).toBe('sqrt(-1) < 3');
+      expect((value as any).text).toBe(':sqrt(-1) < 3');
     });
   });
 

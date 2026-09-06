@@ -10,12 +10,12 @@ describe('Gate G1: Mathematical Kinds & Lattice', () => {
   };
 
   const getKindStr = (code: string) => {
-    const res = run(`kindof(${code})`);
+    const res = run(`:kindof(${code})`);
     expect(res.value.type).toBe('kind');
     return formatKind((res.value as KindValue).kind);
   };
 
-  it('evaluates kindof() correctly on 20 diverse expressions', () => {
+  it('evaluates :kindof() correctly on 20 diverse expressions', () => {
     const testCases: [string, string][] = [
       // 1. Natural integer
       ['42', 'Scalar(Natural)'],
@@ -26,9 +26,9 @@ describe('Gate G1: Mathematical Kinds & Lattice', () => {
       // 4. Decimal rational
       ['0.75', 'Scalar(Rational)'],
       // 5. Floating-point real
-      ['float(3.14159)', 'Scalar(Real)'],
+      [':float(3.14159)', 'Scalar(Real)'],
       // 6. Transcendental constant
-      ['pi', 'Scalar(Real)'],
+      [':pi', 'Scalar(Real)'],
       // 7. Vector from tuple
       ['(1, 2, 3)', 'Vector(dim=3, field=R)'],
       // 8. Vector from list
@@ -36,9 +36,9 @@ describe('Gate G1: Mathematical Kinds & Lattice', () => {
       // 9. 4D Vector
       ['(1, 0, 0, 1)', 'Vector(dim=4, field=R)'],
       // 10. Matrix 2x2
-      ['matrix([[1, 2], [3, 4]])', 'Matrix(shape=2x2, field=R)'],
+      [':matrix([[1, 2], [3, 4]])', 'Matrix(shape=2x2, field=R)'],
       // 11. Matrix 3x2
-      ['matrix([[1, 0], [0, 1], [1, 1]])', 'Matrix(shape=3x2, field=R)'],
+      [':matrix([[1, 0], [0, 1], [1, 1]])', 'Matrix(shape=3x2, field=R)'],
       // 12. Closed Interval
       ['1..10', 'Interval(closed, [1..10])'],
       // 13. Standard Reals Set
@@ -54,9 +54,9 @@ describe('Gate G1: Mathematical Kinds & Lattice', () => {
       // 18. Lambda function
       ['x -> x^2', 'Function(Scalar(Real) -> Scalar(Real))'],
       // 19. Boolean truth value
-      ['true', 'Scalar(Natural)'],
+      ['\\true', 'Scalar(Natural)'],
       // 20. Evaluated scalar arithmetic
-      ['sin(0.5) * exp(2.0)', 'Scalar(Real)'],
+      [':sin(0.5) * :exp(2.0)', 'Scalar(Real)'],
     ];
 
     expect(testCases.length).toBe(20);
@@ -67,27 +67,27 @@ describe('Gate G1: Mathematical Kinds & Lattice', () => {
     }
   });
 
-  it('reports operational admissibility with admits()', () => {
-    const resVec = run('admits([1, 2, 3])');
+  it('reports operational admissibility with :admits()', () => {
+    const resVec = run(':admits([1, 2, 3])');
     expect(resVec.value.type).toBe('list');
     const vecOps = (resVec.value as any).elements.map((e: any) => e.value);
     expect(vecOps).toContain('+');
     expect(vecOps.some((op: string) => op.includes('dot'))).toBe(true);
 
-    const resScalar = run('admits(42)');
+    const resScalar = run(':admits(42)');
     expect(resScalar.value.type).toBe('list');
     const scalarOps = (resScalar.value as any).elements.map((e: any) => e.value);
     expect(scalarOps).toContain('sin');
     expect(scalarOps).toContain('sqrt');
   });
 
-  it('checks and executes kind coercions with coerce()', () => {
+  it('checks and executes kind coercions with :coerce()', () => {
     // Column vector coercion to matrix
-    const resCoerce = run('coerce([1, 2, 3], to: matrix([[1], [2], [3]]))');
+    const resCoerce = run(':coerce([1, 2, 3], :to: :matrix([[1], [2], [3]]))');
     expect(resCoerce.value.type).toBe('list');
 
     // Incompatible coercion fails with precise reason
-    expect(() => run('coerce(R, to: (1, 2, 3))')).toThrowError(/Cannot coerce Set\(.*\)/);
+    expect(() => run(':coerce(R, :to: (1, 2, 3))')).toThrowError(/Cannot coerce Set\(.*\)/);
   });
 
   it('kind checking catches real errors naming both kinds and the operation', () => {
@@ -102,17 +102,17 @@ describe('Gate G1: Mathematical Kinds & Lattice', () => {
     );
 
     // 3. 3-vector dotted with 2-vector -> error naming both dimensions
-    expect(() => run('inner([1, 2, 3], [4, 5])')).toThrowError(
+    expect(() => run(':inner([1, 2, 3], [4, 5])')).toThrowError(
       /Cannot compute inner product of Vector\(dim=3, field=R\) and Vector\(dim=2, field=R\): dimension mismatch \(3 vs 2\)/
     );
 
     // 4. Sin of a vector -> error naming Vector kind and Scalar domain
-    expect(() => run('sin([1, 2, 3])')).toThrowError(
+    expect(() => run(':sin([1, 2, 3])')).toThrowError(
       /Cannot apply sin to Vector\(dim=3, field=R\): sin has domain Scalar/
     );
 
     // 5. Sqrt of a vector -> error naming Vector kind and Scalar domain
-    expect(() => run('sqrt((1, 4, 9))')).toThrowError(
+    expect(() => run(':sqrt((1, 4, 9))')).toThrowError(
       /Cannot apply sqrt to Vector\(dim=3, field=R\): sqrt has domain Scalar/
     );
   });

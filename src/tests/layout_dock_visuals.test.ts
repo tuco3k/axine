@@ -333,7 +333,7 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
   });
 
   it('persists dock edge and size per orientation (Right, Bottom, Left, Top)', () => {
-    editor = new DocumentEditor(container as any, 'f(x) := sin(x)\ngraph(f(x), x in 0..10)');
+    editor = new DocumentEditor(container as any, 'f(x) := :sin(x)\n:graph(f(x), x \\in 0..10)');
 
     // 1. Default is Right dock with 480px width
     const workspace = container.querySelector('#doc-workspace');
@@ -396,8 +396,8 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
   it('renders plots, derivations, standing expressions, and scalars inline in Results gutter', () => {
     const docText = [
       'a := 15',
-      'graph(sin(x), x in 0..10)',
-      'isolate(x^2 - 4 = 0, for: x)',
+      ':graph(:sin(x), x \\in 0..10)',
+      ':isolate(x^2 - 4 == 0, :for: x)',
       '\u222c_S F \u00b7 dS',
     ].join('\n');
 
@@ -437,8 +437,8 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
 
   it('supports pinning visual items into top pinned slot and unpinning', () => {
     const docText = [
-      'graph(cos(x), x in 0..5)',
-      'isolate(x^2 = 9, for: x)',
+      ':graph(:cos(x), x \\in 0..5)',
+      ':isolate(x^2 == 9, :for: x)',
     ].join('\n');
 
     editor = new DocumentEditor(container as any, docText);
@@ -470,7 +470,7 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
   });
 
   it('supports expanding and collapsing individual gutter rows with persisted collapse', () => {
-    const docText = 'graph(sin(x), x in 0..10)';
+    const docText = ':graph(:sin(x), x \\in 0..10)';
     editor = new DocumentEditor(container as any, docText);
 
     const row = container.querySelector('.doc-gutter-row[data-line="0"]');

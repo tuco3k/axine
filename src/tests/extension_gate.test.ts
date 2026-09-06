@@ -539,11 +539,11 @@ describe('Phase 4: Extension, Invariants I4 & I5, and Gutter Expression Renderin
           name: 'Function definition substitution',
           run: () => {
             const env = createInitialEnvironment();
-            evaluate('sq(t) := t^2', env);
+            evaluate(':sq(t) := t^2', env);
             const code = `
               {
-                y = sq(x)
-                v = sq(u)
+                y = :sq(x)
+                v = :sq(u)
               }
             `;
             return evaluate(code, env).value as SpaceValue;

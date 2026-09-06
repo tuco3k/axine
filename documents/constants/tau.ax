@@ -1,0 +1,5 @@
+# tau.ax — Circle constant tau = 2 * pi
+\module :tau_constant
+\import "constants/pi.ax"
+:tau = 2 * :pi
+\export :tau

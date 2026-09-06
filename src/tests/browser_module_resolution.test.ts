@@ -7,7 +7,7 @@ describe('Unified Module Resolution in Browser and Node', () => {
     expect('code' in res).toBe(true);
     if ('code' in res) {
       expect(res.canonicalPath).toBe('physics.ax');
-      expect(res.code).toContain('module physics');
+      expect(res.code).toContain('\\module :physics');
     }
   });
 
@@ -23,24 +23,24 @@ describe('Unified Module Resolution in Browser and Node', () => {
 
   it('reports missing module and lists all searched paths', () => {
     const env = createInitialEnvironment();
-    expect(() => evaluate('import "missing_library_xyz.ax"', env)).toThrowError(
+    expect(() => evaluate("\\import \"missing_library_xyz.ax\"", env)).toThrowError(
       /Cannot find module 'missing_library_xyz\.ax'\. Looked for:.*missing_library_xyz\.ax/
     );
   });
 
   it('rejects cyclic module imports naming all participating files', () => {
-    Evaluator.virtualFiles.set('mod_alpha.ax', 'import "mod_beta.ax"');
-    Evaluator.virtualFiles.set('mod_beta.ax', 'import "mod_alpha.ax"');
+    Evaluator.virtualFiles.set('mod_alpha.ax', '\\import "mod_beta.ax"');
+    Evaluator.virtualFiles.set('mod_beta.ax', '\\import "mod_alpha.ax"');
 
     const env = createInitialEnvironment();
-    expect(() => evaluate('import "mod_alpha.ax"', env)).toThrowError(
+    expect(() => evaluate("\\import \"mod_alpha.ax\"", env)).toThrowError(
       /Cyclic module import detected: mod_alpha\.ax -> mod_beta\.ax -> mod_alpha\.ax/
     );
   });
 
   it('evaluates physics.ax and exports all symbols into importing environment', () => {
     const env = createInitialEnvironment();
-    evaluate('import "physics.ax"', env);
+    evaluate("\\import \"physics.ax\"", env);
 
     expect(env.Body).toBeDefined();
     expect(env.euler_step).toBeDefined();

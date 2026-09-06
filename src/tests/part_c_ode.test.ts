@@ -6,7 +6,7 @@ import { parse } from '../core/parser';
 
 describe('Phase 12 Part A.2 & Gate E3: ode() with RK4 and Classification', () => {
   it('classifies dy//dt = -2*y and generates symbolic derivation steps', () => {
-    const parsed = parse("dy//dt = -2 * y");
+    const parsed = parse("d//dt y = -2 * y");
     const classification = classifyODE(parsed, 'y', 't');
 
     expect(classification.type).toBe('linear_first_order');
@@ -21,9 +21,9 @@ describe('Phase 12 Part A.2 & Gate E3: ode() with RK4 and Classification', () =>
 
   it('solves dy/dt = -2y, y(0) = 1 over 0..2, confirms RK4 error is bounded by C*dt^4', () => {
     const env1 = createInitialEnvironment();
-    evaluate('traj1 := ode(dy//dt = -2 * y, y(0) = 1, t in 0..2, dt: 0.05)', env1);
+    evaluate(":traj1 := :ode(d//dt y = -2 * y, y(0) = 1, t \\in 0..2, :dt: 0.05)", env1);
 
-    const { value: trajVal1 } = evaluate('traj1', env1);
+    const { value: trajVal1 } = evaluate(':traj1', env1);
     expect(trajVal1.type).toBe('trajectory');
 
     if (trajVal1.type === 'trajectory') {
@@ -37,7 +37,7 @@ describe('Phase 12 Part A.2 & Gate E3: ode() with RK4 and Classification', () =>
       expect(err1).toBeLessThan(1e-4);
 
       // Value at t = 2: exact is e^(-4) ~= 0.01831563888873418
-      const { value: yEndVal1 } = evaluate('traj1[2]', env1);
+      const { value: yEndVal1 } = evaluate(':traj1[2]', env1);
       const yEnd1 = valueToNumber(yEndVal1);
       const exactEnd = Math.exp(-4);
       const actualErr1 = Math.abs(yEnd1 - exactEnd);
@@ -45,10 +45,10 @@ describe('Phase 12 Part A.2 & Gate E3: ode() with RK4 and Classification', () =>
 
       // Now solve with dt = 0.025 (half step size) to confirm O(dt^4) convergence
       const env2 = createInitialEnvironment();
-      evaluate('traj2 := ode(dy//dt = -2 * y, y(0) = 1, t in 0..2, dt: 0.025)', env2);
-      const { value: trajVal2 } = evaluate('traj2', env2);
+      evaluate(":traj2 := :ode(d//dt y = -2 * y, y(0) = 1, t \\in 0..2, :dt: 0.025)", env2);
+      const { value: trajVal2 } = evaluate(':traj2', env2);
       if (trajVal2.type === 'trajectory') {
-        const { value: yEndVal2 } = evaluate('traj2[2]', env2);
+        const { value: yEndVal2 } = evaluate(':traj2[2]', env2);
         const yEnd2 = valueToNumber(yEndVal2);
         const actualErr2 = Math.abs(yEnd2 - exactEnd);
 
