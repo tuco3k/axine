@@ -89,6 +89,12 @@ describe('Pure Relational Architecture Gates (1 through 5)', () => {
       if (astAxis.type === 'AxisDecl') {
         expect(astAxis.axes).toEqual(['X', 'Y']);
       }
+
+      const astBareAxis = parse('\\axis X, Y, Z');
+      expect(astBareAxis.type).toBe('AxisDecl');
+      if (astBareAxis.type === 'AxisDecl') {
+        expect(astBareAxis.axes).toEqual(['X', 'Y', 'Z']);
+      }
     });
   });
 
@@ -104,6 +110,26 @@ describe('Pure Relational Architecture Gates (1 through 5)', () => {
         const interval = ast.right as any;
         expect(interval.kind).toBe('closed');
       }
+
+      // Half-open and open intervals
+      const rightOpen = (parse('x \\in [0, 1)') as any).right;
+      expect(rightOpen.type).toBe('Interval');
+      expect(rightOpen.kind).toBe('right_open');
+
+      const leftOpen = (parse('x \\in (0, 1]') as any).right;
+      expect(leftOpen.type).toBe('Interval');
+      expect(leftOpen.kind).toBe('left_open');
+
+      const openInt = (parse('x \\in (0, 1)') as any).right;
+      expect(openInt.type).toBe('Interval');
+      expect(openInt.kind).toBe('open');
+
+      // Standalone list and tuple
+      const listLit = parse('[0, 1]');
+      expect(listLit.type).toBe('List');
+
+      const tupleLit = parse('(0, 1)');
+      expect(tupleLit.type).toBe('Tuple');
     });
 
     it('evaluates numeric membership in intervals', () => {

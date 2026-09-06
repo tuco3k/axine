@@ -367,7 +367,7 @@ function formatNode(node: ASTNode, parentPrec: number): string {
       return `${lBracket}${startStr}, ${endStr}${rBracket}`;
     }
     case 'AxisDecl': {
-      return `\\axis[${node.axes.map(formatIdent).join(', ')}]`;
+      return `\\axis ${node.axes.map(formatIdent).join(', ')}`;
     }
     case 'Where': {
       return `${formatNode(node.expr, PREC_NONE)} \\where ${formatNode(node.condition, PREC_NONE)}`;

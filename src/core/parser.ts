@@ -129,25 +129,34 @@ export class Parser {
   private tryParseDefinition(): ASTNode | null {
     const startPos = this.pos;
 
-    // Check for \axis[X, Y]
+    // Check for \axis X, Y, Z OR \axis[X, Y, Z]
     if (this.peek().type === 'AXIS') {
       const axisTok = this.advance();
-      this.expect('LBRACKET', '[');
+      const hasBracket = this.peek().type === 'LBRACKET';
+      if (hasBracket) {
+        this.advance();
+      }
       const axes: string[] = [];
-      while (this.peek().type !== 'RBRACKET' && this.peek().type !== 'EOF') {
-        const idTok = this.expect('IDENTIFIER', 'axis identifier');
+      while (this.peek().type === 'IDENTIFIER') {
+        const idTok = this.advance();
         axes.push(idTok.value);
         if (this.peek().type === 'COMMA') {
           this.advance();
+        } else {
+          break;
         }
       }
-      const rBracket = this.expect('RBRACKET', ']');
+      let endPos = this.peek(-1).span.end;
+      if (hasBracket) {
+        const rBracket = this.expect('RBRACKET', ']');
+        endPos = rBracket.span.end;
+      }
       return {
         type: 'AxisDecl',
         axes,
         span: {
           start: axisTok.span.start,
-          end: rBracket.span.end,
+          end: endPos,
           line: axisTok.span.line,
           col: axisTok.span.col,
         },
