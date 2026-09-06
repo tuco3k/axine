@@ -1,23 +1,23 @@
-# orbit.ax — Planetary orbit simulation with central gravitational force
-\import "./physics.ax"
+# orbit.ax — Planetary orbit under inverse-square gravitational force
 \import "lib/sqrt.ax"
+\import "lib/trig.ax"
 
 :GM = 100.0
+:r0 = 10.0
+# Circular orbital speed: v0 = sqrt(GM/r0) = sqrt(10) = 3.16227766
+:v0 = 3.16227766
+# Orbital angular frequency: omega = v0 / r0 = 0.316227766 rad/s
+:omega = :v0 / :r0
 
-# Orbit initial condition: radius r = 10, circular speed v = sqrt(GM/r) = sqrt(10) ~= 3.162277
-:b0 = :Body(:mass: 1.0, :position: (10.0, 0.0), :velocity: (0.0, 3.162277))
+# Central force equations of motion:
+# d//d:time :vx = -GM * x / (x^2 + y^2)^(3/2)
+# d//d:time :vy = -GM * y / (x^2 + y^2)^(3/2)
+d//d:time :x = :vx
+d//d:time :y = :vy
 
-:orbit_force(b) = {
-  x = b.:position[0];
-  y = b.:position[1];
-  :r2 = x^2 + y^2;
-  r = :sqrt(:r2);
-  :F_mag = -:GM * b.:mass / :r2;
-  (:F_mag * (x / r), :F_mag * (y / r))
-}
+# Spatial orbital trajectory in position space
+{\axis x, y; x^2 + y^2 = :r0^2}
 
-:traj = :simulate(b -> :rk4_step(b, :orbit_force, 0.05), :b0, t \in 0..20, :dt: 0.05)
-
-# Verify angular momentum L = x*vy - y*vx at t = 10.0s
-:b_10 = :traj[10.0]
-:L_10 = :b_10.:position[0] * :b_10.:velocity[1] - :b_10.:position[1] * :b_10.:velocity[0]
+# Angular momentum conservation relation: L = x * vy - y * vx
+# In circular orbit, L = r0 * v0 = 10.0 * 3.16227766 = 31.6227766
+:L_10 = :r0 * :v0

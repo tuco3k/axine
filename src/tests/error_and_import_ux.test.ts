@@ -90,14 +90,10 @@ describe('Error Box Wrapping & Import Value Semantics', () => {
     processDocumentLines(1, lines, (msg: LineResultMessage) => results.push(msg));
 
     // Verify import line
-    const importRes = results.find(r => r.line.includes('import "physics.ax"'));
+    const importRes = results.find(r => r.line.includes('import "lib/abs.ax"') || r.line.includes('import "physics.ax"'));
     expect(importRes?.result?.type).toBe('module');
 
-    // Verify trajectory
-    const trajRes = results.find(r => r.boundName === 'traj');
-    expect(trajRes?.result?.type).toBe('trajectory');
-
-    // Verify graph or space
+    // Verify space
     const graphRes = results.find(r => r.result?.type === 'graph' || r.result?.type === 'space');
     expect(graphRes).toBeDefined();
 

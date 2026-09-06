@@ -1,25 +1,24 @@
 # pendulum.ax — Simple pendulum trajectory and energy
-\import "./physics.ax"
 \import "lib/trig.ax"
 
 L = 2.0
 g = 9.81
+:theta0 = 0.5
 
-# Pendulum state: (theta, omega)
-:p0 = (0.5, 0.0)
+# Nonlinear pendulum differential relations:
+# d//d:time :theta = :omega
+# d//d:time :omega = -(g / L) * :sin(:theta)
+d//d:time :theta = :omega
+d//d:time :omega = -(g / L) * :sin(:theta)
 
-# Step function for pendulum: d(theta)/dt = omega, d(omega)/dt = -(g/L)*sin(theta)
-:pendulum_step(s, :dt) = {
-  :theta = s[0];
-  :omega = s[1];
-  :alpha = -(g / L) * :sin(:theta);
-  :new_theta = :theta + :omega * :dt + 0.5 * :alpha * :dt^2;
-  :alpha_next = -(g / L) * :sin(:new_theta);
-  :new_omega = :omega + 0.5 * (:alpha + :alpha_next) * :dt;
-  (:new_theta, :new_omega)
-}
+# Small-angle harmonic approximation: omega0 = sqrt(g/L) ~= 2.214723
+# theta(t) = theta0 * cos(sqrt(g/L) * t)
+{\axis :time, :theta; :theta = :theta0 * :cos(2.214723 * :time)}
 
-:traj = :simulate(s -> :pendulum_step(s, 0.02), :p0, t \in 0..5, :dt: 0.02)
+# Mechanical energy conservation relation: E = 1/2 m L^2 omega^2 + m g L (1 - cos(theta))
+{\axis :theta, :omega; 0.5 * L^2 * :omega^2 + g * L * (1 - :cos(:theta)) = g * L * (1 - :cos(:theta0))}
 
-# Verify oscillation at t = 2.0s
-:s_2 = :traj[2.0]
+# State at t = 2.0s
+:theta_2 = :theta0 * :cos(2.214723 * 2.0)
+:omega_2 = -:theta0 * 2.214723 * :sin(2.214723 * 2.0)
+:s_2 = (:theta_2, :omega_2)

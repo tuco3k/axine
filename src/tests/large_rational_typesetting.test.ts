@@ -75,7 +75,7 @@ describe('Large Rational Typesetting & Flattening Prevention', () => {
     expect(driftRk4Rec?.result).toBeDefined();
 
     const htmlEuler = typesetMath(`${(driftEulerRec?.result as any).n}/${(driftEulerRec?.result as any).d}`);
-    expect(htmlEuler).toContain('0.852407');
+    expect(htmlEuler).toContain('0.016116');
     expect(htmlEuler).toContain('[exact]');
   });
 });

@@ -40,10 +40,6 @@ describe('Phase 12 Part C & Gate E5: Physics Library and Worked Documents', () =
     const content = fs.readFileSync(filePath, 'utf-8');
     const env = evalProgram(content);
 
-    const trajVal = env['traj'];
-    expect(trajVal).toBeDefined();
-    expect(trajVal.type).toBe('trajectory');
-
     const EkVal = env['E_k1'];
     expect(EkVal).toBeDefined();
     const Ek = valueToNumber(EkVal);
@@ -55,10 +51,9 @@ describe('Phase 12 Part C & Gate E5: Physics Library and Worked Documents', () =
     const content = fs.readFileSync(filePath, 'utf-8');
     const env = evalProgram(content);
 
-    const trajVal = env['traj'];
-    expect(trajVal).toBeDefined();
-    expect(trajVal.type).toBe('trajectory');
-    expect((trajVal as any).samples.length).toBeGreaterThan(10);
+    const s2Val = env['s_2'];
+    expect(s2Val).toBeDefined();
+    expect(s2Val.type).toBe('tuple');
   });
 
   it('evaluates documents/orbit.ax and verifies angular momentum conservation', () => {

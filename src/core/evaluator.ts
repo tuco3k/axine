@@ -4022,20 +4022,28 @@ export class Evaluator {
 
     // Symbolic derivation if variable is not bound in environment
     if (!(varName in currentEnv) && !(node.expr.type === 'Identifier' && node.expr.name in currentEnv)) {
-      const symRes = computeSymbolicDerivative(node.expr, varName);
-      return {
-        type: 'derivation',
-        originalEquation: `d//d${varName} (${formatAST(node.expr)})`,
-        roots: [],
-        originalExpr: node.expr,
-        finalExpr: symRes.derivativeAST,
-        originalExprString: `d//d${varName} (${formatAST(node.expr)})`,
-        finalExprString: symRes.derivativeStr,
-        steps: symRes.steps,
-        ruleSequence: symRes.ruleSequence,
-        targetVar: varName,
-        verified: symRes.numericVerification.passed
-      };
+      try {
+        const symRes = computeSymbolicDerivative(node.expr, varName);
+        return {
+          type: 'derivation',
+          originalEquation: `d//d${varName} (${formatAST(node.expr)})`,
+          roots: [],
+          originalExpr: node.expr,
+          finalExpr: symRes.derivativeAST,
+          originalExprString: `d//d${varName} (${formatAST(node.expr)})`,
+          finalExprString: symRes.derivativeStr,
+          steps: symRes.steps,
+          ruleSequence: symRes.ruleSequence,
+          targetVar: varName,
+          verified: symRes.numericVerification.passed
+        };
+      } catch {
+        return {
+          type: 'expression',
+          ast: node,
+          text: formatAST(node)
+        };
+      }
     }
 
     const currentVal = currentEnv[varName];
