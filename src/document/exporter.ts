@@ -1,6 +1,6 @@
 import { DocumentLineRecord } from './document_state';
 import { typesetMath, typesetSourceLine } from '../core/math_typeset';
-import { GraphSpec, GraphValue, Value, DerivationValue, DerivationStep, SpaceValue } from '../core/types';
+import { Value, DerivationValue, DerivationStep, SpaceValue } from '../core/types';
 import { sample2D, sample3D, sampleSlice, Contour2DResult } from '../core/sampler';
 import { formatValue } from './editor';
 
@@ -62,182 +62,6 @@ const DEFAULT_SERIES_COLORS = [
   '#a855f7', // purple-500
   '#06b6d4', // cyan-500
 ];
-
-/**
- * Render a GraphSpec directly into an SVG string without requiring browser DOM APIs.
- */
-export function renderSVGGraphToString(
-  spec: GraphSpec,
-  options?: { width?: number; height?: number; theme?: 'dark' | 'light' }
-): string {
-  const width = options?.width ?? 580;
-  const height = options?.height ?? 260;
-  const isDark = options?.theme !== 'light';
-
-  const bg = isDark ? '#18181b' : '#ffffff';
-  const gridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
-  const axisColor = isDark ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.3)';
-  const textColor = isDark ? '#a1a1aa' : '#555555';
-  const legendBg = isDark ? 'rgba(24, 24, 27, 0.85)' : 'rgba(255, 255, 255, 0.85)';
-  const legendBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)';
-
-  const padLeft = 60;
-  const padRight = 24;
-  const padTop = 20;
-  const padBottom = 40;
-
-  const plotW = width - padLeft - padRight;
-  const plotH = height - padTop - padBottom;
-
-  // Determine xRange & yRange
-  let xMin = spec.domain?.min ?? 0;
-  let xMax = spec.domain?.max ?? 10;
-  let yMin = spec.domainY?.min ?? -1;
-  let yMax = spec.domainY?.max ?? 1;
-
-  // Compute bounding box from series explicit points if range is not specified or too small
-  const allExplicitPoints: { x: number; y: number }[] = [];
-  if (spec.series) {
-    for (const s of spec.series) {
-      if (s.explicitPoints) {
-        for (const pt of s.explicitPoints) {
-          if (pt.valid !== false && Number.isFinite(pt.x) && Number.isFinite(pt.y)) {
-            allExplicitPoints.push(pt);
-          }
-        }
-      }
-    }
-  }
-
-  if (allExplicitPoints.length > 0 && (!spec.domainY || spec.domain?.isDefault)) {
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minY = Infinity;
-    let maxY = -Infinity;
-    for (const pt of allExplicitPoints) {
-      if (pt.x < minX) minX = pt.x;
-      if (pt.x > maxX) maxX = pt.x;
-      if (pt.y < minY) minY = pt.y;
-      if (pt.y > maxY) maxY = pt.y;
-    }
-    if (minX !== Infinity && maxX !== -Infinity && minX < maxX) {
-      xMin = minX;
-      xMax = maxX;
-    }
-    if (minY !== Infinity && maxY !== -Infinity && minY < maxY) {
-      const yPadding = (maxY - minY) * 0.1 || 1;
-      yMin = minY - yPadding;
-      yMax = maxY + yPadding;
-    }
-  }
-
-  const toSvgX = (x: number) => padLeft + ((x - xMin) / (xMax - xMin || 1)) * plotW;
-  const toSvgY = (y: number) => padTop + plotH - ((y - yMin) / (yMax - yMin || 1)) * plotH;
-
-  // Generate grid lines and tick labels
-  const numXTicks = 5;
-  const numYTicks = 5;
-  let gridSvg = '';
-
-  for (let i = 0; i <= numXTicks; i++) {
-    const frac = i / numXTicks;
-    const dataX = xMin + frac * (xMax - xMin);
-    const svgX = padLeft + frac * plotW;
-    gridSvg += `<line x1="${svgX.toFixed(1)}" y1="${padTop}" x2="${svgX.toFixed(1)}" y2="${(padTop + plotH).toFixed(1)}" stroke="${gridColor}" stroke-width="1" />`;
-    gridSvg += `<text x="${svgX.toFixed(1)}" y="${(padTop + plotH + 15).toFixed(1)}" fill="${textColor}" font-size="10" font-family="monospace" text-anchor="middle">${dataX.toFixed(1)}</text>`;
-  }
-
-  for (let i = 0; i <= numYTicks; i++) {
-    const frac = i / numYTicks;
-    const dataY = yMin + frac * (yMax - yMin);
-    const svgY = padTop + plotH - frac * plotH;
-    gridSvg += `<line x1="${padLeft}" y1="${svgY.toFixed(1)}" x2="${(padLeft + plotW).toFixed(1)}" y2="${svgY.toFixed(1)}" stroke="${gridColor}" stroke-width="1" />`;
-    gridSvg += `<text x="${(padLeft - 8).toFixed(1)}" y="${(svgY + 3).toFixed(1)}" fill="${textColor}" font-size="10" font-family="monospace" text-anchor="end">${dataY >= 1000 || dataY <= -1000 ? dataY.toExponential(1) : dataY.toFixed(1)}</text>`;
-  }
-
-  // Draw axes
-  const originX = toSvgX(0);
-  const originY = toSvgY(0);
-  let axesSvg = '';
-  if (xMin <= 0 && xMax >= 0) {
-    axesSvg += `<line x1="${originX.toFixed(1)}" y1="${padTop}" x2="${originX.toFixed(1)}" y2="${(padTop + plotH).toFixed(1)}" stroke="${axisColor}" stroke-width="1.5" />`;
-  }
-  if (yMin <= 0 && yMax >= 0) {
-    axesSvg += `<line x1="${padLeft}" y1="${originY.toFixed(1)}" x2="${(padLeft + plotW).toFixed(1)}" y2="${originY.toFixed(1)}" stroke="${axisColor}" stroke-width="1.5" />`;
-  }
-
-  // Draw series
-  let seriesSvg = '';
-  const seriesList = spec.series ?? [];
-  const legendItems: { name: string; color: string }[] = [];
-
-  for (let sIdx = 0; sIdx < seriesList.length; sIdx++) {
-    const s = seriesList[sIdx];
-    const color = s.color || DEFAULT_SERIES_COLORS[sIdx % DEFAULT_SERIES_COLORS.length];
-    const seriesName = s.label || `Series ${sIdx + 1}`;
-    legendItems.push({ name: seriesName, color });
-
-    if (s.explicitPoints && s.explicitPoints.length > 0) {
-      const pts = s.explicitPoints
-        .filter(pt => pt.valid !== false && Number.isFinite(pt.x) && Number.isFinite(pt.y))
-        .map(pt => `${toSvgX(pt.x).toFixed(1)},${toSvgY(pt.y).toFixed(1)}`)
-        .join(' ');
-      if (pts) {
-        seriesSvg += `<polyline fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="${pts}" />`;
-      }
-    }
-  }
-
-  // Determine Axis Labels
-  const xLabel = spec.xAxisLabel || (spec.domain?.var === 't' ? 't (s)' : (spec.domain?.var || 'x'));
-  const yLabel = spec.yAxisLabel || (spec.series?.length === 1 ? (spec.series[0].label || '') : '');
-
-  // X Axis Label
-  let xLabelSvg = `<text x="${(padLeft + plotW / 2).toFixed(1)}" y="${(height - 4).toFixed(1)}" fill="${textColor}" font-size="11" font-weight="500" font-family="system-ui, -apple-system, sans-serif" text-anchor="middle">${escapeHtml(xLabel)}</text>`;
-
-  // Y Axis Label (Rotated)
-  let yLabelSvg = '';
-  if (yLabel) {
-    yLabelSvg = `<text transform="rotate(-90)" x="${(-(padTop + plotH / 2)).toFixed(1)}" y="16" fill="${textColor}" font-size="11" font-weight="500" font-family="system-ui, -apple-system, sans-serif" text-anchor="middle">${escapeHtml(yLabel)}</text>`;
-  }
-
-  // Draw Title ONLY if explicitly provided and distinct from yLabel
-  let titleSvg = '';
-  if (spec.title && spec.title !== yLabel) {
-    titleSvg = `<text x="${(padLeft + plotW / 2).toFixed(1)}" y="${(padTop - 6).toFixed(1)}" fill="${textColor}" font-size="12" font-weight="600" font-family="system-ui, -apple-system, sans-serif" text-anchor="middle">${escapeHtml(spec.title)}</text>`;
-  }
-
-  // Draw Legend ONLY when there is MORE than 1 series
-  let legendSvg = '';
-  if (legendItems.length > 1) {
-    const legItemHeight = 16;
-    const legH = legendItems.length * legItemHeight + 10;
-    const legW = 140;
-    const legX = width - padRight - legW - 8;
-    const legY = padTop + 8;
-
-    legendSvg += `<g class="svg-legend" transform="translate(${legX}, ${legY})">`;
-    legendSvg += `<rect width="${legW}" height="${legH}" rx="4" fill="${legendBg}" stroke="${legendBorder}" stroke-width="1" />`;
-    for (let i = 0; i < legendItems.length; i++) {
-      const item = legendItems[i];
-      const itemY = 14 + i * legItemHeight;
-      legendSvg += `<line x1="8" y1="${itemY - 3}" x2="24" y2="${itemY - 3}" stroke="${item.color}" stroke-width="2" />`;
-      legendSvg += `<text x="28" y="${itemY}" fill="${textColor}" font-size="10" font-family="system-ui, sans-serif">${escapeHtml(item.name)}</text>`;
-    }
-    legendSvg += `</g>`;
-  }
-
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" style="background-color:${bg};border-radius:6px;display:block;">
-    <rect width="${width}" height="${height}" fill="${bg}" rx="6" />
-    <g class="grid">${gridSvg}</g>
-    <g class="axes">${axesSvg}</g>
-    <g class="series">${seriesSvg}</g>
-    ${xLabelSvg}
-    ${yLabelSvg}
-    ${titleSvg}
-    ${legendSvg}
-  </svg>`;
-}
 
 /**
  * Render a SpaceValue directly into an SVG string without requiring browser DOM APIs.
@@ -731,11 +555,6 @@ export function exportToHtml(
           const svgStr = renderSVGSpaceToString(spaceVal, { width: 580, height: 260, theme });
           resultHtml = `<div class="export-plot-container">${svgStr}</div>`;
         }
-      } else if (rec.result.type === 'graph') {
-        isPlot = true;
-        const spec = (rec.result as GraphValue).spec;
-        const svgStr = renderSVGGraphToString(spec, { width: 580, height: 260, theme });
-        resultHtml = `<div class="export-plot-container">${svgStr}</div>`;
       } else if (rec.result.type === 'derivation' || rec.result.type === 'check_result' || rec.result.type === 'solve_trace') {
         resultHtml = renderDerivationExportHtml(rec.result, { inlineFractions: true, collapsed: isStepsCollapsed });
       } else {
@@ -1261,13 +1080,6 @@ export function exportToMarkdown(
           plotImages.push({ filename: plotFilename, svgString: svgStr });
           md += `![Space Line ${idx + 1}](plots/${plotFilename})\n\n`;
         }
-      } else if (rec.result.type === 'graph') {
-        flushCodeBlock();
-        const spec = (rec.result as GraphValue).spec;
-        const plotFilename = `plot_L${idx + 1}.svg`;
-        const svgStr = renderSVGGraphToString(spec, { width: 600, height: 300, theme: 'light' });
-        plotImages.push({ filename: plotFilename, svgString: svgStr });
-        md += `![Plot Line ${idx + 1}](plots/${plotFilename})\n\n`;
       } else {
         const formatted = formatValue(rec.result);
         codeBlockLines.push(`// => ${formatted}`);

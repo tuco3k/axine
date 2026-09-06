@@ -750,61 +750,6 @@ export interface BuiltinValue {
   fn: (args: Value[], env: Record<string, Value>, span: Span) => Value;
 }
 
-export interface CurveSeries {
-  expr: ASTNode;
-  variable: string;
-  label: string;
-  color?: string;
-  explicitPoints?: { x: number; y: number; valid: boolean }[];
-}
-
-export interface GraphSpec {
-  dimensionality: 1 | 2;
-  kind: 'curve' | 'multi_curve' | 'parametric' | 'surface' | 'heatmap' | 'orbit' | 'pointcloud' | 'packing' | 'lattice' | 'raster' | 'spacetime';
-  series: CurveSeries[];
-  domain: { var: string; min: number; max: number; isDefault: boolean; step?: number };
-  domainY?: { var: string; min: number; max: number; isDefault: boolean; step?: number };
-  title?: string;
-  xAxisLabel?: string;
-  yAxisLabel?: string;
-  sharedAxisNote?: string;
-  orbitData?: number[];
-  pointCloudData?: [number, number, number][];
-  spherePackingData?: { center: [number, number, number]; radius: number }[];
-  latticeData?: { points: [number, number, number][]; edges: [number, number][] };
-  rasterData?: boolean[][];
-  parametric?: {
-    xExpr: ASTNode;
-    yExpr: ASTNode;
-    zExpr?: ASTNode;
-    param: string;
-    paramV?: string;
-    min: number;
-    max: number;
-    minV?: number;
-    maxV?: number;
-    step?: number;
-  };
-  surface?: {
-    expr: ASTNode;
-    varX: string;
-    varY: string;
-    xMin: number;
-    xMax: number;
-    yMin: number;
-    yMax: number;
-  };
-  surfaces?: {
-    expr: ASTNode;
-    varX: string;
-    varY: string;
-    xMin: number;
-    xMax: number;
-    yMin: number;
-    yMax: number;
-  }[];
-}
-
 export interface SpatialEntity {
   coordinates: string[];
   ast: ASTNode;
@@ -831,11 +776,6 @@ export interface SpaceValue {
   coordinateBounds?: Record<string, [number, number]>;
   timeVariable?: string;
   span?: Span;
-}
-
-export interface GraphValue {
-  type: 'graph';
-  spec: GraphSpec;
 }
 
 export type StepRule =
@@ -1073,7 +1013,6 @@ export type Value =
   | FunctionValue
   | LambdaValue
   | BuiltinValue
-  | GraphValue
   | DerivationValue
   | StepValue
   | ExpressionValue

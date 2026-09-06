@@ -94,8 +94,8 @@ describe('Error Box Wrapping & Import Value Semantics', () => {
     expect(importRes?.result?.type).toBe('module');
 
     // Verify space
-    const graphRes = results.find(r => r.result?.type === 'graph' || r.result?.type === 'space');
-    expect(graphRes).toBeDefined();
+    const spaceRes = results.find(r => r.result?.type === 'space');
+    expect(spaceRes).toBeDefined();
 
     // Verify kinetic energy calculation
     const keRes = results.find(r => r.boundName === 'KE');

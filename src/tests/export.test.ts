@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseFrontMatter, exportToHtml, exportToMarkdown } from '../document/exporter';
 import { DocumentLineRecord } from '../document/document_state';
-import { GraphSpec } from '../core/types';
+import { SpaceValue } from '../core/types';
 
 describe('Phase 13 Part E: Export (HTML, PDF Print View, Markdown)', () => {
   it('correctly parses YAML front matter and body', () => {
@@ -34,26 +34,19 @@ author: Noah Slayton
 # Setup
 m := 2.5
 E := (1/2) * m * (10^2)
-plot(t, sin(t))
+{\\axis t, y; y = :sin(t)}
 `;
 
-    const graphSpec: GraphSpec = {
-      dimensionality: 1,
-      kind: 'curve',
-      domain: { var: 't', min: 0, max: 6.28, isDefault: false },
-      series: [
+    const spaceVal: SpaceValue = {
+      type: 'space',
+      coordinates: ['t', 'y'],
+      dimension: 2,
+      entities: [
         {
-          expr: null as any,
-          variable: 't',
-          label: 'sin(t)',
-          color: '#00e5ff',
-          explicitPoints: [
-            { x: 0, y: 0, valid: true },
-            { x: 1.57, y: 1, valid: true },
-            { x: 3.14, y: 0, valid: true },
-            { x: 4.71, y: -1, valid: true },
-            { x: 6.28, y: 0, valid: true },
-          ],
+          coordinates: ['t', 'y'],
+          ast: null as any,
+          compiledFn: (t: number, y: number) => y - Math.sin(t),
+          dimension: 2,
         },
       ],
     };
@@ -68,7 +61,7 @@ plot(t, sin(t))
       { lineIndex: 6, text: '# Setup', classification: { state: 'COMMENT' } as any, durationMs: 0 },
       { lineIndex: 7, text: 'm := 2.5', classification: { state: 'COMPLETE' } as any, result: { type: 'rational', n: 5n, d: 2n }, durationMs: 1 },
       { lineIndex: 8, text: 'E := (1/2) * m * (10^2)', classification: { state: 'COMPLETE' } as any, result: { type: 'rational', n: 125n, d: 1n }, durationMs: 1 },
-      { lineIndex: 9, text: 'plot(t, sin(t))', classification: { state: 'COMPLETE' } as any, result: { type: 'graph', spec: graphSpec } as any, durationMs: 2 },
+      { lineIndex: 9, text: '{\\axis t, y; y = :sin(t)}', classification: { state: 'COMPLETE' } as any, result: spaceVal, durationMs: 2 },
     ];
 
     const html = exportToHtml('energy_test.ax', docText, records, 'dark');
@@ -79,11 +72,10 @@ plot(t, sin(t))
     expect(html).toContain('<strong>Course:</strong> PHYS 101');
     expect(html).toContain('<strong>Author:</strong> Noah Slayton');
 
-    // Assert embedded SVG plot with axis labels and no duplicate legend for 1 series
+    // Assert embedded SVG plot with axis labels
     expect(html).toContain('<svg');
     expect(html).toContain('export-plot-container');
-    expect(html).toContain('t (s)');
-    expect(html).not.toContain('class="svg-legend"');
+    expect(html).toContain('2D Space (t, y)');
 
     // Assert typeset math and inline fraction
     expect(html).toContain('export-math-result');
@@ -178,23 +170,19 @@ author: Noah Slayton
 # Problem Statement
 omega := 2.0
 x0 := 1.0
-plot(t, cos(omega * t))
+{\\axis t, x; x = :cos(omega * t)}
 `;
 
-    const graphSpec: GraphSpec = {
-      dimensionality: 1,
-      kind: 'curve',
-      domain: { var: 't', min: 0, max: 10, isDefault: false },
-      series: [
+    const spaceVal: SpaceValue = {
+      type: 'space',
+      coordinates: ['t', 'x'],
+      dimension: 2,
+      entities: [
         {
-          expr: null as any,
-          variable: 't',
-          label: 'cos(omega * t)',
-          color: '#38bdf8',
-          explicitPoints: [
-            { x: 0, y: 1, valid: true },
-            { x: 3.14, y: -1, valid: true },
-          ],
+          coordinates: ['t', 'x'],
+          ast: null as any,
+          compiledFn: (t: number, x: number) => x - Math.cos(2.0 * t),
+          dimension: 2,
         },
       ],
     };
@@ -208,7 +196,7 @@ plot(t, cos(omega * t))
       { lineIndex: 5, text: '# Problem Statement', classification: { state: 'COMMENT' } as any, durationMs: 0 },
       { lineIndex: 6, text: 'omega := 2.0', classification: { state: 'COMPLETE' } as any, result: { type: 'float', value: 2.0 }, durationMs: 1 },
       { lineIndex: 7, text: 'x0 := 1.0', classification: { state: 'COMPLETE' } as any, result: { type: 'float', value: 1.0 }, durationMs: 1 },
-      { lineIndex: 8, text: 'plot(t, cos(omega * t))', classification: { state: 'COMPLETE' } as any, result: { type: 'graph', spec: graphSpec } as any, durationMs: 2 },
+      { lineIndex: 8, text: '{\\axis t, x; x = :cos(omega * t)}', classification: { state: 'COMPLETE' } as any, result: spaceVal, durationMs: 2 },
     ];
 
     const { markdown, plotImages } = exportToMarkdown('harmonic.ax', docText, records);
@@ -219,10 +207,10 @@ plot(t, cos(omega * t))
     expect(markdown).toContain('```axine');
     expect(markdown).toContain('omega := 2.0');
     expect(markdown).toContain('// => 2');
-    expect(markdown).toContain('![Plot Line 9](plots/plot_L9.svg)');
+    expect(markdown).toContain('![Space Line 9](plots/space_L9.svg)');
 
     expect(plotImages.length).toBe(1);
-    expect(plotImages[0].filename).toBe('plot_L9.svg');
+    expect(plotImages[0].filename).toBe('space_L9.svg');
     expect(plotImages[0].svgString).toContain('<svg');
   });
 
@@ -257,7 +245,7 @@ plot(t, cos(omega * t))
   });
 
   it('asserts an identifier containing an underscore round-trips through export unchanged', () => {
-    const docText = `y_pos := map(b -> b.position[1], traj)\ngraph(y_pos)\nball_at_2 := traj[2.0]\nspring_force_fn := (b) -> (-k * b.position[0], 0.0)\n`;
+    const docText = `y_pos := map(b -> b.position[1], traj)\n{\\axis t, y_pos; y_pos = 10}\nball_at_2 := traj[2.0]\nspring_force_fn := (b) -> (-k * b.position[0], 0.0)\n`;
     const records: DocumentLineRecord[] = [
       {
         lineIndex: 0,
@@ -268,9 +256,9 @@ plot(t, cos(omega * t))
       },
       {
         lineIndex: 1,
-        text: 'graph(y_pos)',
+        text: '{\\axis t, y_pos; y_pos = 10}',
         classification: { state: 'COMPLETE' } as any,
-        result: { type: 'graph', spec: { dimensionality: 1, kind: 'curve', series: [] } } as any,
+        result: { type: 'space', coordinates: ['t', 'y_pos'], dimension: 2, entities: [] } as any,
         durationMs: 1,
       },
       {
@@ -294,7 +282,6 @@ plot(t, cos(omega * t))
 
     // Assert underscore identifiers round-trip completely intact
     expect(plainText).toContain('y_pos');
-    expect(plainText).toContain('graph(y_pos)');
     expect(plainText).toContain('ball_at_2');
     expect(plainText).toContain('spring_force_fn');
   });

@@ -394,7 +394,6 @@ export function inferKindOfValue(val: Value): MathKind {
       };
     case 'derivation':
       return { name: 'Scalar', subtype: 'real' };
-    case 'graph':
     case 'graph_type':
       return { name: 'Manifold', dimension: 2, oriented: true };
     case 'kind':

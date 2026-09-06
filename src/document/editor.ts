@@ -1,8 +1,6 @@
 import { DocumentState, DocumentLineRecord } from './document_state';
 import { CORPUS_DOCUMENTS } from './corpus_data';
-import { Value, GraphValue, DerivationValue, SolveTraceValue, DescribedValue, TrajectoryValue, SpaceValue } from '../core/types';
-import { Canvas2DPlotter } from '../plot/canvas2d';
-import { Surface3DPlotter } from '../plot/surface3d';
+import { Value, DerivationValue, SolveTraceValue, DescribedValue, TrajectoryValue, SpaceValue } from '../core/types';
 import { SpaceViewport } from '../plot/space_viewport';
 import { AnimationPlayer } from '../plot/animation_player';
 import { typesetMath, typesetSourceLine, TypesetOptions } from '../core/math_typeset';
@@ -14,7 +12,7 @@ import { formatKind } from '../core/kinds';
 import { MathPopover } from './popover';
 import { ICONS } from '../styles/icons';
 import { FileManager, OpenFileResult, SaveFileResult } from './file_manager';
-import { exportToHtml, exportToMarkdown, parseFrontMatter, renderSVGGraphToString } from './exporter';
+import { exportToHtml, exportToMarkdown, parseFrontMatter, renderSVGSpaceToString } from './exporter';
 
 function escapeHtml(str: string): string {
   return str
@@ -169,8 +167,6 @@ export class DocumentEditor {
   private pinnedLines: Set<number> = new Set();
   private collapsedLines: Set<number> = new Set();
   private expandedPlots: Set<number> = new Set();
-  private linePlotters: Map<number, Canvas2DPlotter | Surface3DPlotter> = new Map();
-  private pinnedPlotters: Map<number, Canvas2DPlotter | Surface3DPlotter> = new Map();
   private lineViewports: Map<number, SpaceViewport> = new Map();
   private pinnedViewports: Map<number, SpaceViewport> = new Map();
   private animationPlayers: Map<number, AnimationPlayer> = new Map();
@@ -318,9 +314,7 @@ export class DocumentEditor {
       }
     }
 
-    // Trigger plotter and viewport re-renders so canvas widths match
-    this.linePlotters.forEach(p => p.render());
-    this.pinnedPlotters.forEach(p => p.render());
+    // Trigger viewport re-renders so canvas widths match
     this.lineViewports.forEach(p => p.render());
     this.pinnedViewports.forEach(p => p.render());
     this.updateCaret();
@@ -726,10 +720,16 @@ export class DocumentEditor {
 
       let resHtml = '';
       if (rec?.result) {
-        if (rec.result.type === 'graph') {
-          const spec = (rec.result as GraphValue).spec;
-          const svg = renderSVGGraphToString(spec, { width: 580, height: 260, theme: 'light' });
-          resHtml = `<div class="doc-print-plot">${svg}</div>`;
+        if (rec.result.type === 'space') {
+          const spaceVal = rec.result as SpaceValue;
+          if (spaceVal.dimension > 0 || spaceVal.entities.length > 0) {
+            const svg = renderSVGSpaceToString(spaceVal, { width: 580, height: 260, theme: 'light' });
+            resHtml = `<div class="doc-print-plot">${svg}</div>`;
+          } else if (spaceVal.resultVal) {
+            const formatted = this.formatValue(spaceVal.resultVal);
+            const typeset = typesetMath(formatted, { displayMode: false, inlineFractions: true });
+            resHtml = `<div class="doc-print-math">${typeset}</div>`;
+          }
         } else if (rec.result.type === 'derivation') {
           if (isStepsCollapsed) {
             const formatted = this.formatValue(rec.result);
@@ -1474,8 +1474,6 @@ export class DocumentEditor {
       document.documentElement.setAttribute('data-theme', nextTheme);
       themeBtn.innerHTML = nextTheme === 'light' ? ICONS.moon : ICONS.sun;
       localStorage.setItem('math_notebook_theme', nextTheme);
-      this.linePlotters.forEach(p => p.render());
-      this.pinnedPlotters.forEach(p => p.render());
       this.lineViewports.forEach(p => p.render());
       this.pinnedViewports.forEach(p => p.render());
     });
@@ -1821,11 +1819,7 @@ export class DocumentEditor {
     }
     this.lineNumbersEl.innerHTML = lineNumsHtml;
 
-    // Clean up existing plotters, viewports, and animation players
-    this.linePlotters.forEach(p => p.dispose());
-    this.linePlotters.clear();
-    this.pinnedPlotters.forEach(p => p.dispose());
-    this.pinnedPlotters.clear();
+    // Clean up existing viewports and animation players
     this.lineViewports.forEach(p => p.dispose());
     this.lineViewports.clear();
     this.pinnedViewports.forEach(p => p.dispose());
@@ -1861,7 +1855,7 @@ export class DocumentEditor {
           });
         });
 
-        // Instantiate pinned plotters and viewports
+        // Instantiate pinned viewports
         this.pinnedLines.forEach(lineIdx => {
           const rec = records[lineIdx];
           if (rec && rec.result && rec.result.type === 'space') {
@@ -1869,19 +1863,6 @@ export class DocumentEditor {
             if (spaceContainer) {
               const vp = new SpaceViewport(spaceContainer, rec.result as SpaceValue);
               this.pinnedViewports.set(lineIdx, vp);
-            }
-          } else if (rec && rec.result && rec.result.type === 'graph') {
-            const canvas = pinnedContainer.querySelector(`.doc-pinned-canvas[data-line="${lineIdx}"]`) as HTMLCanvasElement;
-            if (canvas) {
-              const spec = (rec.result as GraphValue).spec;
-              let plotter: Canvas2DPlotter | Surface3DPlotter;
-              if (spec.dimensionality === 2 && (spec.surface || spec.parametric?.zExpr || spec.kind === 'surface' || spec.kind === 'pointcloud')) {
-                plotter = new Surface3DPlotter(canvas, spec, {});
-              } else {
-                plotter = new Canvas2DPlotter(canvas, spec, {});
-              }
-              this.pinnedPlotters.set(lineIdx, plotter);
-              plotter.render();
             }
           }
         });
@@ -1909,7 +1890,7 @@ export class DocumentEditor {
         });
       }
 
-      if (rec.result && (rec.result.type === 'graph' || rec.result.type === 'matrix' || rec.result.type === 'claim')) {
+      if (rec.result && (rec.result.type === 'space' || rec.result.type === 'matrix' || rec.result.type === 'claim')) {
         this.addFrame(i + 1, rec.result);
       }
     }
@@ -2013,25 +1994,6 @@ export class DocumentEditor {
       }
     }
 
-    // Instantiate and render all inline plotters for visible graph rows
-    for (let i = 0; i < records.length; i++) {
-      const rec = records[i];
-      if (rec && rec.result && rec.result.type === 'graph' && !this.collapsedLines.has(i)) {
-        const canvas = this.gutterEl.querySelector(`.doc-inline-canvas[data-line="${i}"]`) as HTMLCanvasElement;
-        if (canvas) {
-          const spec = (rec.result as GraphValue).spec;
-          let plotter: Canvas2DPlotter | Surface3DPlotter;
-          if (spec.dimensionality === 2 && (spec.surface || spec.parametric?.zExpr || spec.kind === 'surface' || spec.kind === 'pointcloud')) {
-            plotter = new Surface3DPlotter(canvas, spec, {});
-          } else {
-            plotter = new Canvas2DPlotter(canvas, spec, {});
-          }
-          this.linePlotters.set(i, plotter);
-          plotter.render();
-        }
-      }
-    }
-
     // Instantiate and mount all animation players for visible trajectory rows
     for (let i = 0; i < records.length; i++) {
       const rec = records[i];
@@ -2106,19 +2068,6 @@ export class DocumentEditor {
             <button class="doc-unpin-btn" data-line="${lineIdx}">Unpin</button>
           </div>
           <div class="doc-pinned-space-container" data-line="${lineIdx}"></div>
-        </div>
-      `;
-    }
-
-    if (rec.result.type === 'graph') {
-      const graphVal = rec.result as GraphValue;
-      return `
-        <div class="doc-pinned-item" data-line="${lineIdx}">
-          <div class="doc-pinned-header">
-            <span>Pinned: Line ${lineIdx + 1} (Plot: ${escapeHtml(graphVal.spec.kind)})</span>
-            <button class="doc-unpin-btn" data-line="${lineIdx}">Unpin</button>
-          </div>
-          <canvas class="doc-pinned-canvas" data-line="${lineIdx}"></canvas>
         </div>
       `;
     }
@@ -2453,31 +2402,6 @@ export class DocumentEditor {
             ${isCollapsed
               ? `<div class="doc-gutter-collapsed-summary">[Collapsed ${dimStr}]</div>`
               : `<div class="doc-space-container ${isExpandedPlot ? 'expanded' : ''}" data-line="${lineIdx}"></div>`
-            }
-          </div>
-        </div>
-      `;
-    }
-
-    // 1. Graph result
-    if (rec.result.type === 'graph') {
-      const graphVal = rec.result as GraphValue;
-      const kindStr = graphVal.spec.kind;
-      const collapseText = isCollapsed ? '+' : '\u2212';
-      return `
-        <div class="doc-gutter-row" data-line="${lineIdx}">
-          <div class="doc-gutter-row-header">
-            <span class="doc-gutter-lineno">L${lineIdx + 1} &bull; Plot (${escapeHtml(kindStr)})</span>
-            <div class="doc-gutter-row-actions">
-              <button class="doc-gutter-action-btn doc-gutter-pin-btn ${isPinned ? 'pinned' : ''}" data-line="${lineIdx}" title="Pin plot to top of panel">${isPinned ? 'Pinned' : 'Pin'}</button>
-              ${!isCollapsed ? `<button class="doc-gutter-action-btn doc-gutter-expand-plot-btn" data-line="${lineIdx}" title="Toggle plot canvas size">${isExpandedPlot ? 'Compact' : 'Expand'}</button>` : ''}
-              <button class="doc-gutter-action-btn doc-gutter-collapse-btn" data-line="${lineIdx}" title="Collapse/Expand row">${collapseText}</button>
-            </div>
-          </div>
-          <div class="doc-gutter-content">
-            ${isCollapsed
-              ? `<div class="doc-gutter-collapsed-summary">[Collapsed Plot: ${escapeHtml(kindStr)}]</div>`
-              : `<div class="doc-inline-plot-container"><canvas class="doc-inline-canvas ${isExpandedPlot ? 'expanded' : ''}" data-line="${lineIdx}"></canvas></div>`
             }
           </div>
         </div>
@@ -2877,10 +2801,10 @@ export class DocumentEditor {
   }
 
   public dispose() {
-    this.linePlotters.forEach(p => p.dispose());
-    this.linePlotters.clear();
-    this.pinnedPlotters.forEach(p => p.dispose());
-    this.pinnedPlotters.clear();
+    this.lineViewports.forEach(p => p.dispose());
+    this.lineViewports.clear();
+    this.pinnedViewports.forEach(p => p.dispose());
+    this.pinnedViewports.clear();
     this.animationPlayers.forEach(p => p.dispose());
     this.animationPlayers.clear();
     this.pinnedAnimationPlayers.forEach(p => p.dispose());

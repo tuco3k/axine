@@ -1,7 +1,7 @@
 import { NotebookCell, NotebookState } from './state';
 import { formatAST } from '../core/formatter';
 import { Value, SpaceValue } from '../core/types';
-import { GraphPlotEngine, SpaceViewport } from '../plot/engine';
+import { SpaceViewport } from '../plot/engine';
 import { AutocompleteEngine, AutocompleteItem } from './autocomplete';
 import { ICONS } from '../styles/icons';
 
@@ -260,7 +260,7 @@ export class CellView {
     valBox.appendChild(valText);
     this.outputContainer.appendChild(valBox);
 
-    // 3. Space View if SpaceValue or Graph View if GraphValue
+    // 3. Space View if SpaceValue
     if (this.cell.value.type === 'space') {
       const spaceVal = this.cell.value as SpaceValue;
       if (spaceVal.dimension > 0 || spaceVal.entities.length > 0) {
@@ -268,10 +268,6 @@ export class CellView {
         this.outputContainer.appendChild(spaceContainer);
         new SpaceViewport(spaceContainer, spaceVal);
       }
-    } else if (this.cell.value.type === 'graph') {
-      const graphContainer = document.createElement('div');
-      this.outputContainer.appendChild(graphContainer);
-      new GraphPlotEngine(graphContainer, this.cell.value.spec, this.state.env);
     }
   }
 
@@ -302,8 +298,6 @@ export class CellView {
         return val.text;
       case 'builtin':
         return `builtin ${val.name}`;
-      case 'graph':
-        return `Plot: ${val.spec.kind}`;
       case 'kind':
         return `Kind: ${val.kind.name}`;
       case 'described':
