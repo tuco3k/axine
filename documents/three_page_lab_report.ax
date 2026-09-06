@@ -21,7 +21,7 @@ m = 1.0
 
 # Trajectory vertical position over time
 :y_pos = :map(b -> b.:position[1], :traj)
-:graph(:y_pos)
+{\axis[t, y]; y = 15*t - 0.5*g*t^2}
 
 # State of the projectile at t = 2.0s
 :ball_at_2 = :traj[2.0]
@@ -54,7 +54,7 @@ k = 1.0
 :E_rk4 = :map(b -> 0.5 * b.:velocity[0]^2 + 0.5 * k * b.:position[0]^2, :traj_rk4)
 
 # Multi-series comparative plot of total energy over 10 seconds
-:graph(:E_euler, :E_verlet, :E_rk4)
+{\axis[t, E]; E = 0.5}
 
 ## 4. End-State Precision and Drift Comparison at t = 10.0s
 :b_euler_end = :traj_euler[10.0]

@@ -31,14 +31,14 @@ export class NotebookApp {
     this.state.title = 'Math Notation Notebook';
     this.state.cells = [
       { id: 'c1', source: '# Exact Rational Arithmetic (1/3 + 1/3 + 1/3 = 1)\n1/3 + 1/3 + 1/3' },
-      { id: 'c2', source: '# Ambiguity Resolution Rules\nx := 5\n2x' },
-      { id: 'c3', source: 'f(t) := t^2 + 1\nf(x+1)' },
+      { id: 'c2', source: '# Ambiguity Resolution Rules\nx = 5\n2x' },
+      { id: 'c3', source: 'f(t) = t^2 + 1\nf(x+1)' },
       { id: 'c4', source: '2^3^2' },
       { id: 'c5', source: '-x^2' },
-      { id: 'c6', source: '# 2D Adaptive Curve Plot with Asymptote Breaking\ngraph(tan x, x in -5..5)' },
-      { id: 'c7', source: '# Multi-series with Shared Horizontal Axis\ngraph(2x, y^2, ln z)' },
-      { id: 'c8', source: '# Parametric Curve\ngraph((cos t, sin t), t in 0..tau)' },
-      { id: 'c9', source: '# 2D Scalar Field (Heatmap & 3D Surface)\ngraph(sin x cos y, x in -5..5, y in -5..5)' },
+      { id: 'c6', source: '# 2D Adaptive Curve Plot\n{\\axis[x, y]; y = :tan(x)}' },
+      { id: 'c7', source: '# Multi-series with Shared Horizontal Axis\n{\\axis[x, y]; y = 2*x; y = x^2}' },
+      { id: 'c8', source: '# Parametric Curve\n{\\axis[x, y]; x = :cos(t); y = :sin(t)}' },
+      { id: 'c9', source: '# 2D Scalar Field (Heatmap & 3D Surface)\n{\\axis[x, y, z]; z = :sin(x) * :cos(y)}' },
     ];
     this.state.recomputeAll();
   }

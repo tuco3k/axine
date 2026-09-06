@@ -85,7 +85,7 @@ export class CellView {
     this.textarea = document.createElement('textarea');
     this.textarea.className = 'cell-input';
     this.textarea.value = this.cell.source;
-    this.textarea.placeholder = 'Enter math expression (e.g. 2x, 1/3 + 1/3 + 1/3, graph(sin x))';
+    this.textarea.placeholder = 'Enter math expression (e.g. 2x, 1/3 + 1/3 + 1/3, {\\axis[x, y]; y = :sin(x)})';
     this.textarea.rows = 1;
     this.autoGrow(this.textarea);
 

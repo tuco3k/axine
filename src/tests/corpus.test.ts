@@ -553,12 +553,6 @@ const GOLDEN_CORPUS: GoldenTestCase[] = [
       messageContains: "Unexpected token ')'",
     },
   },
-  {
-    source: ':graph(5)',
-    expectedError: {
-      messageContains: 'graph() requires at least one free variable to plot against, found 0',
-    },
-  },
 ];
 
 // Generate procedural test cases to exceed 200 cases across all combinations

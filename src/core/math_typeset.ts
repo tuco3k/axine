@@ -796,7 +796,7 @@ function renderMathShapedLine(rawLine: string, options: TypesetOptions): string 
     } else if (numTok) {
       out += `<span class="tm-num">${escapeHtml(numTok)}</span>`;
     } else if (identTok) {
-      const mathFns = new Set(['sin', 'cos', 'tan', 'ln', 'exp', 'det', 'sqrt', 'pi', 'inf', 'isolate', 'simplify', 'check', 'graph', 'map', 'abs']);
+      const mathFns = new Set(['sin', 'cos', 'tan', 'ln', 'exp', 'det', 'sqrt', 'pi', 'inf', 'isolate', 'simplify', 'check', 'map', 'abs']);
       if (identTok === 'pi') out += `<span class="tm-const">&pi;</span>`;
       else if (identTok === 'inf') out += `<span class="tm-const">&infin;</span>`;
       else if (mathFns.has(identTok)) out += `<span class="tm-fn">${escapeHtml(identTok)}</span>`;

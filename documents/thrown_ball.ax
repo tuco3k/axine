@@ -14,7 +14,7 @@ m = 1.0
 
 # Trajectory height over time
 :y_pos = :map(b -> b.:position[1], :traj)
-:graph(:y_pos)
+{\axis[t, y]; y = 15*t - 0.5*g*t^2}
 
 # State of the ball at t = 2.0s
 :ball_at_2 = :traj[2.0]

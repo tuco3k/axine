@@ -333,7 +333,7 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
   });
 
   it('persists dock edge and size per orientation (Right, Bottom, Left, Top)', () => {
-    editor = new DocumentEditor(container as any, 'f(x) := :sin(x)\n:graph(f(x), x \\in 0..10)');
+    editor = new DocumentEditor(container as any, '{\\axis[x, y]; y = :sin(x)}');
 
     // 1. Default is Right dock with 480px width
     const workspace = container.querySelector('#doc-workspace');
@@ -370,7 +370,7 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
   });
 
   it('allows collapsing panel to zero width with persistent edge affordance', () => {
-    editor = new DocumentEditor(container as any, 'a := 5');
+    editor = new DocumentEditor(container as any, 'a = 5');
 
     const workspace = container.querySelector('#doc-workspace');
     const workPanel = container.querySelector('#doc-work-panel');
@@ -395,8 +395,8 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
 
   it('renders plots, derivations, standing expressions, and scalars inline in Results gutter', () => {
     const docText = [
-      'a := 15',
-      ':graph(x^2, x \\in 0..10)',
+      '15',
+      '{\\axis[x, y]; y = x^2}',
       ':isolate(x^2 - 4 == 0, :for: x)',
       '\u222c_S F \u00b7 dS',
     ].join('\n');
@@ -437,7 +437,7 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
 
   it('supports pinning visual items into top pinned slot and unpinning', () => {
     const docText = [
-      ':graph(x^2, x \\in 0..5)',
+      '{\\axis[x, y]; y = x^2}',
       ':isolate(x^2 == 9, :for: x)',
     ].join('\n');
 
@@ -470,7 +470,7 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
   });
 
   it('supports expanding and collapsing individual gutter rows with persisted collapse', () => {
-    const docText = ':graph(x^2, x \\in 0..10)';
+    const docText = '{\\axis[x, y]; y = x^2}';
     editor = new DocumentEditor(container as any, docText);
 
     const row = container.querySelector('.doc-gutter-row[data-line="0"]');
@@ -503,11 +503,11 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
   it('asserts the editor pane rendered line count matches the loaded document line count', () => {
     const multiLineDoc = [
       '# Line 1',
-      'a := 10',
-      'b := 20',
-      'c := a + b',
-      'd := c * 2',
-      'graph(2x)',
+      'a = 10',
+      'b = 20',
+      'c = a + b',
+      'd = c * 2',
+      '{\\axis[x, y]; y = 2*x}',
       'd',
     ].join('\n');
 
@@ -539,7 +539,7 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
   });
 
   it('asserts dock menu dropdown toggles and selects dock edges', () => {
-    editor = new DocumentEditor(container as any, 'graph(2x)');
+    editor = new DocumentEditor(container as any, '{\\axis[x, y]; y = 2*x}');
 
     const dockMenuBtn = container.querySelector('#doc-dock-menu-btn');
     const dockDropdown = container.querySelector('#doc-dock-dropdown');

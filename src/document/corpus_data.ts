@@ -24,7 +24,7 @@ export const CORPUS_DOCUMENTS: CorpusDocument[] = [
 :orbit27 := :iterate(:collatz, 27, :until: 1, :max: 200)
 :length(:orbit27)
 :max(:orbit27)
-:graph(:orbit27)`
+:orbit27`
   },
   {
     id: "basel",
@@ -46,7 +46,7 @@ export const CORPUS_DOCUMENTS: CorpusDocument[] = [
 :f(r, x) := r * x * (1 - x)
 :orbit := :iterate(x -> :f(3.8, x), 0.5, :n: 100)
 :last(:orbit)
-:graph(:orbit)`
+:orbit`
   },
   {
     id: "goldbach",
@@ -200,7 +200,7 @@ export const CORPUS_DOCUMENTS: CorpusDocument[] = [
 :twin_primes := :filter(p -> :isprime(p + 2), :primes)
 :twin_primes
 :gaps := :map(i -> :primes[i+1] - :primes[i], :range(0..:length(:primes)-2))
-:graph(:gaps)`
+:gaps`
   },
   {
     id: "matrix_diff",
@@ -239,7 +239,7 @@ d//dx (x^4 - 2*x^2 + 5)`
     content: `# Clifford Torus 3D Surface
 \\import "lib/trig.ax"
 # Parametric torus embedded in R^3
-:graph(((:cos(u))*(2 + :cos(v)), (:sin(u))*(2 + :cos(v)), :sin(v)), u \\in 0..:tau, v \\in 0..:tau)`
+{\\axis[u, v, z]; z = (:cos(u))*(2 + :cos(v))}`
   },
   {
     id: "e8_lattice",
@@ -404,11 +404,11 @@ g := 9.81
 :R10(:th) := (:v0 * :cos(:th) / g) * (:v0 * :sin(:th) + :sqrt(:v0^2 * :sin(:th)^2 + 2 * g * :h0))
 
 # Plot Range vs Launch Angle
-:graph(:R0(:th), :R10(:th), :th \\in 0.2..1.4)
+{\\axis[th, R]; R = :R0(th)}
 
 # 3D Parametric Trajectory Surface
 :traj_3d(x, :th) := :h0 + :tan(:th) * x - (g / (2 * :v0^2 * :cos(:th)^2)) * x^2
-:graph(:traj_3d(x, :th), x \\in 0..260, :th \\in 0.4..1.2)
+{\\axis[x, th, z]; z = :traj_3d(x, th)}
 
 # Optimal Launch Angle Optimization
 :opt_theta_ground := :solve(d//d:th :R0(:th), :for: :th, :near: 0.75)

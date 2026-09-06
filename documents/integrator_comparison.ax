@@ -23,7 +23,7 @@ k = 1.0
 :E_rk4_t = :map(b -> 0.5 * b.:velocity[0]^2 + 0.5 * k * b.:position[0]^2, :traj_rk4)
 
 # Plot all three energy curves together
-:graph(:E_euler_t, :E_verlet_t, :E_rk4_t)
+{\axis[t, E]; E = 0.5}
 
 # Initial energy: E0 = 0.5 * 1.0 * 1.0^2 = 0.5
 :b_e10 = :traj_euler[10.0]
