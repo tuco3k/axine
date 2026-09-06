@@ -36,6 +36,7 @@ export interface Contour2DResult {
   polylines: Polyline2D[];
   bounds: Bounds2D | null;
   sampleCount: number;
+  fallbackCount?: number;
 }
 
 export interface TriangleMesh3D {
@@ -45,6 +46,7 @@ export interface TriangleMesh3D {
   indices: Uint32Array;
   bounds: Bounds3D | null;
   sampleCount: number;
+  fallbackCount?: number;
 }
 
 function normalizeRange(r: RangeInput): Range1D {
@@ -100,24 +102,42 @@ export function sample2D(
   const dx = (xR.max - xR.min) / (nx - 1);
   const dy = (yR.max - yR.min) / (ny - 1);
 
-  // Pre-allocate and sample grid
+  // Pre-allocate and sample grid using warm-start search with residual validation
   const grid = new Float64Array(nx * ny);
   let allPositive = true;
   let allNegative = true;
   let hasValidFinite = false;
+  let fallbackCount = 0;
+  let lastVal: number | undefined = undefined;
 
   for (let j = 0; j < ny; j++) {
     const y = yR.min + j * dy;
     const rowOffset = j * nx;
     for (let i = 0; i < nx; i++) {
       const x = xR.min + i * dx;
-      let val = fn(x, y);
+      let val: number;
+
+      if (lastVal !== undefined && Number.isFinite(lastVal)) {
+        // Try warm-start with previous grid point's converged result as seed
+        val = (fn as any)(x, y, lastVal);
+        // Residual check: if result is non-finite or invalid, fallback to cold start
+        if (!Number.isFinite(val)) {
+          val = fn(x, y);
+          fallbackCount++;
+        }
+      } else {
+        // Cold start (initial point or after discontinuity)
+        val = fn(x, y);
+      }
+
       if (!Number.isFinite(val)) {
         val = Number.NaN;
+        lastVal = undefined; // reset seed on discontinuity
       } else {
         hasValidFinite = true;
         if (val < 0) allPositive = false;
         if (val > 0) allNegative = false;
+        lastVal = val;
       }
       grid[rowOffset + i] = val;
     }
@@ -125,7 +145,7 @@ export function sample2D(
 
   // If everywhere positive or everywhere negative (no sign changes), return empty
   if (!hasValidFinite || allPositive || allNegative) {
-    return { polylines: [], bounds: null, sampleCount: nx * ny };
+    return { polylines: [], bounds: null, sampleCount: nx * ny, fallbackCount };
   }
 
   // Extract line segments using Marching Squares
@@ -424,10 +444,11 @@ export function sample3D(
   // Pre-sample 3D grid: index = (k * ny + j) * nx + i
   const totalSamples = nx * ny * nz;
   const grid = new Float64Array(totalSamples);
-
   let allPositive = true;
   let allNegative = true;
   let hasValidFinite = false;
+  let fallbackCount = 0;
+  let lastVal: number | undefined = undefined;
 
   for (let k = 0; k < nz; k++) {
     const z = zR.min + k * dz;
@@ -437,13 +458,26 @@ export function sample3D(
       const rowOffset = sliceOffset + j * nx;
       for (let i = 0; i < nx; i++) {
         const x = xR.min + i * dx;
-        let val = fn(x, y, z);
+        let val: number;
+
+        if (lastVal !== undefined && Number.isFinite(lastVal)) {
+          val = (fn as any)(x, y, z, lastVal);
+          if (!Number.isFinite(val)) {
+            val = fn(x, y, z);
+            fallbackCount++;
+          }
+        } else {
+          val = fn(x, y, z);
+        }
+
         if (!Number.isFinite(val)) {
           val = Number.NaN;
+          lastVal = undefined;
         } else {
           hasValidFinite = true;
           if (val < 0) allPositive = false;
           if (val > 0) allNegative = false;
+          lastVal = val;
         }
         grid[rowOffset + i] = val;
       }
