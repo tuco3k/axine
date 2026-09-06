@@ -29,7 +29,7 @@ describe('Tokenizer', () => {
       ['NUMBER', '7'],
       ['MINUS', '-'],
       ['NUMBER', '8'],
-      ['IDENTIFIER', 'sqrt'],
+      ['IDENTIFIER', ':sqrt'],
       ['NUMBER', '9'],
       ['IDENTIFIER', 'pi'],
       ['IDENTIFIER', 'tau'],

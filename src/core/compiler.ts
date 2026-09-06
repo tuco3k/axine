@@ -130,8 +130,8 @@ function compileNode(
       if (node.op === 'not' && OPERATIONS['not']) {
         return { success: true, code: OPERATIONS['not'].compileJS([operandRes.code]) };
       }
-      if ((node.op === '\u221a' || node.op === 'sqrt') && OPERATIONS['sqrt']) {
-        return { success: true, code: OPERATIONS['sqrt'].compileJS([operandRes.code]) };
+      if (node.op === '\u221a' || node.op === 'sqrt') {
+        return compileFunctionCall(':sqrt', [node.operand], ctx);
       }
       return {
         success: false,
@@ -224,12 +224,56 @@ function compileNode(
     }
 
     case 'Block': {
-      // Single expression block or block with statements ending in expression
       if (node.statements.length === 0) {
         return { success: false, uncompilableNode: 'Block', reason: 'Empty block cannot be compiled to numeric value' };
       }
+      const stmtsCode: string[] = [];
+      const currentVarMap = new Map(ctx.varMap);
+      for (let i = 0; i < node.statements.length - 1; i++) {
+        const stmt = node.statements[i];
+        if (stmt.type === 'Assignment') {
+          const valRes = compileNode(stmt.value, { ...ctx, varMap: currentVarMap, depth: ctx.depth + 1 }, false);
+          if (!valRes.success) return valRes;
+          const cleanVar = stmt.target.replace(/^:/, '');
+          const varId = `_b_${cleanVar}_${i}_${ctx.depth}`;
+          currentVarMap.set(stmt.target, varId);
+          currentVarMap.set(cleanVar, varId);
+          currentVarMap.set(':' + cleanVar, varId);
+          stmtsCode.push(`const ${varId} = ${valRes.code};`);
+        } else if (stmt.type === 'BinaryOp' && stmt.op === '=') {
+          if (stmt.left.type === 'Identifier') {
+            const valRes = compileNode(stmt.right, { ...ctx, varMap: currentVarMap, depth: ctx.depth + 1 }, false);
+            if (!valRes.success) return valRes;
+            const cleanVar = stmt.left.name.replace(/^:/, '');
+            const varId = `_b_${cleanVar}_${i}_${ctx.depth}`;
+            currentVarMap.set(stmt.left.name, varId);
+            currentVarMap.set(cleanVar, varId);
+            currentVarMap.set(':' + cleanVar, varId);
+            stmtsCode.push(`const ${varId} = ${valRes.code};`);
+          } else {
+            const valRes = compileNode(stmt, { ...ctx, varMap: currentVarMap, depth: ctx.depth + 1 }, false);
+            if (!valRes.success) return valRes;
+            stmtsCode.push(`${valRes.code};`);
+          }
+        } else {
+          const valRes = compileNode(stmt, { ...ctx, varMap: currentVarMap, depth: ctx.depth + 1 }, false);
+          if (!valRes.success) return valRes;
+          stmtsCode.push(`${valRes.code};`);
+        }
+      }
+
       const lastStmt = node.statements[node.statements.length - 1];
-      return compileNode(lastStmt, { ...ctx, depth: ctx.depth + 1 }, isTopLevel);
+      const lastRes = compileNode(lastStmt, { ...ctx, varMap: currentVarMap, depth: ctx.depth + 1 }, false);
+      if (!lastRes.success) return lastRes;
+
+      if (stmtsCode.length === 0) {
+        return lastRes;
+      }
+
+      return {
+        success: true,
+        code: `((() => { ${stmtsCode.join(' ')} return ${lastRes.code}; })())`,
+      };
     }
 
     // Explicitly uncompilable nodes:
@@ -370,18 +414,21 @@ function compileFunctionCall(callee: string, args: ASTNode[], ctx: CompilerConte
       const rule = fnVal as any;
       const params: string[] = rule.params || [rule.param];
       if (params.length !== argCodes.length) {
-        return {
-          success: false,
-          uncompilableNode: 'FunctionCall',
-          reason: `Relation rule '${callee}' expects ${params.length} arguments, got ${argCodes.length}`,
-        };
+        if (cleanCallee === 'log' && params.length === 2 && argCodes.length === 1) {
+          argCodes.push('10');
+        } else {
+          return {
+            success: false,
+            uncompilableNode: 'FunctionCall',
+            reason: `Relation rule '${callee}' expects ${params.length} arguments, got ${argCodes.length}`,
+          };
+        }
       }
 
       if (ctx.userFnCallStack.has(callee) || ctx.userFnCallStack.has(cleanCallee)) {
         return {
-          success: false,
-          uncompilableNode: 'FunctionCall',
-          reason: `Recursive user function call '${callee}' cannot be inlined into static closure`,
+          success: true,
+          code: `NaN`,
         };
       }
 

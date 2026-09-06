@@ -99,6 +99,7 @@ describe('Phase 3: Mathematical Notation, Differentials, Big Operators, and Matr
   describe('Extended Number Theory Builtins', () => {
     it('computes totient, powmod, and binomial', () => {
       const env = createInitialEnvironment();
+      evalVal('\\import "lib/numbertheory.ax"', env);
       // totient(10) = 4 (1, 3, 7, 9)
       expect(evalVal(':totient(10)', env)).toEqual({ type: 'rational', n: 4n, d: 1n });
 

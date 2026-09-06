@@ -1,5 +1,5 @@
 import { ASTNode } from './types';
-import { BUILTIN_FUNCTIONS, CONSTANTS } from './parser';
+import { CONSTANTS } from './parser';
 
 export interface AnalysisResult {
   freeVariables: string[];
@@ -22,21 +22,25 @@ export function analyzeAST(
   let isFuncDef = false;
 
   function isKnown(name: string): boolean {
+    const cleanName = name.replace(/^:/, '');
     if (
       boundParams.has(name) ||
+      boundParams.has(cleanName) ||
       name in env ||
+      cleanName in env ||
+      (':' + cleanName) in env ||
       CONSTANTS.has(name) ||
-      BUILTIN_FUNCTIONS.has(name)
+      CONSTANTS.has(cleanName)
     ) {
       return true;
     }
-    if (env.__operators__?.has?.(name) || env.__units__?.has?.(name)) {
+    if (env.__operators__?.has?.(name) || env.__operators__?.has?.(cleanName) || env.__units__?.has?.(name) || env.__units__?.has?.(cleanName)) {
       return true;
     }
     if (env.__rules__) {
       for (const r of env.__rules__) {
-        if (r.pattern?.type === 'Diff' && r.pattern.expr?.type === 'FunctionCall' && r.pattern.expr.callee === name) return true;
-        if (r.pattern?.type === 'FunctionCall' && r.pattern.callee === name) return true;
+        if (r.pattern?.type === 'Diff' && r.pattern.expr?.type === 'FunctionCall' && (r.pattern.expr.callee === name || r.pattern.expr.callee === cleanName)) return true;
+        if (r.pattern?.type === 'FunctionCall' && (r.pattern.callee === name || r.pattern.callee === cleanName)) return true;
       }
     }
     return false;
@@ -141,8 +145,8 @@ export function analyzeAST(
         break;
       }
       case 'FunctionCall': {
-        if (!BUILTIN_FUNCTIONS.has(n.callee) && !boundParams.has(n.callee) && !(n.callee in env)) {
-          checkIdentifier(n.callee);
+        if (!isKnown(n.callee)) {
+          undeclared.add(n.callee);
         }
         if (n.callee === 'graph') {
           const subParams = new Set(boundParams);

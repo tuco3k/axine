@@ -396,7 +396,7 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
   it('renders plots, derivations, standing expressions, and scalars inline in Results gutter', () => {
     const docText = [
       'a := 15',
-      ':graph(:sin(x), x \\in 0..10)',
+      ':graph(x^2, x \\in 0..10)',
       ':isolate(x^2 - 4 == 0, :for: x)',
       '\u222c_S F \u00b7 dS',
     ].join('\n');
@@ -437,7 +437,7 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
 
   it('supports pinning visual items into top pinned slot and unpinning', () => {
     const docText = [
-      ':graph(:cos(x), x \\in 0..5)',
+      ':graph(x^2, x \\in 0..5)',
       ':isolate(x^2 == 9, :for: x)',
     ].join('\n');
 
@@ -470,7 +470,7 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
   });
 
   it('supports expanding and collapsing individual gutter rows with persisted collapse', () => {
-    const docText = ':graph(:sin(x), x \\in 0..10)';
+    const docText = ':graph(x^2, x \\in 0..10)';
     editor = new DocumentEditor(container as any, docText);
 
     const row = container.querySelector('.doc-gutter-row[data-line="0"]');

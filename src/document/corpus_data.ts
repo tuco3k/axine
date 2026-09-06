@@ -53,6 +53,7 @@ export const CORPUS_DOCUMENTS: CorpusDocument[] = [
     title: "4. Goldbach's Conjecture Verification",
     category: "Arithmetic",
     content: `# Goldbach's Conjecture Verification
+\\import "lib/numbertheory.ax"
 # Demonstrates number theory (isprime), find(), quantification (all), and first-class none
 :goldbach(n) := :find(p \\in 2..n, :isprime(p) \\and :isprime(n - p))
 :goldbach(28)
@@ -194,6 +195,7 @@ export const CORPUS_DOCUMENTS: CorpusDocument[] = [
     title: "11. Prime Gap Distribution & Twin Primes",
     category: "Arithmetic",
     content: `# Prime Gap Distribution
+\\import "lib/numbertheory.ax"
 :primes := :filter(x -> :isprime(x), :range(2..100))
 :twin_primes := :filter(p -> :isprime(p + 2), :primes)
 :twin_primes
@@ -235,6 +237,7 @@ d//dx (x^4 - 2*x^2 + 5)`
     title: "14. Clifford Torus 3D Projection",
     category: "Geometry3D",
     content: `# Clifford Torus 3D Surface
+\\import "lib/trig.ax"
 # Parametric torus embedded in R^3
 :graph(((:cos(u))*(2 + :cos(v)), (:sin(u))*(2 + :cos(v)), :sin(v)), u \\in 0..:tau, v \\in 0..:tau)`
   },
@@ -264,6 +267,7 @@ d//dx (x^4 - 2*x^2 + 5)`
     title: "17. RSA Cryptography & Number Theory",
     category: "Arithmetic",
     content: `# RSA Key Generation & Modular Arithmetic
+\\import "lib/numbertheory.ax"
 p := 61
 q := 53
 n := p * q
@@ -377,6 +381,8 @@ c`
     title: "25. Projectile Motion & Elevated Launch",
     category: "Analysis",
     content: `# Projectile Motion & Elevated Launch Range Optimization
+\\import "lib/trig.ax"
+\\import "lib/sqrt.ax"
 g := 9.81
 :v0 := 50
 :h0 := 10

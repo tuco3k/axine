@@ -1,5 +1,6 @@
 # pendulum.ax — Simple pendulum trajectory and energy
 \import "./physics.ax"
+\import "lib/trig.ax"
 
 L = 2.0
 g = 9.81

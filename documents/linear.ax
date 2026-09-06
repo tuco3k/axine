@@ -2,6 +2,7 @@
 # Provides user-defined kinds, inner product space operations, projection and orthogonalization
 
 \module :linear
+\import "lib/sqrt.ax"
 
 \kind :InnerProductSpace(:dim, :field) \extends :VectorSpace(:dim, :field) {
   \operations: [:dot_prod, :norm_sq],

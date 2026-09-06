@@ -57,8 +57,10 @@ import {
   powValues,
   subValues,
   valueToNumber,
+  valueToASTNode,
+  UTILITY_BUILTINS,
 } from './numeric/tower';
-import { BUILTIN_FUNCTIONS, parse, parseProgram } from './parser';
+import { parse, parseProgram } from './parser';
 import { analyzeAST } from './analyzer';
 import { solveAlgebraic } from './algebra';
 import { AlgebraicSimplifier } from './algebra/simplify';
@@ -640,7 +642,13 @@ export class Evaluator {
             try {
               const val = this.evalNode(stmt.right, blockEnv);
               if (val && val.type !== 'expression' && val.type !== 'space' && val.type !== 'unknown') {
+                if (val.type === 'record_constructor' && val.name === 'Record') {
+                  val.name = stmt.left.name;
+                }
                 blockEnv[stmt.left.name] = val;
+                const clean = stmt.left.name.replace(/^:/, '');
+                blockEnv[clean] = val;
+                blockEnv[':' + clean] = val;
                 lastVal = val;
               }
             } catch {}
@@ -763,7 +771,10 @@ export class Evaluator {
               } catch {}
             }
             if (boundVar && boundVal) {
-              if (boundVar in blockEnv) {
+              if (boundVal.type === 'record_constructor' && boundVal.name === 'Record') {
+                boundVal.name = boundVar;
+              }
+              if (Object.prototype.hasOwnProperty.call(blockEnv, boundVar)) {
                 const existing = blockEnv[boundVar];
                 if (existing.type === 'rational' || existing.type === 'float') {
                   const cmp = compareValues('==', existing, boundVal);
@@ -773,6 +784,9 @@ export class Evaluator {
                 }
               }
               blockEnv[boundVar] = boundVal;
+              const cleanVar = boundVar.replace(/^:/, '');
+              blockEnv[cleanVar] = boundVal;
+              blockEnv[':' + cleanVar] = boundVal;
               lastVal = boundVal;
             }
           }
@@ -886,7 +900,7 @@ export class Evaluator {
         if (name === 'N' || name === 'Naturals' || name === '\u2115') {
           return { type: 'set_value', elementKind: { name: 'Scalar', subtype: 'natural' }, standardName: '\u2115', isInfinite: true };
         }
-        if (BUILTIN_FUNCTIONS.has(name)) {
+        if (UTILITY_BUILTINS.has(name)) {
           return {
             type: 'builtin_function',
             name,
@@ -896,7 +910,7 @@ export class Evaluator {
       }
       case 'Where': {
         const exprVal = this.evalNode(node.expr, currentEnv);
-        const condVal = this.evalNode(node.condition, currentEnv);
+        const condVal = this.evalCondition(node.condition, currentEnv);
         if (condVal.type === 'boolean') {
           if (condVal.value) {
             return exprVal;
@@ -945,7 +959,12 @@ export class Evaluator {
           return subValues({ type: 'rational', n: 0n, d: 1n }, operand, node.span);
         }
         if (node.op === '\u221a' || node.op === 'sqrt') {
-          return applyBuiltin('sqrt', [operand], node.span);
+          return this.evalFunctionCall({
+            type: 'FunctionCall',
+            callee: ':sqrt',
+            args: [node.operand],
+            span: node.span,
+          }, currentEnv);
         }
         throw createError(`Unknown unary operator '${node.op}'`, node.span);
       }
@@ -1047,19 +1066,15 @@ export class Evaluator {
           case '^':
             return powValues(left, right, node.span);
           case '=': {
-            if (node.left.type === 'Identifier' && left.type === 'expression') {
+            if (node.left.type === 'Identifier') {
               if (right.type !== 'expression' && right.type !== 'space' && right.type !== 'unknown') {
                 if (right.type === 'record_constructor' && right.name === 'Record') {
                   right.name = node.left.name;
                 }
                 currentEnv[node.left.name] = right;
-              }
-            } else if (node.right.type === 'Identifier' && right.type === 'expression') {
-              if (left.type !== 'expression' && left.type !== 'space' && left.type !== 'unknown') {
-                if (left.type === 'record_constructor' && left.name === 'Record') {
-                  left.name = node.right.name;
-                }
-                currentEnv[node.right.name] = left;
+                const clean = node.left.name.replace(/^:/, '');
+                currentEnv[clean] = right;
+                currentEnv[':' + clean] = right;
               }
             }
             return compareValues(node.op, left, right, node.span);
@@ -1076,7 +1091,17 @@ export class Evaluator {
         }
       }
       case 'If': {
-        const condVal = this.evalNode(node.condition, currentEnv);
+        const condVal = this.evalCondition(node.condition, currentEnv);
+        if (condVal.type === 'expression') {
+          return {
+            type: 'expression',
+            ast: node,
+            text: formatAST(node),
+          };
+        }
+        if (condVal.type === 'unknown') {
+          return condVal;
+        }
         if (this.isTruthy(condVal)) {
           return this.evalNode(node.thenBranch, currentEnv);
         } else {
@@ -1367,16 +1392,22 @@ export class Evaluator {
 
         if (pat.type === 'Diff') {
           const inner = pat.expr;
-          if (inner.type === 'FunctionCall' && BUILTIN_FUNCTIONS.has(inner.callee)) {
-            isBuiltinOverride = true;
-            overrideName = inner.callee;
-          } else if (inner.type === 'BinaryOp' && ['+', '-', '*', '/', '^'].includes(inner.op)) {
+          if (inner.type === 'BinaryOp' && ['+', '-', '*', '/', '^'].includes(inner.op)) {
             isBuiltinOverride = true;
             overrideName = inner.op;
+          } else if (inner.type === 'FunctionCall') {
+            const callee = inner.callee.replace(/^:/, '');
+            if (['sin', 'cos', 'tan', 'exp', 'ln', 'sqrt', 'sinh', 'cosh', 'tanh', 'asin', 'acos', 'atan'].includes(callee) || UTILITY_BUILTINS.has(callee)) {
+              isBuiltinOverride = true;
+              overrideName = inner.callee;
+            }
           }
-        } else if (pat.type === 'FunctionCall' && BUILTIN_FUNCTIONS.has(pat.callee)) {
-          isBuiltinOverride = true;
-          overrideName = pat.callee;
+        } else if (pat.type === 'FunctionCall') {
+          const callee = pat.callee.replace(/^:/, '');
+          if (['sin', 'cos', 'tan', 'exp', 'ln', 'sqrt', 'sinh', 'cosh', 'tanh', 'asin', 'acos', 'atan'].includes(callee) || UTILITY_BUILTINS.has(callee)) {
+            isBuiltinOverride = true;
+            overrideName = pat.callee;
+          }
         } else if (pat.type === 'BinaryOp' && ['+', '-', '*', '/', '^', '%', '=', '==', '!=', '<', '<=', '>', '>='].includes(pat.op)) {
           isBuiltinOverride = true;
           overrideName = pat.op;
@@ -2334,10 +2365,10 @@ export class Evaluator {
       return this.invokeForallRule(directBinding, node.args, currentEnv, node);
     }
 
-    // Check builtin function
-    if (BUILTIN_FUNCTIONS.has(callee)) {
+    // Check utility builtin function (e.g. min, max, dot, length, matrix, det)
+    if (UTILITY_BUILTINS.has(callee) || UTILITY_BUILTINS.has(cleanCallee)) {
       const argVals = node.args.map((a: ASTNode) => this.evalNode(a, currentEnv));
-      return applyBuiltin(callee, argVals, node.span);
+      return applyBuiltin(UTILITY_BUILTINS.has(callee) ? callee : cleanCallee, argVals, node.span);
     }
 
     throw createError(`Function '${callee}' is not defined`, node.span, {
@@ -2349,10 +2380,19 @@ export class Evaluator {
 
   private invokeForallRule(rule: any, args: ASTNode[], currentEnv: Environment, node: FunctionCallNode): Value {
     const argVals = args.map(a => this.evalNode(a, currentEnv));
+    const unknownArg = argVals.find(v => v.type === 'unknown');
+    if (unknownArg) return unknownArg;
     const argKey = argVals.map(v => JSON.stringify(v, (_, val) => typeof val === 'bigint' ? val.toString() + 'n' : val)).join(',');
     const callKey = `${rule.name}(${argKey})`;
     if (this.activeRuleCalls.has(callKey)) {
-      return { type: 'expression', ast: node, text: formatAST(node) };
+      const concreteAst: ASTNode = {
+        type: 'FunctionCall',
+        callee: rule.name,
+        args: argVals.map(v => valueToASTNode(v, node.span)),
+        isBare: node.isBare,
+        span: node.span,
+      };
+      return { type: 'expression', ast: concreteAst, text: formatAST(concreteAst) };
     }
     this.activeRuleCalls.add(callKey);
     try {
@@ -2364,6 +2404,11 @@ export class Evaluator {
           const clean = params[i].replace(/^:/, '');
           callEnv[clean] = argVals[i];
           callEnv[':' + clean] = argVals[i];
+        } else if (params[i].replace(/^:/, '') === 'b') {
+          const defaultB: Value = { type: 'rational', n: 10n, d: 1n };
+          callEnv[params[i]] = defaultB;
+          callEnv['b'] = defaultB;
+          callEnv[':b'] = defaultB;
         }
       }
       return this.evalNode(rule.body, callEnv);
@@ -2391,6 +2436,8 @@ export class Evaluator {
     }
 
     const argVals = argNodes.map(a => this.evalNode(a, callerEnv));
+    const unknownArg = argVals.find(v => v.type === 'unknown');
+    if (unknownArg) return unknownArg;
 
     // Check memoization cache
     const memoKey = `${fn.name}:${argVals.map(v => this.serializeValueForMemo(v)).join(',')}`;
@@ -2440,6 +2487,16 @@ export class Evaluator {
   ): Value {
     if ((fnVal as any).type === 'builtin_function') {
       return applyBuiltin((fnVal as any).name, argVals, span);
+    }
+    if ((fnVal as any).type === 'forall_rule') {
+      const rule = fnVal as any;
+      const dummyCallNode: FunctionCallNode = {
+        type: 'FunctionCall',
+        callee: rule.name,
+        args: argVals.map(v => valueToASTNode(v, span)),
+        span: span ?? { start: 0, end: 0, line: 1, col: 1 },
+      };
+      return this.invokeForallRule(rule, dummyCallNode.args, this.env, dummyCallNode);
     }
     if (fnVal.type === 'function') {
       const memoKey = `${fnVal.name}:${argVals.map(v => this.serializeValueForMemo(v)).join(',')}`;
@@ -4415,11 +4472,39 @@ export class Evaluator {
 
 
 
+  private evalCondition(node: ASTNode, currentEnv: Environment): Value {
+    if (node.type === 'BinaryOp') {
+      if (node.op === 'and') {
+        const left = this.evalCondition(node.left, currentEnv);
+        if (left.type === 'boolean' && !left.value) return left;
+        const right = this.evalCondition(node.right, currentEnv);
+        if (right.type === 'boolean' && !right.value) return right;
+        if (left.type === 'boolean' && right.type === 'boolean') return { type: 'boolean', value: left.value && right.value };
+        return { type: 'expression', ast: node, text: formatAST(node) };
+      }
+      if (node.op === 'or') {
+        const left = this.evalCondition(node.left, currentEnv);
+        if (left.type === 'boolean' && left.value) return left;
+        const right = this.evalCondition(node.right, currentEnv);
+        if (right.type === 'boolean' && right.value) return right;
+        if (left.type === 'boolean' && right.type === 'boolean') return { type: 'boolean', value: left.value || right.value };
+        return { type: 'expression', ast: node, text: formatAST(node) };
+      }
+      if (['=', '==', '!=', '<', '<=', '>', '>='].includes(node.op)) {
+        const left = this.evalNode(node.left, currentEnv);
+        const right = this.evalNode(node.right, currentEnv);
+        return compareValues(node.op as any, left, right, node.span);
+      }
+    }
+    return this.evalNode(node, currentEnv);
+  }
+
   private isTruthy(val: Value): boolean {
     if (val.type === 'boolean') return val.value;
     if (val.type === 'none') return false;
     if (val.type === 'rational') return val.n !== 0n;
     if (val.type === 'float') return val.value !== 0 && !isNaN(val.value);
+    if (val.type === 'expression') return false;
     return true;
   }
 

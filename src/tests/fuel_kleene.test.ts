@@ -96,6 +96,7 @@ describe('Phase 1: Fuel Model, Unknown Value & Kleene Three-Valued Logic', () =>
   describe('Unknown Arithmetic Propagation', () => {
     it('propagates unknown through arithmetic and preserves earliest reason', () => {
       const env = createInitialEnvironment();
+      evaluate('\\import "lib/trig.ax"', env);
       const resAdd = evalVal(':unknown("undefined-at-point") + 10', env);
       expect(resAdd).toMatchObject({ type: 'unknown', reason: 'undefined-at-point' });
 
@@ -110,6 +111,7 @@ describe('Phase 1: Fuel Model, Unknown Value & Kleene Three-Valued Logic', () =>
   describe('Quantifiers, Search, and none vs unknown', () => {
     it('distinguishes none (definitively absent) from unknown (did not finish)', () => {
       const env = createInitialEnvironment();
+      evaluate('\\import "lib/numbertheory.ax"', env);
 
       // Definitive search: no prime between 14 and 16 -> returns none
       const resNone = evalVal(":find(x \\in 14..16, :isprime(x))", env);
@@ -138,6 +140,7 @@ describe('Phase 1: Fuel Model, Unknown Value & Kleene Three-Valued Logic', () =>
 
     it('evaluates any() returning true (witness), false, or unknown', () => {
       const env = createInitialEnvironment();
+      evaluate('\\import "lib/numbertheory.ax"', env);
       // True witness at x = 7
       expect(evalVal(":any(:isprime(x), x \\in 6..10)", env)).toEqual({ type: 'boolean', value: true });
       // Definitively false (no evens in 1..1 step 2)
@@ -146,6 +149,7 @@ describe('Phase 1: Fuel Model, Unknown Value & Kleene Three-Valued Logic', () =>
 
     it('evaluates least() (µ-operator) and unfold()', () => {
       const env = createInitialEnvironment();
+      evaluate('\\import "lib/numbertheory.ax"', env);
       // least prime >= 20 is 23
       const resLeast = evalVal(":least(:isprime(x), :from: 20)", env);
       expect(resLeast).toEqual({ type: 'rational', n: 23n, d: 1n });

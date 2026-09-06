@@ -119,16 +119,6 @@ export function nodeToConstantValue(node: ASTNode): Value | null {
   }
   return null;
 }
-import {
-  floatAtan,
-  floatCos,
-  floatCosh,
-  floatExp,
-  floatSin,
-  floatSinh,
-  floatTan,
-  floatTanh,
-} from './float';
 
 export function makeRational(n: bigint, d: bigint = 1n, span?: Span): RationalValue | FloatValue {
   const frac = new BigFraction(n, d, span);
@@ -1111,238 +1101,33 @@ export function factorizeInt(n: bigint): [bigint, bigint][] {
 // Builtin Dispatcher
 // -----------------------------------------------------------------------------
 
+export const UTILITY_BUILTINS = new Set<string>([
+  'inner', 'dot', 'min', 'max', 'sum', 'prod', 'length', 'first', 'last',
+  'mod', 'factorial', 'float', 'binomial', 'random',
+  'matrix', 'det', 'inverse', 'transpose', 'trace', 'rank', 'eigenvalues'
+]);
+
 export function applyBuiltin(name: string, args: Value[], span?: Span): Value {
   for (const a of args) {
     if (a.type === 'unknown') return a;
   }
 
-  function makeUnreducedFn(fnName: string, fnArgs: Value[]): ExpressionValue {
-    const ast: ASTNode = {
-      type: 'FunctionCall',
-      callee: fnName,
-      args: fnArgs.map(a => valueToASTNode(a, span)),
-      span: span ?? { start: 0, end: 0, line: 1, col: 1 },
-    };
-    return { type: 'expression', ast, text: formatAST(ast) };
-  }
-
   switch (name) {
-    case 'sin':
-    case 'cos':
-    case 'tan':
-    case 'asin':
-    case 'acos':
-    case 'atan':
-    case 'sinh':
-    case 'cosh':
-    case 'tanh':
-    case 'ln':
-    case 'log':
-    case 'log2':
-    case 'exp':
-    case 'sqrt': {
-      const a = args[0];
-      if (name !== 'sqrt' && a && a.type === 'quantity') {
-        const hasDims = Object.values(a.dimensions).some(d => d !== 0);
-        if (hasDims) {
-          const dimStr = formatDimensions(a.dimensions);
-          const valStr = formatQuantityString(a);
-          throw createError(
-            `Transcendental function '${name}' requires dimensionless argument, but received argument with dimension ${dimStr} (${valStr})`,
-            span ?? { start: 0, end: 0, line: 1, col: 1 },
-            {
-              expected: 'a dimensionless scalar argument',
-              suggestion: `Divide by unit to make argument dimensionless`,
-            }
-          );
-        }
-      }
-      if (name === 'sqrt' && a && a.type === 'quantity') {
-        return powValues(a, { type: 'rational', n: 1n, d: 2n }, span);
-      }
-      if (a && (a.type === 'list' || a.type === 'tuple')) {
-        const k = inferKindOfValue(a);
-        throw createError(`Cannot apply ${name} to ${formatKind(k)}: ${name} has domain Scalar`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      }
-      if (name === 'sin') {
-        if (args.length !== 1) throw createError(`sin expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-        if (args[0].type === 'expression') return makeUnreducedFn('sin', args);
-        return { type: 'float', value: floatSin(valueToNumber(args[0], span)) };
-      }
-      if (name === 'cos') {
-        if (args.length !== 1) throw createError(`cos expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-        if (args[0].type === 'expression') return makeUnreducedFn('cos', args);
-        return { type: 'float', value: floatCos(valueToNumber(args[0], span)) };
-      }
-      if (name === 'tan') {
-        if (args.length !== 1) throw createError(`tan expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-        if (args[0].type === 'expression') return makeUnreducedFn('tan', args);
-        return { type: 'float', value: floatTan(valueToNumber(args[0], span)) };
-      }
-      if (name === 'asin') {
-        if (args.length !== 1) throw createError(`asin expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-        if (args[0].type === 'expression') return makeUnreducedFn('asin', args);
-        const x = valueToNumber(args[0], span);
-        if (x < -1 || x > 1 || Number.isNaN(x)) return makeUnreducedFn('asin', args);
-        return { type: 'float', value: Math.asin(x) };
-      }
-      if (name === 'acos') {
-        if (args.length !== 1) throw createError(`acos expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-        if (args[0].type === 'expression') return makeUnreducedFn('acos', args);
-        const x = valueToNumber(args[0], span);
-        if (x < -1 || x > 1 || Number.isNaN(x)) return makeUnreducedFn('acos', args);
-        return { type: 'float', value: Math.acos(x) };
-      }
-      if (name === 'atan') {
-        if (args.length !== 1) throw createError(`atan expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-        if (args[0].type === 'expression') return makeUnreducedFn('atan', args);
-        return { type: 'float', value: floatAtan(valueToNumber(args[0], span)) };
-      }
-      if (name === 'sinh') {
-        if (args.length !== 1) throw createError(`sinh expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-        if (args[0].type === 'expression') return makeUnreducedFn('sinh', args);
-        return { type: 'float', value: floatSinh(valueToNumber(args[0], span)) };
-      }
-      if (name === 'cosh') {
-        if (args.length !== 1) throw createError(`cosh expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-        if (args[0].type === 'expression') return makeUnreducedFn('cosh', args);
-        return { type: 'float', value: floatCosh(valueToNumber(args[0], span)) };
-      }
-      if (name === 'tanh') {
-        if (args.length !== 1) throw createError(`tanh expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-        if (args[0].type === 'expression') return makeUnreducedFn('tanh', args);
-        return { type: 'float', value: floatTanh(valueToNumber(args[0], span)) };
-      }
-      if (name === 'ln') {
-        if (args.length !== 1) throw createError(`ln expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-        if (args[0].type === 'expression') return makeUnreducedFn('ln', args);
-        const x = valueToNumber(args[0], span);
-        if (x <= 0 || Number.isNaN(x)) return makeUnreducedFn('ln', args);
-        return { type: 'float', value: Math.log(x) };
-      }
-      if (name === 'log') {
-        if (args.length === 1) {
-          if (args[0].type === 'expression') return makeUnreducedFn('log', args);
-          const x = valueToNumber(args[0], span);
-          if (x <= 0 || Number.isNaN(x)) return makeUnreducedFn('log', args);
-          return { type: 'float', value: Math.log10(x) };
-        }
-        if (args.length === 2) {
-          if (args[0].type === 'expression' || args[1].type === 'expression') return makeUnreducedFn('log', args);
-          const val = valueToNumber(args[0], span);
-          const base = valueToNumber(args[1], span);
-          if (val <= 0 || base <= 0 || base === 1 || Number.isNaN(val) || Number.isNaN(base)) return makeUnreducedFn('log', args);
-          return { type: 'float', value: Math.log(val) / Math.log(base) };
-        }
-        throw createError(`log expects 1 or 2 arguments, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      }
-      if (name === 'log2') {
-        if (args.length !== 1) throw createError(`log2 expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-        if (args[0].type === 'expression') return makeUnreducedFn('log2', args);
-        const x = valueToNumber(args[0], span);
-        if (x <= 0 || Number.isNaN(x)) return makeUnreducedFn('log2', args);
-        return { type: 'float', value: Math.log2(x) };
-      }
-      if (name === 'exp') {
-        if (args.length !== 1) throw createError(`exp expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-        if (args[0].type === 'expression') return makeUnreducedFn('exp', args);
-        return { type: 'float', value: floatExp(valueToNumber(args[0], span)) };
-      }
-      if (name === 'sqrt') {
-        if (args.length !== 1) throw createError(`sqrt expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-        return sqrtValue(args[0], span);
-      }
-      throw createError(`Unknown builtin function '${name}'`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-    }
     case 'inner':
     case 'dot': {
-      if (args.length !== 2) throw createError(`${name} expects 2 vector arguments`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      const a = args[0];
-      const b = args[1];
-      if ((a.type === 'list' || a.type === 'tuple') && (b.type === 'list' || b.type === 'tuple')) {
-        const dimA = a.elements.length;
-        const dimB = b.elements.length;
-        if (dimA !== dimB) {
-          throw createError(`Cannot compute inner product of Vector(dim=${dimA}, field=R) and Vector(dim=${dimB}, field=R): dimension mismatch (${dimA} vs ${dimB})`, span ?? { start: 0, end: 0, line: 1, col: 1 });
+      if (args.length !== 2) throw createError('dot requires 2 arguments', span ?? { start: 0, end: 0, line: 1, col: 1 });
+      const [v1, v2] = args;
+      if (v1.type === 'list' && v2.type === 'list') {
+        if (v1.elements.length !== v2.elements.length) {
+          throw createError('Vectors must have same length for dot product', span ?? { start: 0, end: 0, line: 1, col: 1 });
         }
         let sum: Value = { type: 'rational', n: 0n, d: 1n };
-        for (let i = 0; i < dimA; i++) {
-          const prod = mulValues(a.elements[i], b.elements[i], span);
-          sum = addValues(sum, prod, span);
+        for (let i = 0; i < v1.elements.length; i++) {
+          sum = addValues(sum, mulValues(v1.elements[i], v2.elements[i], span), span);
         }
         return sum;
       }
-      throw createError(`Cannot compute inner product on non-vector kinds`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-    }
-    case 'norm': {
-      if (args.length !== 1) throw createError(`norm expects 1 argument`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      const a = args[0];
-      if (a.type === 'list' || a.type === 'tuple') {
-        let sumSq: Value = { type: 'rational', n: 0n, d: 1n };
-        for (const el of a.elements) {
-          const prod = mulValues(el, el, span);
-          sumSq = addValues(sumSq, prod, span);
-        }
-        return sqrtValue(sumSq, span);
-      }
-      if (a.type === 'rational' || a.type === 'float') {
-        return applyBuiltin('abs', [a], span);
-      }
-      throw createError(`Cannot compute norm of ${formatKind(inferKindOfValue(a))}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-    }
-    case 'card': {
-      if (args.length !== 1) throw createError(`card expects 1 argument`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      const a = args[0];
-      if (a.type === 'set_value') {
-        if (a.isInfinite) {
-          return { type: 'string', value: 'infinite (\u2135\u2080 or c)' };
-        }
-        if (a.elements) return { type: 'rational', n: BigInt(a.elements.length), d: 1n };
-      }
-      if (a.type === 'list') {
-        return { type: 'rational', n: BigInt(a.elements.length), d: 1n };
-      }
-      throw createError(`Cannot compute cardinality of non-set kind`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-    }
-    case 'abs': {
-      if (args.length !== 1) throw createError(`abs expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      const a = args[0];
-      if (a.type === 'rational') {
-        const frac = new BigFraction(a.n, a.d, span).abs(span);
-        return { type: 'rational', n: frac.n, d: frac.d };
-      }
-      return { type: 'float', value: Math.abs(valueToNumber(a, span)) };
-    }
-    case 'floor': {
-      if (args.length !== 1) throw createError(`floor expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      const a = args[0];
-      if (a.type === 'rational') {
-        const val: RationalValue = a;
-        let q: bigint = val.n / val.d;
-        if (val.n < 0n && val.n % val.d !== 0n) {
-          q -= 1n;
-        }
-        return { type: 'rational', n: q, d: 1n };
-      }
-      return { type: 'rational', n: BigInt(Math.floor(valueToNumber(a, span))), d: 1n };
-    }
-    case 'ceil': {
-      if (args.length !== 1) throw createError(`ceil expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      const a = args[0];
-      if (a.type === 'rational') {
-        const val: RationalValue = a;
-        let q: bigint = val.n / val.d;
-        if (val.n > 0n && val.n % val.d !== 0n) {
-          q += 1n;
-        }
-        return { type: 'rational', n: q, d: 1n };
-      }
-      return { type: 'rational', n: BigInt(Math.ceil(valueToNumber(a, span))), d: 1n };
-    }
-    case 'round': {
-      if (args.length !== 1) throw createError(`round expects 1 argument, got ${args.length}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
-      const num = valueToNumber(args[0], span);
-      return { type: 'rational', n: BigInt(Math.round(num)), d: 1n };
+      throw createError('dot expects two lists', span ?? { start: 0, end: 0, line: 1, col: 1 });
     }
     case 'min': {
       if (args.length === 0) throw createError('min requires at least 1 argument', span ?? { start: 0, end: 0, line: 1, col: 1 });
@@ -1463,67 +1248,6 @@ export function applyBuiltin(name: string, args: Value[], span?: Span): Value {
       }
       throw createError(`last expects a list or tuple, got ${target.type}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
     }
-    case 'isprime': {
-      if (args.length !== 1) throw createError('isprime requires 1 argument', span ?? { start: 0, end: 0, line: 1, col: 1 });
-      const n = requireInteger(args[0], 'isprime', span);
-      return { type: 'boolean', value: isPrimeInt(n) };
-    }
-    case 'nextprime': {
-      if (args.length !== 1) throw createError('nextprime requires 1 argument', span ?? { start: 0, end: 0, line: 1, col: 1 });
-      const n = requireInteger(args[0], 'nextprime', span);
-      return { type: 'rational', n: nextPrimeInt(n), d: 1n };
-    }
-    case 'divisors': {
-      if (args.length !== 1) throw createError('divisors requires 1 argument', span ?? { start: 0, end: 0, line: 1, col: 1 });
-      const n = requireInteger(args[0], 'divisors', span);
-      const divs = divisorsInt(n);
-      const elements: Value[] = divs.map(d => ({ type: 'rational', n: d, d: 1n }));
-      return { type: 'list', elements };
-    }
-    case 'factorize': {
-      if (args.length !== 1) throw createError('factorize requires 1 argument', span ?? { start: 0, end: 0, line: 1, col: 1 });
-      const n = requireInteger(args[0], 'factorize', span);
-      const factors = factorizeInt(n);
-      const elements: Value[] = factors.map(([p, e]) => ({
-        type: 'tuple',
-        elements: [
-          { type: 'rational', n: p, d: 1n },
-          { type: 'rational', n: e, d: 1n },
-        ],
-      }));
-      return { type: 'list', elements };
-    }
-    case 'gcd': {
-      if (args.length < 2) throw createError('gcd requires at least 2 arguments', span ?? { start: 0, end: 0, line: 1, col: 1 });
-      let g = 0n;
-      for (const arg of args) {
-        if (arg.type !== 'rational' || arg.d !== 1n) {
-          throw createError('gcd requires integer arguments', span ?? { start: 0, end: 0, line: 1, col: 1 }, {
-            expected: 'integers',
-            suggestion: 'Ensure all arguments to gcd are integers',
-          });
-        }
-        const val = arg.n < 0n ? -arg.n : arg.n;
-        g = BigFraction.gcd(g, val);
-      }
-      return { type: 'rational', n: g, d: 1n };
-    }
-    case 'lcm': {
-      if (args.length < 2) throw createError('lcm requires at least 2 arguments', span ?? { start: 0, end: 0, line: 1, col: 1 });
-      let l = 1n;
-      for (const arg of args) {
-        if (arg.type !== 'rational' || arg.d !== 1n) {
-          throw createError('lcm requires integer arguments', span ?? { start: 0, end: 0, line: 1, col: 1 }, {
-            expected: 'integers',
-            suggestion: 'Ensure all arguments to lcm are integers',
-          });
-        }
-        const val = arg.n < 0n ? -arg.n : arg.n;
-        if (val === 0n) return { type: 'rational', n: 0n, d: 1n };
-        l = (l * val) / BigFraction.gcd(l, val);
-      }
-      return { type: 'rational', n: l, d: 1n };
-    }
     case 'mod': {
       if (args.length !== 2) throw createError('mod requires 2 arguments', span ?? { start: 0, end: 0, line: 1, col: 1 });
       return modValues(args[0], args[1], span);
@@ -1535,18 +1259,6 @@ export function applyBuiltin(name: string, args: Value[], span?: Span): Value {
     case 'float': {
       if (args.length !== 1) throw createError('float requires 1 argument', span ?? { start: 0, end: 0, line: 1, col: 1 });
       return { type: 'float', value: valueToNumber(args[0], span) };
-    }
-    case 'totient': {
-      if (args.length !== 1) throw createError('totient requires 1 argument', span ?? { start: 0, end: 0, line: 1, col: 1 });
-      const n = requireInteger(args[0], 'totient', span);
-      return { type: 'rational', n: totientInt(n), d: 1n };
-    }
-    case 'powmod': {
-      if (args.length !== 3) throw createError('powmod requires 3 arguments (base, exp, mod)', span ?? { start: 0, end: 0, line: 1, col: 1 });
-      const base = requireInteger(args[0], 'powmod base', span);
-      const exp = requireInteger(args[1], 'powmod exp', span);
-      const mod = requireInteger(args[2], 'powmod mod', span);
-      return { type: 'rational', n: powModInt(base, exp, mod), d: 1n };
     }
     case 'binomial': {
       if (args.length !== 2) throw createError('binomial requires 2 arguments (n, k)', span ?? { start: 0, end: 0, line: 1, col: 1 });
@@ -1594,36 +1306,6 @@ export function applyBuiltin(name: string, args: Value[], span?: Span): Value {
   }
 }
 
-function totientInt(n: bigint): bigint {
-  if (n <= 0n) return 0n;
-  let result = n;
-  let p = 2n;
-  let temp = n;
-  while (p * p <= temp) {
-    if (temp % p === 0n) {
-      while (temp % p === 0n) temp /= p;
-      result -= result / p;
-    }
-    p++;
-  }
-  if (temp > 1n) {
-    result -= result / temp;
-  }
-  return result;
-}
-
-function powModInt(base: bigint, exp: bigint, mod: bigint): bigint {
-  if (mod === 1n) return 0n;
-  let res = 1n;
-  let b = ((base % mod) + mod) % mod;
-  let e = exp;
-  while (e > 0n) {
-    if (e % 2n === 1n) res = (res * b) % mod;
-    e /= 2n;
-    b = (b * b) % mod;
-  }
-  return res;
-}
 
 function binomialInt(n: bigint, k: bigint): bigint {
   if (k < 0n || k > n) return 0n;

@@ -1,5 +1,6 @@
 # optics.ax — Geometric optics with zero built-in physics
 # Ray propagation, interface refraction (Snell's Law), and custom views
+\import "lib/sqrt.ax"
 
 :Ray = \record { :origin, :direction, :intensity }
 

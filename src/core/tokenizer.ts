@@ -537,7 +537,7 @@ export class Tokenizer {
       }
       if (char === '\u221a') { // Unicode square root U+221A
         this.advance();
-        tokens.push(this.makeToken('IDENTIFIER', 'sqrt', startPos, startLine, startCol, leadingWhitespace));
+        tokens.push(this.makeToken('IDENTIFIER', ':sqrt', startPos, startLine, startCol, leadingWhitespace));
         continue;
       }
       if (char === 'π') {

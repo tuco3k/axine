@@ -26,7 +26,7 @@ describe('Evaluator', () => {
   it('evaluates bare function calls', () => {
     const env = createInitialEnvironment();
     const { value } = evaluate(':sin 0', env);
-    expect(value).toEqual({ type: 'float', value: 0 });
+    expect(value).toEqual({ type: 'rational', n: 0n, d: 1n });
   });
 
   it('evaluates relation with 1 free variable into 1D space', () => {

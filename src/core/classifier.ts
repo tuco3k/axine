@@ -1,5 +1,5 @@
 import { ASTNode, Environment, Token } from './types';
-import { BUILTIN_FUNCTIONS, CONSTANTS, parse } from './parser';
+import { CONSTANTS, parse } from './parser';
 import { analyzeAST } from './analyzer';
 import { Diagnostic } from './errors';
 import { tokenize } from './tokenizer';
@@ -37,8 +37,9 @@ const BARE_MATH_FUNCS = new Set([
   'abs', 'floor', 'ceil', 'round',
 ]);
 
-export function hasKnownFunctionCall(line: string, knownFunctions: Set<string> = BUILTIN_FUNCTIONS): boolean {
-  for (const fn of knownFunctions) {
+export function hasKnownFunctionCall(line: string, knownFunctions: Set<string> = new Set()): boolean {
+  const allFuncs = new Set([...knownFunctions, ...BARE_MATH_FUNCS, 'sum', 'prod', 'min', 'max']);
+  for (const fn of allFuncs) {
     // Check for "fn(" or "fn [" or "fn  ("
     const callPattern = new RegExp(`\\b${fn}\\s*[\\(\\[]`, 'i');
     if (callPattern.test(line)) {
@@ -156,7 +157,7 @@ export function hasHighMathTokenRatio(line: string, tokens?: Token[]): boolean {
     ) {
       mathCharCount += tok.value.length;
     } else if (tok.type === 'IDENTIFIER') {
-      if (BUILTIN_FUNCTIONS.has(tok.value) || CONSTANTS.has(tok.value)) {
+      if (CONSTANTS.has(tok.value)) {
         mathCharCount += tok.value.length;
       } else if (tok.value.length === 1) {
         const prevTok = i > 0 ? tokenList[i - 1] : undefined;
@@ -250,7 +251,7 @@ export function classifyLine(line: string, env: Environment = {}): Classificatio
     return { state: 'PROSE' };
   }
 
-  const knownFunctions = new Set(BUILTIN_FUNCTIONS);
+  const knownFunctions = new Set<string>();
   const knownVariables = new Set(CONSTANTS);
   for (const [k, v] of Object.entries(env)) {
     if (v.type === 'function' || v.type === 'builtin') {

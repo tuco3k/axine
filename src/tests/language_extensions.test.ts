@@ -89,6 +89,7 @@ describe('Core Language Extensions & Problem Corpus Features', () => {
 
     it('filters lists using predicates', () => {
       const env = createInitialEnvironment();
+      evaluate('\\import "lib/numbertheory.ax"', env);
       const res = evaluate(':filter(x -> :isprime(x), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])', env);
       expect(res.value.type).toBe('list');
       if (res.value.type === 'list') {
@@ -151,6 +152,7 @@ describe('Core Language Extensions & Problem Corpus Features', () => {
   describe('Number Theory', () => {
     it('isprime correctly classifies primes', () => {
       const env = createInitialEnvironment();
+      evaluate('\\import "lib/numbertheory.ax"', env);
       expect(evaluate(':isprime(2)', env).value).toEqual({ type: 'boolean', value: true });
       expect(evaluate(':isprime(3)', env).value).toEqual({ type: 'boolean', value: true });
       expect(evaluate(':isprime(4)', env).value).toEqual({ type: 'boolean', value: false });
@@ -159,12 +161,14 @@ describe('Core Language Extensions & Problem Corpus Features', () => {
 
     it('nextprime finds next prime', () => {
       const env = createInitialEnvironment();
+      evaluate('\\import "lib/numbertheory.ax"', env);
       expect(evaluate(':nextprime(14)', env).value).toEqual({ type: 'rational', n: 17n, d: 1n });
       expect(evaluate(':nextprime(97)', env).value).toEqual({ type: 'rational', n: 101n, d: 1n });
     });
 
     it('divisors returns sorted list of divisors', () => {
       const env = createInitialEnvironment();
+      evaluate('\\import "lib/numbertheory.ax"', env);
       const res = evaluate(':divisors(12)', env);
       expect(res.value.type).toBe('list');
       if (res.value.type === 'list') {
@@ -181,6 +185,7 @@ describe('Core Language Extensions & Problem Corpus Features', () => {
 
     it('factorize returns list of (prime, exponent) tuples', () => {
       const env = createInitialEnvironment();
+      evaluate('\\import "lib/numbertheory.ax"', env);
       const res = evaluate(':factorize(12)', env);
       expect(res.value.type).toBe('list');
       if (res.value.type === 'list') {
@@ -207,6 +212,7 @@ describe('Core Language Extensions & Problem Corpus Features', () => {
   describe('Search & Quantification', () => {
     it('find locates first element or none', () => {
       const env = createInitialEnvironment();
+      evaluate('\\import "lib/numbertheory.ax"', env);
       const res1 = evaluate(":find(x \\in 1..100, :isprime(x) \\and x > 50)", env);
       expect(res1.value).toEqual({ type: 'rational', n: 53n, d: 1n });
 
@@ -216,6 +222,7 @@ describe('Core Language Extensions & Problem Corpus Features', () => {
 
     it('all and any quantify over ranges', () => {
       const env = createInitialEnvironment();
+      evaluate('\\import "lib/numbertheory.ax"', env);
       const res1 = evaluate(":all(x > 0, x \\in 1..10)", env);
       expect(res1.value).toEqual({ type: 'boolean', value: true });
 
@@ -255,6 +262,7 @@ describe('Core Language Extensions & Problem Corpus Features', () => {
 
     it('solve with inline expression solve(expr, for: x, near: x0) finds root', () => {
       const env = createInitialEnvironment();
+      evaluate('\\import "lib/trig.ax"', env);
       evaluate(':R(t) := :sin(2 * t)', env);
       const res = evaluate(":solve(d//dt :R(t), :for: t, :near: 0.75)", env);
       expect(res.value.type).toBe('float');

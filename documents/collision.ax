@@ -1,5 +1,6 @@
 # collision.ax — Elastic collision of two bodies
 \import "./physics.ax"
+\import "lib/abs.ax"
 
 :b1_0 = :Body(:mass: 2.0, :position: (-5.0, 0.0), :velocity: (3.0, 0.0))
 :b2_0 = :Body(:mass: 1.0, :position: (5.0, 0.0), :velocity: (-1.0, 0.0))

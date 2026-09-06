@@ -4,6 +4,7 @@
 :author: Axine Verification Suite
 :date: 2026-09-02
 ---
+\import "lib/trig.ax"
 
 ## 1. Quadratic Equation Isolation with Factoring & Branch Forks
 :isolate(x^2 - 5*x + 6 = 0, :for: x)

@@ -8,6 +8,7 @@
 ## 1. Projectile Motion in 2D Gravity
 # Launch simulation of a spherical body under standard gravitational acceleration
 \import "./physics.ax"
+\import "lib/abs.ax"
 
 g = 9.8
 m = 1.0

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { evaluate } from '../core/evaluator';
+import { evaluate, createInitialEnvironment } from '../core/evaluator';
 import { parse } from '../core/parser';
 import { compileRelation } from '../core/compiler';
 import { realPow } from '../core/operations';
@@ -104,7 +104,9 @@ describe('Phase 2 Operation Table & Reduction Model Gate', () => {
 
     for (const expr of expressions) {
       it(`evaluates '${expr}' equivalently in Reducer and Compiler`, () => {
-        const redRes = evaluate(expr);
+        const env = createInitialEnvironment();
+        evaluate('\\import "lib/trig.ax"', env);
+        const redRes = evaluate(expr, env);
         let redVal: number;
         if (redRes.value.type === 'rational') {
           redVal = Number(redRes.value.n) / Number(redRes.value.d);
@@ -115,7 +117,7 @@ describe('Phase 2 Operation Table & Reduction Model Gate', () => {
         }
 
         const ast = parse(expr);
-        const comp = compileRelation(ast, []);
+        const comp = compileRelation(ast, [], env);
         expect(comp.success).toBe(true);
         if (comp.success) {
           const compVal = comp.fn();

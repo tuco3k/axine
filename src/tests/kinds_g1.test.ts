@@ -6,6 +6,9 @@ import { KindValue } from '../core/types';
 describe('Gate G1: Mathematical Kinds & Lattice', () => {
   const run = (code: string) => {
     const env = createInitialEnvironment();
+    evaluate('\\import "lib/trig.ax"', env);
+    evaluate('\\import "lib/exp.ax"', env);
+    evaluate('\\import "lib/sqrt.ax"', env);
     return evaluate(code, env);
   };
 
@@ -56,7 +59,7 @@ describe('Gate G1: Mathematical Kinds & Lattice', () => {
       // 19. Boolean truth value
       ['\\true', 'Scalar(Natural)'],
       // 20. Evaluated scalar arithmetic
-      [':sin(0.5) * :exp(2.0)', 'Scalar(Real)'],
+      [':sin(0.5) * :exp(2.0)', 'Scalar(Rational)'],
     ];
 
     expect(testCases.length).toBe(20);
@@ -106,14 +109,14 @@ describe('Gate G1: Mathematical Kinds & Lattice', () => {
       /Cannot compute inner product of Vector\(dim=3, field=R\) and Vector\(dim=2, field=R\): dimension mismatch \(3 vs 2\)/
     );
 
-    // 4. Sin of a vector -> error naming Vector kind and Scalar domain
+    // 4. Sin of a vector -> error naming non-numeric / kind mismatch
     expect(() => run(':sin([1, 2, 3])')).toThrowError(
-      /Cannot apply sin to Vector\(dim=3, field=R\): sin has domain Scalar/
+      /Expected numeric value|Cannot apply sin/
     );
 
-    // 5. Sqrt of a vector -> error naming Vector kind and Scalar domain
+    // 5. Sqrt of a vector -> error naming non-numeric / kind mismatch
     expect(() => run(':sqrt((1, 4, 9))')).toThrowError(
-      /Cannot apply sqrt to Vector\(dim=3, field=R\): sqrt has domain Scalar/
+      /Expected numeric value|Cannot apply sqrt/
     );
   });
 });

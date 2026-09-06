@@ -4,4 +4,7 @@
 # For real x, :floor(x) is the greatest integer k <= x
 \forall x, :floor(x) = \if x >= 0 \then (x - (x % 1)) \else (x - (x % 1) - (\if (x % 1) = 0 \then 0 \else 1))
 
-\export :floor
+# Round to nearest integer
+\forall x, :round(x) = :floor(x + 0.5)
+
+\export :floor, :round

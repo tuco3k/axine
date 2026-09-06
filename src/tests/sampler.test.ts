@@ -1,12 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { parse } from '../core/parser';
 import { compileRelation, CompileSuccess } from '../core/compiler';
-import { createInitialEnvironment } from '../core/evaluator';
+import { createInitialEnvironment, evaluate } from '../core/evaluator';
 import { sample2D, sample3D, sampleSlice, findBounds2D, Contour2DResult } from '../core/sampler';
 import { performance } from 'perf_hooks';
 
 describe('Phase 2: The Sampler', () => {
   const env = createInitialEnvironment();
+  evaluate('\\import "lib/trig.ax"', env);
+  evaluate('\\import "lib/sqrt.ax"', env);
 
   function compile(expr: string, vars: string[]) {
     const ast = parse(expr);

@@ -46,10 +46,6 @@ export function realMod(a: number, b: number): number {
   return rem;
 }
 
-export function realSqrt(a: number): number {
-  if (a < 0) return NaN;
-  return Math.sqrt(a);
-}
 
 export interface OperationDef {
   name: string;
@@ -141,8 +137,8 @@ export const OPERATIONS: Record<string, OperationDef> = {
     name: 'relation_equal',
     symbol: '=',
     kind: 'binary',
-    evalFloat: (a, b) => a - b,
-    compileJS: ([a, b]) => `((${a}) - (${b}))`,
+    evalFloat: (a, b) => (a === b ? 1 : 0),
+    compileJS: ([a, b]) => `(((${a}) === (${b})) ? 1 : 0)`,
   },
   '!=': {
     name: 'not_equal',
@@ -216,14 +212,6 @@ export const OPERATIONS: Record<string, OperationDef> = {
     evalFloat: a => (a === 0 ? 1 : 0),
     compileJS: ([a]) => `((${a}) === 0 ? 1 : 0)`,
   },
-  'sqrt': {
-    name: 'square_root',
-    symbol: 'sqrt',
-    kind: 'function',
-    evalFloat: a => realSqrt(a),
-    compileJS: ([a]) => `((${a}) < 0 ? NaN : Math.sqrt(${a}))`,
-  },
-
   // Postfix Operators
   '!': {
     name: 'factorial',
@@ -240,24 +228,19 @@ export const OPERATIONS: Record<string, OperationDef> = {
     },
   },
 
-  // Transcendental & Math Builtins
-  'sin': { name: 'sin', symbol: 'sin', kind: 'function', evalFloat: a => Math.sin(a), compileJS: ([a]) => `Math.sin(${a})` },
-  'cos': { name: 'cos', symbol: 'cos', kind: 'function', evalFloat: a => Math.cos(a), compileJS: ([a]) => `Math.cos(${a})` },
-  'tan': { name: 'tan', symbol: 'tan', kind: 'function', evalFloat: a => Math.tan(a), compileJS: ([a]) => `Math.tan(${a})` },
-  'asin': { name: 'asin', symbol: 'asin', kind: 'function', evalFloat: a => (a < -1 || a > 1 ? NaN : Math.asin(a)), compileJS: ([a]) => `((${a}) < -1 || (${a}) > 1 ? NaN : Math.asin(${a}))` },
-  'acos': { name: 'acos', symbol: 'acos', kind: 'function', evalFloat: a => (a < -1 || a > 1 ? NaN : Math.acos(a)), compileJS: ([a]) => `((${a}) < -1 || (${a}) > 1 ? NaN : Math.acos(${a}))` },
-  'atan': { name: 'atan', symbol: 'atan', kind: 'function', evalFloat: a => Math.atan(a), compileJS: ([a]) => `Math.atan(${a})` },
-  'sinh': { name: 'sinh', symbol: 'sinh', kind: 'function', evalFloat: a => Math.sinh(a), compileJS: ([a]) => `Math.sinh(${a})` },
-  'cosh': { name: 'cosh', symbol: 'cosh', kind: 'function', evalFloat: a => Math.cosh(a), compileJS: ([a]) => `Math.cosh(${a})` },
-  'tanh': { name: 'tanh', symbol: 'tanh', kind: 'function', evalFloat: a => Math.tanh(a), compileJS: ([a]) => `Math.tanh(${a})` },
-  'exp': { name: 'exp', symbol: 'exp', kind: 'function', evalFloat: a => Math.exp(a), compileJS: ([a]) => `Math.exp(${a})` },
-  'ln': { name: 'ln', symbol: 'ln', kind: 'function', evalFloat: a => (a <= 0 ? NaN : Math.log(a)), compileJS: ([a]) => `((${a}) <= 0 ? NaN : Math.log(${a}))` },
-  'log': { name: 'log', symbol: 'log', kind: 'function', evalFloat: (a, b) => (a <= 0 ? NaN : (b === undefined ? Math.log10(a) : Math.log(a) / Math.log(b))), compileJS: (args) => args.length === 1 ? `((${args[0]}) <= 0 ? NaN : Math.log10(${args[0]}))` : `Math.log(${args[0]}) / Math.log(${args[1]})` },
-  'log2': { name: 'log2', symbol: 'log2', kind: 'function', evalFloat: a => (a <= 0 ? NaN : Math.log2(a)), compileJS: ([a]) => `((${a}) <= 0 ? NaN : Math.log2(${a}))` },
-  'abs': { name: 'abs', symbol: 'abs', kind: 'function', evalFloat: a => Math.abs(a), compileJS: ([a]) => `Math.abs(${a})` },
-  'floor': { name: 'floor', symbol: 'floor', kind: 'function', evalFloat: a => Math.floor(a), compileJS: ([a]) => `Math.floor(${a})` },
-  'ceil': { name: 'ceil', symbol: 'ceil', kind: 'function', evalFloat: a => Math.ceil(a), compileJS: ([a]) => `Math.ceil(${a})` },
-  'round': { name: 'round', symbol: 'round', kind: 'function', evalFloat: a => Math.round(a), compileJS: ([a]) => `Math.round(${a})` },
-  'min': { name: 'min', symbol: 'min', kind: 'function', evalFloat: (...args) => Math.min(...args), compileJS: (args) => `Math.min(${args.join(', ')})` },
-  'max': { name: 'max', symbol: 'max', kind: 'function', evalFloat: (...args) => Math.max(...args), compileJS: (args) => `Math.max(${args.join(', ')})` },
+  // Utility functions
+  'min': {
+    name: 'min',
+    symbol: 'min',
+    kind: 'function',
+    evalFloat: (...args) => Math.min(...args),
+    compileJS: (args) => `Math.min(${args.join(', ')})`,
+  },
+  'max': {
+    name: 'max',
+    symbol: 'max',
+    kind: 'function',
+    evalFloat: (...args) => Math.max(...args),
+    compileJS: (args) => `Math.max(${args.join(', ')})`,
+  },
 };

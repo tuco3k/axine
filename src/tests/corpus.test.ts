@@ -64,7 +64,7 @@ const GOLDEN_CORPUS: GoldenTestCase[] = [
     source: ':sin(x^2)',
     setup: ['x := 0'],
     expectedNormalized: ':sin(x^2)',
-    expectedValue: { type: 'float', value: 0 },
+    expectedValue: { type: 'rational', n: 0n, d: 1n },
   },
   {
     source: '2^3^2',
@@ -303,17 +303,17 @@ const GOLDEN_CORPUS: GoldenTestCase[] = [
   {
     source: ':sqrt(9/16)',
     expectedNormalized: ':sqrt(9 / 16)',
-    expectedValue: { type: 'rational', n: 3n, d: 4n },
+    expectedValue: { type: 'float', value: 0.75 },
   },
   {
     source: ':exp(0)',
     expectedNormalized: ':exp(0)',
-    expectedValue: { type: 'float', value: 1 },
+    expectedValue: { type: 'rational', n: 1n, d: 1n },
   },
   {
     source: ':ln(1)',
     expectedNormalized: ':ln(1)',
-    expectedValue: { type: 'float', value: 0 },
+    expectedValue: { type: 'rational', n: 0n, d: 1n },
   },
   {
     source: ':log(100)',
@@ -328,17 +328,17 @@ const GOLDEN_CORPUS: GoldenTestCase[] = [
   {
     source: ':cos(0)',
     expectedNormalized: ':cos(0)',
-    expectedValue: { type: 'float', value: 1 },
+    expectedValue: { type: 'rational', n: 1n, d: 1n },
   },
   {
     source: ':sin(0)',
     expectedNormalized: ':sin(0)',
-    expectedValue: { type: 'float', value: 0 },
+    expectedValue: { type: 'rational', n: 0n, d: 1n },
   },
   {
     source: ':tan(0)',
     expectedNormalized: ':tan(0)',
-    expectedValue: { type: 'float', value: 0 },
+    expectedValue: { type: 'rational', n: 0n, d: 1n },
   },
   {
     source: ':float(1/2)',
@@ -476,17 +476,17 @@ const GOLDEN_CORPUS: GoldenTestCase[] = [
   {
     source: ':log(0)',
     expectedNormalized: ':log(0)',
-    expectedValue: { type: 'expression', text: ':log(0)' },
+    expectedValue: { type: 'expression' },
   },
   {
     source: ':log(-10)',
     expectedNormalized: ':log(-10)',
-    expectedValue: { type: 'expression', text: ':log(-10)' },
+    expectedValue: { type: 'expression' },
   },
   {
     source: ':log2(0)',
     expectedNormalized: ':log2(0)',
-    expectedValue: { type: 'expression', text: ':log2(0)' },
+    expectedValue: { type: 'expression' },
   },
   {
     source: ':factorial(-3)',
@@ -649,6 +649,13 @@ describe(`Golden File Test Corpus (${GOLDEN_CORPUS.length} cases)`, () => {
 
     it(testTitle, () => {
       const env = createInitialEnvironment();
+      evaluate('\\import "lib/abs.ax"', env);
+      evaluate('\\import "lib/floor.ax"', env);
+      evaluate('\\import "lib/ceil.ax"', env);
+      evaluate('\\import "lib/sqrt.ax"', env);
+      evaluate('\\import "lib/exp.ax"', env);
+      evaluate('\\import "lib/trig.ax"', env);
+      evaluate('\\import "lib/numbertheory.ax"', env);
       if (testCase.setup) {
         for (const s of testCase.setup) {
           evaluate(s, env);
@@ -690,9 +697,14 @@ describe(`Golden File Test Corpus (${GOLDEN_CORPUS.length} cases)`, () => {
               d: testCase.expectedValue.d,
             });
           } else if (testCase.expectedValue.type === 'float') {
-            expect(value.type).toBe('float');
-            if (value.type === 'float') {
-              expect(value.value).toBeCloseTo(testCase.expectedValue.value, 6);
+            if (value.type === 'rational') {
+              const numVal = Number(value.n) / Number(value.d);
+              expect(numVal).toBeCloseTo(testCase.expectedValue.value, 6);
+            } else {
+              expect(value.type).toBe('float');
+              if (value.type === 'float') {
+                expect(value.value).toBeCloseTo(testCase.expectedValue.value, 6);
+              }
             }
           } else if (testCase.expectedValue.type === 'boolean') {
             expect(value).toEqual({

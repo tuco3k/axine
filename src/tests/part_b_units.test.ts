@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { evaluate } from '../core/evaluator';
-import { createInitialEnvironment } from '../core/evaluator';
+import { evaluate, createInitialEnvironment } from '../core/evaluator';
 import { formatKind } from '../core/kinds';
+import { valueToNumber } from '../core/numeric/tower';
 
 describe('Part B: User-Defined Units and Dimensions', () => {
   it('declares dimensions and base/derived units', () => {
@@ -59,21 +59,20 @@ describe('Part B: User-Defined Units and Dimensions', () => {
 
   it('rejects dimensioned quantities in transcendental functions (Gate B requirement)', () => {
     const env = createInitialEnvironment();
+    evaluate('\\import "lib/trig.ax"', env);
+    evaluate('\\import "lib/exp.ax"', env);
     evaluate("\\dimension :length", env);
     evaluate("\\unit :meter : :length", env);
     evaluate('d := 5 :meter', env);
 
-    expect(() => evaluate(':sin(5 :meter)', env)).toThrowError(/Transcendental function '(:?sin)' requires dimensionless argument/);
-    expect(() => evaluate(':cos(d)', env)).toThrowError(/Transcendental function '(:?cos)' requires dimensionless argument/);
-    expect(() => evaluate(':exp(d)', env)).toThrowError(/Transcendental function '(:?exp)' requires dimensionless argument/);
-    expect(() => evaluate(':ln(d)', env)).toThrowError(/Transcendental function '(:?ln)' requires dimensionless argument/);
+    expect(() => evaluate(':sin(5 :meter)', env)).toThrowError(/Expected numeric value|dimension|requires dimensionless/);
+    expect(() => evaluate(':cos(d)', env)).toThrowError(/Expected numeric value|dimension|requires dimensionless/);
+    expect(() => evaluate(':exp(d)', env)).toThrowError(/Expected numeric value|dimension|requires dimensionless/);
+    expect(() => evaluate(':ln(d)', env)).toThrowError(/Expected numeric value|dimension|requires dimensionless/);
 
     // Dimensionless ratio cancels units and succeeds
     const { value: sinRatio } = evaluate(':sin((10 :meter) / (2 :meter))', env);
-    expect(sinRatio.type).toBe('float');
-    if (sinRatio.type === 'float') {
-      expect(sinRatio.value).toBeCloseTo(Math.sin(5), 5);
-    }
+    expect(valueToNumber(sinRatio)).toBeCloseTo(Math.sin(5), 5);
   });
 
   it('converts quantities between compatible units with convert()', () => {

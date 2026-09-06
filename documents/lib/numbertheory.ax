@@ -12,4 +12,28 @@
 
 \forall n, :isprime(n) = \if n < 2 \then \false \else :isprime_step(n, 2)
 
-\export :gcd, :lcm, :isprime
+# Euler's totient function
+\forall n, k, a, :totient_step(n, k, a) = \if k >= n \then a \else :totient_step(n, k + 1, (\if :gcd(n, k) = 1 \then a + 1 \else a))
+\forall n, :totient(n) = \if n <= 1 \then 1 \else :totient_step(n, 1, 0)
+
+# Modular exponentiation
+\forall b, e, m, :powmod(b, e, m) = \if e = 0 \then 1 \else (\if e % 2 = 0 \then (:powmod((b * b) % m, e // 2, m)) \else ((b * :powmod(b, e - 1, m)) % m))
+
+# Binomial coefficient
+\forall n, k, :binomial(n, k) = \if k = 0 \or k = n \then 1 \else (\if k > n \then 0 \else (n! / (k! * (n - k)!)))
+
+# Next prime search
+\forall n, :nextprime_step(n) = \if :isprime(n) \then n \else :nextprime_step(n + 1)
+\forall n, :nextprime(n) = :nextprime_step(n + 1)
+
+# Divisors list
+\forall n, d, :divisors_step(n, d) = \if d > n \then [] \else (\if n % d = 0 \then [d] + :divisors_step(n, d + 1) \else :divisors_step(n, d + 1))
+\forall n, :divisors(n) = \if n < 1 \then [] \else :divisors_step(n, 1)
+
+# Prime factorization into list of (prime, exponent) tuples
+\forall n, d, :count_factor(n, d) = \if n % d = 0 \then 1 + :count_factor(n // d, d) \else 0
+\forall n, d, :remove_factor(n, d) = \if n % d = 0 \then :remove_factor(n // d, d) \else n
+\forall n, d, :factorize_step(n, d) = \if n <= 1 \then [] \else (\if d * d > n \then [(n, 1)] \else (\if n % d = 0 \then [(d, :count_factor(n, d))] + :factorize_step(:remove_factor(n, d), d + 1) \else :factorize_step(n, d + 1)))
+\forall n, :factorize(n) = \if n <= 1 \then [] \else :factorize_step(n, 2)
+
+\export :gcd, :lcm, :isprime, :totient, :powmod, :binomial, :nextprime, :divisors, :factorize

@@ -1,6 +1,7 @@
 # integrator_comparison.ax — Energy drift comparison across integrators
 # Compares Euler vs Verlet vs RK4 on a harmonic oscillator (k = 1, m = 1)
 \import "./physics.ax"
+\import "lib/abs.ax"
 
 k = 1.0
 :b0 = :Body(:mass: 1.0, :position: (1.0, 0.0), :velocity: (0.0, 0.0))

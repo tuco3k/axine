@@ -17,6 +17,10 @@ describe('Phase 1: Relation Compiler', () => {
     tolerance = 1e-12
   ) {
     const env = createInitialEnvironment();
+    const libs = ['lib/abs.ax', 'lib/sqrt.ax', 'lib/trig.ax', 'lib/exp.ax', 'lib/floor.ax', 'lib/ceil.ax'];
+    for (const lib of libs) {
+      new Evaluator(env, `\\import "${lib}"`).evaluate(parse(`\\import "${lib}"`));
+    }
     env.pi = { type: 'float', value: Math.PI };
     env.e = { type: 'float', value: Math.E };
     env.tau = { type: 'float', value: 2 * Math.PI };
@@ -676,7 +680,14 @@ describe('Phase 1: Relation Compiler', () => {
     it('benchmarks AST walker vs compiled closures and reports throughput', () => {
       const benchmarkCases = [
         { name: 'x^2 + y^2 - 4', expr: 'x^2 + y^2 - 4', vars: ['x', 'y'] },
-        { name: ':sin(x) * :cos(y) - 0.5', expr: ':sin(x) * :cos(y) - 0.5', vars: ['x', 'y'] },
+        {
+          name: ':sin(x) * :cos(y) - 0.5',
+          expr: ':sin(x) * :cos(y) - 0.5',
+          vars: ['x', 'y'],
+          setup: (env: any) => {
+            new Evaluator(env, '\\import "lib/trig.ax"').evaluate(parse('\\import "lib/trig.ax"'));
+          },
+        },
         {
           name: 'five-level nested arithmetic',
           expr: '((((x + 1) * (y - 2) + 3) / ((x^2 + y^2) + 1) - 4 * (x - y)) * (x + 2*y) + 5) / (x^2 + 1)',

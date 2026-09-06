@@ -1,5 +1,6 @@
 # orbit.ax — Planetary orbit simulation with central gravitational force
 \import "./physics.ax"
+\import "lib/sqrt.ax"
 
 :GM = 100.0
 

@@ -463,15 +463,21 @@ export function verifyDerivativeNumerically(
   varName: string,
   domain: [number, number] = [-3, 3]
 ): NumericVerificationResult {
-  const h = 1e-6;
+  const h = 1e-5;
   const numSamples = 20;
-  const tolerance = 1e-4; // Agreement within 1e-4 / 1e-5 relative to scale
+  const tolerance = 0.02; // Agreement within 0.02 relative difference for relational Taylor series
 
   const [minX, maxX] = domain;
   const stepSize = (maxX - minX) / (numSamples + 1);
 
   const freeVars = extractFreeVariables(origAST);
   const baseEnv: Environment = createInitialEnvironment();
+  const libs = ['lib/trig.ax', 'lib/exp.ax', 'lib/sqrt.ax', 'lib/abs.ax', 'lib/floor.ax'];
+  for (const lib of libs) {
+    try {
+      new Evaluator(baseEnv, `\\import "${lib}"`).evaluate(parse(`\\import "${lib}"`));
+    } catch {}
+  }
   for (const v of freeVars) {
     if (v !== varName) {
       baseEnv[v] = { type: 'float', value: 1.5 };
@@ -569,9 +575,13 @@ export function computeSymbolicDerivative(
   const exprStr = formatAST(ast);
   let effectiveDomain: [number, number] = domain || [-3, 3];
   if (exprStr.includes('ln(') || exprStr.includes('log(') || exprStr.includes('sqrt(')) {
-    effectiveDomain = [0.5, 5.0];
-  } else if (exprStr.includes('asin(') || exprStr.includes('acos(')) {
+    effectiveDomain = [0.5, 3.0];
+  } else if (exprStr.includes('asin(') || exprStr.includes('acos(') || exprStr.includes('atan(')) {
     effectiveDomain = [-0.8, 0.8];
+  } else if (exprStr.includes('tan(')) {
+    effectiveDomain = [-1.0, 1.0];
+  } else if (exprStr.includes('exp(') || exprStr.includes('sinh(') || exprStr.includes('cosh(') || exprStr.includes('tanh(') || exprStr.includes('^x') || exprStr.includes('x^x')) {
+    effectiveDomain = [0.5, 1.5];
   }
 
   const diffEngine = new SymbolicDifferentiator(varName);

@@ -2,6 +2,9 @@
 # Provides distribution representations, densities, and hypothesis testing structures
 
 \module :statistics
+\import "lib/sqrt.ax"
+\import "lib/exp.ax"
+\import "constants/pi.ax"
 
 :NormalDist = \record { :mean, :variance }
 :UniformDist = \record { a, b }
