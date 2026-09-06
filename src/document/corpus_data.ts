@@ -393,26 +393,26 @@ g := 9.81
 :vy0 := :v0 * :sin(:theta0)
 
 # Trajectory Equations & Landing Time
-:t_ground_deriv := :isolate(35.35533328235472 * t - 4.905 * t^2 = 0, :for: t)
-:t_ground_num := :solve(t -> :vy0 * t - 0.5 * g * t^2, :near: 7.2)
+:t_ground_deriv = \isolate(35.35533328235472 * t - 4.905 * t^2 = 0, \for t)
+:t_ground_num = \solve(t -> :vy0 * t - 0.5 * g * t^2, \near 7.2)
 
-:t_cliff_deriv := :isolate(10 + 35.35533328235472 * t - 4.905 * t^2 = 0, :for: t)
-:t_cliff_num := :solve(t -> 10 + :vy0 * t - 0.5 * g * t^2, :near: 7.4)
+:t_cliff_deriv = \isolate(10 + 35.35533328235472 * t - 4.905 * t^2 = 0, \for t)
+:t_cliff_num = \solve(t -> 10 + :vy0 * t - 0.5 * g * t^2, \near 7.4)
 
 # Closed-Form Range Functions
-:R0(:th) := (:v0^2 / g) * :sin(2 * :th)
-:R10(:th) := (:v0 * :cos(:th) / g) * (:v0 * :sin(:th) + :sqrt(:v0^2 * :sin(:th)^2 + 2 * g * :h0))
+:R0(:th) = (:v0^2 / g) * :sin(2 * :th)
+:R10(:th) = (:v0 * :cos(:th) / g) * (:v0 * :sin(:th) + :sqrt(:v0^2 * :sin(:th)^2 + 2 * g * :h0))
 
 # Plot Range vs Launch Angle
-{\\axis[th, R]; R = :R0(th)}
+{\axis[th, R]; R = :R0(th)}
 
 # 3D Parametric Trajectory Surface
-:traj_3d(x, :th) := :h0 + :tan(:th) * x - (g / (2 * :v0^2 * :cos(:th)^2)) * x^2
-{\\axis[x, th, z]; z = :traj_3d(x, th)}
+:traj_3d(x, :th) = :h0 + :tan(:th) * x - (g / (2 * :v0^2 * :cos(:th)^2)) * x^2
+{\axis[x, th, z]; z = :traj_3d(x, th)}
 
 # Optimal Launch Angle Optimization
-:opt_theta_ground := :solve(d//d:th :R0(:th), :for: :th, :near: 0.75)
-:opt_theta_cliff := :solve(d//d:th :R10(:th), :for: :th, :near: 0.75)
+:opt_theta_ground = \solve(d//d:th :R0(:th), \for :th, \near 0.75)
+:opt_theta_cliff = \solve(d//d:th :R10(:th), \for :th, \near 0.75)
 
 # Evaluated Maximum Ranges
 :max_range_ground := :R0(:opt_theta_ground)

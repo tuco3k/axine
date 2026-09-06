@@ -533,7 +533,8 @@ export class Parser {
       }
 
       const nextTokType = this.peek(p + 1).type;
-      const isDefOp = nextTokType === 'ASSIGN' || nextTokType === 'GLOBAL_ASSIGN' || (nextTokType === 'EQ' && nameToken.value.length > 1);
+      const isColonPrefixed = nameToken.span.end - nameToken.span.start > nameToken.value.length;
+      const isDefOp = nextTokType === 'ASSIGN' || nextTokType === 'GLOBAL_ASSIGN' || (nextTokType === 'EQ' && (nameToken.value.length > 1 || isColonPrefixed));
 
       if (validSig && this.peek(p).type === 'RPAREN' && isDefOp) {
         this.advance(); // consume name
@@ -1280,9 +1281,15 @@ export class Parser {
       return this.parseBlock();
     }
 
-    // Function call syntax for operator keywords: wedge(...), tensor(...), direct_sum(...), hodge(...), star(...), grad(...), del(...), laplacian(...)
+    // Function call syntax for search builtins and operator keywords: solve(...), isolate(...), simplify(...), check(...), find(...), wedge(...), etc.
     if (
-      (token.type === 'WEDGE' ||
+      (token.type === 'SOLVE' ||
+        token.type === 'ISOLATE' ||
+        token.type === 'SIMPLIFY' ||
+        token.type === 'CHECK' ||
+        token.type === 'FIND' ||
+        token.type === 'BACKSLASH_IDENT' ||
+        token.type === 'WEDGE' ||
         token.type === 'TENSOR_PROD' ||
         token.type === 'DIRECT_SUM' ||
         token.type === 'HODGE_STAR' ||
@@ -1292,6 +1299,14 @@ export class Parser {
     ) {
       const tok = this.advance();
       return this.parseFunctionCallArgs(tok.value, tok.span);
+    }
+    if (token.type === 'BACKSLASH_IDENT') {
+      const tok = this.advance();
+      return {
+        type: 'Identifier',
+        name: tok.value,
+        span: tok.span,
+      };
     }
 
     // Multiple / Contour Integrals: double, triple, contour
@@ -1540,7 +1555,8 @@ export class Parser {
 
       // Check if followed immediately by '(' with standard call syntax
       if (this.peek(1).type === 'LPAREN') {
-        if (isConstructor || name.length > 1) {
+        const isColonPrefixed = token.span.end - token.span.start > name.length;
+        if (isConstructor || name.length > 1 || isColonPrefixed || isKnownFunc) {
           // It is a defined function / builtin call / user function call: :sin(...) or MyConstructor(...) or :dist4(...)
           this.advance(); // consume func name
           return this.parseFunctionCallArgs(name, token.span);
@@ -1763,8 +1779,34 @@ export class Parser {
 
     if (this.peek().type !== 'RPAREN') {
       while (true) {
-        // Check for named argument: name: value
-        if (this.peek().type !== 'RPAREN' && this.peek(1).type === 'COLON') {
+        const isNamedKeyword = (t: Token) => {
+          if (!t) return false;
+          return [
+            'FOR', 'FROM', 'IS', 'WITH', 'STEP', 'IN',
+            'NEAR', 'DT', 'TRACE', 'UNTIL', 'MAX', 'TO', 'EPS', 'N_ARG', 'FORMAT', 'VAR', 'BACKSLASH_IDENT'
+          ].includes(t.type);
+        };
+
+        // Check for named argument: \keyword value OR \keyword: value OR name: value
+        if (this.peek().type !== 'RPAREN' && isNamedKeyword(this.peek())) {
+          const nameTok = this.advance();
+          if (this.peek().type === 'COLON' || this.peek().type === 'EQ') {
+            this.advance();
+          }
+          const val = this.parseExpression(PREC_NONE);
+          const span: Span = {
+            start: nameTok.span.start,
+            end: val.span.end,
+            line: nameTok.span.line,
+            col: nameTok.span.col,
+          };
+          args.push({
+            type: 'NamedArg',
+            name: nameTok.value,
+            value: val,
+            span,
+          });
+        } else if (this.peek().type !== 'RPAREN' && this.peek(1).type === 'COLON') {
           const nameTok = this.advance();
           this.advance(); // consume :
           const val = this.parseExpression(PREC_NONE);
@@ -1776,7 +1818,7 @@ export class Parser {
           };
           args.push({
             type: 'NamedArg',
-            name: nameTok.value,
+            name: nameTok.value.replace(/^:/, ''),
             value: val,
             span,
           });
@@ -2824,7 +2866,13 @@ export class Parser {
       type === 'NORM_BAR' ||
       type === 'FLOOR_L' ||
       type === 'CEIL_L' ||
-      type === 'CLAIM'
+      type === 'CLAIM' ||
+      type === 'SOLVE' ||
+      type === 'ISOLATE' ||
+      type === 'SIMPLIFY' ||
+      type === 'CHECK' ||
+      type === 'FIND' ||
+      type === 'BACKSLASH_IDENT'
     );
   }
 
@@ -2928,7 +2976,7 @@ export class Parser {
 
   private expect(type: TokenType, expectedDescription: string): Token {
     const token = this.peek();
-    if (token.type !== type) {
+    if (token.type !== type && !(type === 'IDENTIFIER' && token.type === 'BACKSLASH_IDENT')) {
       throw createError(`Unexpected token '${token.value || token.type}'. Expected ${expectedDescription}`, token.span, {
         expected: expectedDescription,
         suggestion: `Insert ${expectedDescription} here`,

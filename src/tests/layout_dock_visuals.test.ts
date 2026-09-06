@@ -397,7 +397,7 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
     const docText = [
       '15',
       '{\\axis[x, y]; y = x^2}',
-      ':isolate(x^2 - 4 == 0, :for: x)',
+      '\\isolate(x^2 - 4 == 0, \\for x)',
       '\u222c_S F \u00b7 dS',
     ].join('\n');
 
@@ -438,7 +438,7 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
   it('supports pinning visual items into top pinned slot and unpinning', () => {
     const docText = [
       '{\\axis[x, y]; y = x^2}',
-      ':isolate(x^2 == 9, :for: x)',
+      '\\isolate(x^2 == 9, \\for x)',
     ].join('\n');
 
     editor = new DocumentEditor(container as any, docText);

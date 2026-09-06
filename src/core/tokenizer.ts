@@ -141,9 +141,16 @@ export class Tokenizer {
       if (char === '\\' && this.isIdentStart(this.peek(1))) {
         this.advance(); // consume '\'
         let name = '';
-        while (this.pos < this.source.length && this.isIdentPart(this.source[this.pos])) {
+        while (this.pos < this.source.length && /^[a-zA-Z0-9]$/.test(this.source[this.pos])) {
           name += this.source[this.pos];
           this.advance();
+        }
+        if (name === 'proved' && this.source.slice(this.pos, this.pos + 3) === '_by') {
+          name += '_by';
+          this.advance(); this.advance(); this.advance();
+        } else if (name === 'direct' && this.source.slice(this.pos, this.pos + 4) === '_sum') {
+          name += '_sum';
+          this.advance(); this.advance(); this.advance(); this.advance();
         }
         if (name === 'in' || name === 'isin') {
           tokens.push(this.makeToken('IN', 'in', startPos, startLine, startCol, leadingWhitespace));
@@ -450,7 +457,67 @@ export class Tokenizer {
           tokens.push(this.makeToken('STAR', '*', startPos, startLine, startCol, leadingWhitespace));
           continue;
         }
-        tokens.push(this.makeToken('IDENTIFIER', name, startPos, startLine, startCol, leadingWhitespace));
+        if (name === 'solve') {
+          tokens.push(this.makeToken('SOLVE', 'solve', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'isolate') {
+          tokens.push(this.makeToken('ISOLATE', 'isolate', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'simplify') {
+          tokens.push(this.makeToken('SIMPLIFY', 'simplify', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'check') {
+          tokens.push(this.makeToken('CHECK', 'check', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'find') {
+          tokens.push(this.makeToken('FIND', 'find', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'near') {
+          tokens.push(this.makeToken('NEAR', 'near', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'dt') {
+          tokens.push(this.makeToken('DT', 'dt', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'trace') {
+          tokens.push(this.makeToken('TRACE', 'trace', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'until') {
+          tokens.push(this.makeToken('UNTIL', 'until', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'max') {
+          tokens.push(this.makeToken('MAX', 'max', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'to') {
+          tokens.push(this.makeToken('TO', 'to', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'eps') {
+          tokens.push(this.makeToken('EPS', 'eps', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'format') {
+          tokens.push(this.makeToken('FORMAT', 'format', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'var') {
+          tokens.push(this.makeToken('VAR', 'var', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'n') {
+          tokens.push(this.makeToken('N_ARG', 'n', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        tokens.push(this.makeToken('BACKSLASH_IDENT', name, startPos, startLine, startCol, leadingWhitespace));
         continue;
       }
 

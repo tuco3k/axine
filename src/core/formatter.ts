@@ -76,15 +76,7 @@ function getNodePrecedence(node: ASTNode): number {
 }
 
 const KEYWORDS = new Set([
-  'in', 'step', 'if', 'then', 'else', 'and', 'or', 'not', 'claim', 'where',
-  'iint', 'iiint', 'oint', 'grad', 'del', 'laplacian', 'wedge', 'hodge', 'star',
-  'tensor', 'direct_sum', 'oplus', 'forall', 'exists', 'notin', 'subset',
-  'subseteq', 'union', 'intersect', 'setminus', 'iso', 'homotopic', 'equiv',
-  'dagger', 'adj', 'record', 'with', 'dimension', 'unit', 'operator',
-  'prefix', 'postfix', 'infix', 'precedence', 'associativity', 'kind',
-  'extends', 'operations', 'axioms', 'rule', 'requires', 'module',
-  'export', 'import', 'from', 'as', 'is', 'view', 'for', 'true', 'false', 'none',
-  'left', 'right'
+  'true', 'false', 'none', 'inf', 'infty', 'left', 'right'
 ]);
 
 function formatIdent(name: string): string {
@@ -161,7 +153,7 @@ function formatNode(node: ASTNode, parentPrec: number): string {
       return res;
     }
     case 'NamedArg': {
-      return `${node.name}: ${formatNode(node.value, PREC_NONE)}`;
+      return `\\${node.name.replace(/^[:\\]/, '')} ${formatNode(node.value, PREC_NONE)}`;
     }
     case 'Unimport': {
       return `\\unimport ${formatIdent(node.name)}`;

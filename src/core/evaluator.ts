@@ -1210,8 +1210,10 @@ export class Evaluator {
           closure: currentEnv,
         };
         currentEnv[node.name] = fnVal;
+        currentEnv[node.name.replace(/^[:\\]/, '')] = fnVal;
         if (currentEnv === this.env) {
           this.env[node.name] = fnVal;
+          this.env[node.name.replace(/^[:\\]/, '')] = fnVal;
         }
         return fnVal;
       }
@@ -2244,14 +2246,15 @@ export class Evaluator {
         for (let i = 0; i < node.args.length; i++) {
           const arg = node.args[i];
           if (arg.type === 'NamedArg') {
-            if (!calleeVal.fieldNames.includes(arg.name)) {
+            const cleanName = arg.name.replace(/^[:\\]/, '');
+            if (!calleeVal.fieldNames.includes(cleanName)) {
               const avail = calleeVal.fieldNames.join(', ');
               throw createError(
-                `Field '${arg.name}' does not exist on record '${calleeVal.name}'. Available fields: ${avail || '(none)'}`,
+                `Field '${cleanName}' does not exist on record '${calleeVal.name}'. Available fields: ${avail || '(none)'}`,
                 arg.span
               );
             }
-            fields[arg.name] = this.evalNode(arg.value, currentEnv);
+            fields[cleanName] = this.evalNode(arg.value, currentEnv);
           } else {
             const fieldName = calleeVal.fieldNames[i];
             if (!fieldName) {
@@ -2587,11 +2590,12 @@ export class Evaluator {
     for (let i = 2; i < node.args.length; i++) {
       const arg = node.args[i];
       if (arg.type === 'NamedArg') {
-        if (arg.name === 'n') {
+        const name = arg.name.replace(/^[:\\]/, '');
+        if (name === 'n') {
           nLimit = Math.round(valueToNumber(this.evalNode(arg.value, currentEnv), arg.value.span));
-        } else if (arg.name === 'until') {
+        } else if (name === 'until') {
           untilVal = this.evalNode(arg.value, currentEnv);
-        } else if (arg.name === 'max') {
+        } else if (name === 'max') {
           maxLimit = Math.round(valueToNumber(this.evalNode(arg.value, currentEnv), arg.value.span));
         }
       }
@@ -4109,12 +4113,13 @@ export class Evaluator {
 
     for (const arg of node.args) {
       if (arg.type === 'NamedArg') {
-        if (arg.name === 'trace') {
+        const name = arg.name.replace(/^[:\\]/, '');
+        if (name === 'trace') {
           const tVal = this.evalNode(arg.value, currentEnv);
           traceMode = tVal.type === 'boolean' ? tVal.value : true;
-        } else if (arg.name === 'near') {
+        } else if (name === 'near') {
           nearVal = valueToNumber(this.evalNode(arg.value, currentEnv), arg.value.span);
-        } else if (arg.name === 'for' || arg.name === 'var') {
+        } else if (name === 'for' || name === 'var') {
           if (arg.value.type === 'Identifier') {
             forVar = arg.value.name;
           }
@@ -4128,8 +4133,10 @@ export class Evaluator {
       let fnVal: Value | undefined;
 
       if (!forVar) {
-        if (fnArg.type === 'Identifier' && fnArg.name in currentEnv) {
-          fnVal = currentEnv[fnArg.name];
+        const lookupKey = fnArg.type === 'Identifier' ? fnArg.name : '';
+        const cleanKey = lookupKey.replace(/^[:\\]/, '');
+        if (lookupKey && (lookupKey in currentEnv || cleanKey in currentEnv || lookupKey in this.env || cleanKey in this.env)) {
+          fnVal = currentEnv[lookupKey] ?? currentEnv[cleanKey] ?? this.env[lookupKey] ?? this.env[cleanKey];
         } else {
           try {
             fnVal = this.evalNode(fnArg, currentEnv);
@@ -4295,9 +4302,12 @@ export class Evaluator {
     let varName = 'x';
 
     for (const arg of node.args.slice(1)) {
-      if (arg.type === 'NamedArg' && (arg.name === 'for' || arg.name === 'var')) {
-        if (arg.value.type === 'Identifier') {
-          varName = arg.value.name;
+      if (arg.type === 'NamedArg') {
+        const name = arg.name.replace(/^[:\\]/, '');
+        if (name === 'for' || name === 'var') {
+          if (arg.value.type === 'Identifier') {
+            varName = arg.value.name;
+          }
         }
       } else if (arg.type === 'Identifier') {
         varName = arg.name;
@@ -4330,9 +4340,12 @@ export class Evaluator {
 
     let inVar: string | undefined;
     for (const arg of node.args.slice(1)) {
-      if (arg.type === 'NamedArg' && (arg.name === 'in' || arg.name === 'for' || arg.name === 'var')) {
-        if (arg.value.type === 'Identifier') {
-          inVar = arg.value.name;
+      if (arg.type === 'NamedArg') {
+        const name = arg.name.replace(/^[:\\]/, '');
+        if (name === 'in' || name === 'for' || name === 'var') {
+          if (arg.value.type === 'Identifier') {
+            inVar = arg.value.name;
+          }
         }
       } else if (arg.type === 'Identifier') {
         inVar = arg.name;
@@ -4371,11 +4384,14 @@ export class Evaluator {
 
     for (let i = 1; i < node.args.length; i++) {
       const arg = node.args[i];
-      if (arg.type === 'NamedArg' && (arg.name === 'is' || arg.name.replace(/^:/, '') === 'is')) {
-        if (arg.value.type === 'StringLiteral') {
-          quantityName = arg.value.value;
-        } else if (arg.value.type === 'Identifier') {
-          quantityName = arg.value.name;
+      if (arg.type === 'NamedArg') {
+        const name = arg.name.replace(/^[:\\]/, '');
+        if (name === 'is') {
+          if (arg.value.type === 'StringLiteral') {
+            quantityName = arg.value.value;
+          } else if (arg.value.type === 'Identifier') {
+            quantityName = arg.value.name;
+          }
         }
       } else if (arg.type === 'StringLiteral') {
         quantityName = arg.value;

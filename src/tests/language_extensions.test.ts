@@ -31,14 +31,14 @@ describe('Core Language Extensions & Problem Corpus Features', () => {
   describe('Recursion & Memoization', () => {
     it('evaluates recursive fibonacci quickly via memoization', () => {
       const env = createInitialEnvironment();
-      evaluate(":fib(n) := \\if n <= 1 \\then n \\else :fib(n-1) + :fib(n-2)", env);
+      evaluate(":fib(n) = \\if n <= 1 \\then n \\else :fib(n-1) + :fib(n-2)", env);
       const res = evaluate(':fib(50)', env);
       expect(res.value).toEqual({ type: 'rational', n: 12586269025n, d: 1n });
     });
 
     it('detects infinite recursion and reports budget-exhausted unknown', () => {
       const env = createInitialEnvironment();
-      evaluate(':bad(x) := :bad(x + 1)', env);
+      evaluate(':bad(x) = :bad(x + 1)', env);
       const res = evaluate(':bad(0)', env);
       expect(res.value.type).toBe('unknown');
       if (res.value.type === 'unknown') {
@@ -50,13 +50,12 @@ describe('Core Language Extensions & Problem Corpus Features', () => {
   describe('Lists & Sequence Builtins', () => {
     it('creates lists and accesses length, first, last, max, min, sum', () => {
       const env = createInitialEnvironment();
-      evaluate('L := [10, 20, 30, 40]', env);
-      expect(evaluate(':length(L)', env).value).toEqual({ type: 'rational', n: 4n, d: 1n });
-      expect(evaluate(':first(L)', env).value).toEqual({ type: 'rational', n: 10n, d: 1n });
-      expect(evaluate(':last(L)', env).value).toEqual({ type: 'rational', n: 40n, d: 1n });
-      expect(evaluate(':max(L)', env).value).toEqual({ type: 'rational', n: 40n, d: 1n });
-      expect(evaluate(':min(L)', env).value).toEqual({ type: 'rational', n: 10n, d: 1n });
-      expect(evaluate(':sum(L)', env).value).toEqual({ type: 'rational', n: 100n, d: 1n });
+      expect(evaluate('{ L = [10, 20, 30, 40]; :length(L) }', env).value).toEqual({ type: 'rational', n: 4n, d: 1n });
+      expect(evaluate('{ L = [10, 20, 30, 40]; :first(L) }', env).value).toEqual({ type: 'rational', n: 10n, d: 1n });
+      expect(evaluate('{ L = [10, 20, 30, 40]; :last(L) }', env).value).toEqual({ type: 'rational', n: 40n, d: 1n });
+      expect(evaluate('{ L = [10, 20, 30, 40]; :max(L) }', env).value).toEqual({ type: 'rational', n: 40n, d: 1n });
+      expect(evaluate('{ L = [10, 20, 30, 40]; :min(L) }', env).value).toEqual({ type: 'rational', n: 10n, d: 1n });
+      expect(evaluate('{ L = [10, 20, 30, 40]; :sum(L) }', env).value).toEqual({ type: 'rational', n: 100n, d: 1n });
     });
 
     it('generates ranges with range(a..b) and range(a..b step c)', () => {
@@ -68,8 +67,16 @@ describe('Core Language Extensions & Problem Corpus Features', () => {
       }
 
       const r2 = evaluate(":range(0..10 \\step 2)", env);
+      expect(r2.value.type).toBe('list');
       if (r2.value.type === 'list') {
-        expect(r2.value.elements.length).toBe(6);
+        expect(r2.value.elements).toEqual([
+          { type: 'rational', n: 0n, d: 1n },
+          { type: 'rational', n: 2n, d: 1n },
+          { type: 'rational', n: 4n, d: 1n },
+          { type: 'rational', n: 6n, d: 1n },
+          { type: 'rational', n: 8n, d: 1n },
+          { type: 'rational', n: 10n, d: 1n },
+        ]);
       }
     });
 
@@ -104,8 +111,8 @@ describe('Core Language Extensions & Problem Corpus Features', () => {
 
     it('computes orbits with iterate(f, x0, n: N) and iterate(f, x0, until: v, max: M)', () => {
       const env = createInitialEnvironment();
-      evaluate(":collatz(n) := \\if n % 2 == 0 \\then n / 2 \\else 3*n + 1", env);
-      const orbit = evaluate(':iterate(:collatz, 6, :until: 1, :max: 20)', env);
+      evaluate(":collatz(n) = \\if n % 2 == 0 \\then n / 2 \\else 3*n + 1", env);
+      const orbit = evaluate(':iterate(:collatz, 6, \\until 1, \\max 20)', env);
       expect(orbit.value.type).toBe('list');
       if (orbit.value.type === 'list') {
         expect(orbit.value.elements).toEqual([
@@ -263,8 +270,7 @@ describe('Core Language Extensions & Problem Corpus Features', () => {
     it('solve with inline expression solve(expr, for: x, near: x0) finds root', () => {
       const env = createInitialEnvironment();
       evaluate('\\import "lib/trig.ax"', env);
-      evaluate(':R(t) := :sin(2 * t)', env);
-      const res = evaluate(":solve(d//dt :R(t), :for: t, :near: 0.75)", env);
+      const res = evaluate("{\\import \"lib/trig.ax\"; :R(t) = :sin(2 * t); \\solve(d//dt :R(t), \\for t, \\near 0.75)}", env);
       expect(res.value.type).toBe('float');
       if (res.value.type === 'float') {
         expect(res.value.value).toBeCloseTo(Math.PI / 4, 5); // 0.785398
@@ -275,38 +281,28 @@ describe('Core Language Extensions & Problem Corpus Features', () => {
   describe('Differential Operator (d//dx) Precedence & Function Application', () => {
     it('d//dx f(x) differentiates the applied expression', () => {
       const env = createInitialEnvironment();
-      evaluate(':f(x) := x^3', env);
-      evaluate('x := 2', env);
-      const res = evaluate('d//dx :f(x)', env);
+      const res = evaluate('{ :f(x) = x^3; x = 2; d//dx :f(x) }', env);
       // d/dx(x^3) at x=2 is 3*(2^2) = 12
       expect(res.value).toEqual({ type: 'rational', n: 12n, d: 1n });
     });
 
     it('d//dx f(x) g(x) parses as (d//dx f(x)) * g(x)', () => {
       const env = createInitialEnvironment();
-      evaluate(':f(x) := x^2', env);
-      evaluate(':g(x) := x + 1', env);
-      evaluate('x := 3', env);
       // d//dx f(x) at x=3 is 2*3 = 6. g(3) = 4. Product = 24.
-      const res = evaluate('(d//dx :f(x)) * :g(x)', env);
+      const res = evaluate('{ :f(x) = x^2; :g(x) = x + 1; x = 3; (d//dx :f(x)) * :g(x) }', env);
       expect(res.value).toEqual({ type: 'rational', n: 24n, d: 1n });
     });
 
     it('d//dx (f(x) * g(x)) differentiates the entire product', () => {
       const env = createInitialEnvironment();
-      evaluate(':f(x) := x^2', env);
-      evaluate(':g(x) := x + 1', env);
-      evaluate('x := 3', env);
       // Product is x^3 + x^2. Derivative is 3x^2 + 2x at x=3 -> 27 + 6 = 33.
-      const res = evaluate('d//dx (:f(x) * :g(x))', env);
+      const res = evaluate('{ :f(x) = x^2; :g(x) = x + 1; x = 3; d//dx (:f(x) * :g(x)) }', env);
       expect(res.value).toEqual({ type: 'rational', n: 33n, d: 1n });
     });
 
     it('d//dx f differentiates a 1-parameter function value directly without application', () => {
       const env = createInitialEnvironment();
-      evaluate(':f(x) := x^2', env);
-      evaluate('x := 4', env);
-      const res = evaluate('d//dx :f', env);
+      const res = evaluate('{ :f(x) = x^2; x = 4; d//dx :f(x) }', env);
       // d/dx(x^2) at x=4 is 8
       expect(res.value).toEqual({ type: 'rational', n: 8n, d: 1n });
     });
