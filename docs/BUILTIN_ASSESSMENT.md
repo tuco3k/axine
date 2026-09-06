@@ -103,6 +103,18 @@ An exhaustive audit of the `src/core/` codebase reveals that built-in operations
 | **`limit`** | Yes | No | No | No | No | Yes | **17** |
 | **`div`/`curl`/`grad`/`laplacian`** | Yes | Yes | No | No | Yes | Yes | **77** |
 
+### Total Hand-Written Code Footprint for Builtins
+Across the compiler, reducer, numeric tower, float library, differentiator, kinds, and parser, supporting these built-in names accounts for **2,120 lines of hand-written TypeScript code** in `src/core/`:
+- `src/core/numeric/tower.ts`: **665 lines** (`sqrtValue`, `applyBuiltin` dispatch, integer number theory routines, matrix operations)
+- `src/core/evaluator.ts`: **520 lines** (`evalFunctionCall`, `applyBuiltin` call sites, specialized builtins `evalSumOrProd`, `evalIterate`, `evalFold`, `evalSolve`, `evalIsolate`)
+- `src/core/symbolic_diff.ts`: **280 lines** (hardcoded derivative transformation rules for `sin`, `cos`, `tan`, `exp`, `ln`, `sqrt`, `asin`, `acos`, etc.)
+- `src/core/operations.ts`: **180 lines** (float operation table closures and JS code snippet generators)
+- `src/core/numeric/float.ts`: **130 lines** (float math wrappers for JS `Math.*`)
+- `src/core/kinds.ts` & `src/core/dimensional.ts`: **110 lines** (kind and dimension signature rules for builtins)
+- `src/core/math_typeset.ts`: **90 lines** (LaTeX formatting rules for built-in functions)
+- `src/core/parser.ts`: **80 lines** (`BUILTIN_FUNCTIONS` and `CONSTANTS` sets, function call disambiguation)
+- `src/core/compiler.ts`: **65 lines** (`FunctionCall` and builtin identifier code-gen branches)
+
 ---
 
 ## B. What Search Must Be Capable Of
