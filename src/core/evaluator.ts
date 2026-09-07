@@ -1771,46 +1771,7 @@ export class Evaluator {
         return { type: 'expression', ast: node, text: formatAST(node) };
       }
       case 'Quantifier': {
-        if (node.quantifier === 'forall') {
-          const params: string[] = [node.variable];
-          let currPred: ASTNode = node.predicate;
-          while (currPred.type === 'Quantifier' && currPred.quantifier === 'forall') {
-            params.push((currPred as QuantifierNode).variable);
-            currPred = (currPred as QuantifierNode).predicate;
-          }
-
-          if (currPred.type === 'BinaryOp' && currPred.op === '=') {
-            const left = currPred.left;
-            let fnName: string | undefined;
-            if (
-              left.type === 'BinaryOp' &&
-              left.op === '*' &&
-              left.left.type === 'Identifier' &&
-              left.right.type === 'Identifier' &&
-              left.right.name === params[0]
-            ) {
-              fnName = left.left.name;
-            } else if (left.type === 'FunctionCall') {
-              fnName = left.callee;
-            }
-            if (fnName) {
-              const rule = {
-                type: 'forall_rule',
-                name: fnName,
-                params,
-                param: params[0],
-                body: currPred.right,
-                env: currentEnv,
-              };
-              currentEnv[fnName] = rule as any;
-              const clean = fnName.replace(/^:/, '');
-              currentEnv[clean] = rule as any;
-              currentEnv[':' + clean] = rule as any;
-              return { type: 'none' };
-            }
-          }
-        }
-        return { type: 'expression', ast: node, text: formatAST(node) };
+        return this.evalQuantifier(node, currentEnv);
       }
       case 'SetOp': {
         try {
@@ -2792,6 +2753,149 @@ export class Evaluator {
       return { type: 'tuple', elements: mapped };
     }
     return { type: 'list', elements: mapped };
+  }
+
+  private evalQuantifier(node: QuantifierNode, currentEnv: Environment): Value {
+    // 1. Check if this is an unquantified/free recurrence rule definition:
+    // e.g. \forall x, f(x) = expr or \forall x, y, f(x, y) = expr
+    if (node.quantifier === 'forall') {
+      const isDefaultDomain =
+        !node.domain ||
+        (node.domain.type === 'Identifier' &&
+          (node.domain.name === 'R' ||
+            node.domain.name === 'Reals' ||
+            node.domain.name === '\u211d'));
+
+      if (isDefaultDomain) {
+        const params: string[] = [node.variable];
+        let currPred: ASTNode = node.predicate;
+        while (currPred.type === 'Quantifier' && currPred.quantifier === 'forall') {
+          params.push((currPred as QuantifierNode).variable);
+          currPred = (currPred as QuantifierNode).predicate;
+        }
+
+        if (currPred.type === 'BinaryOp' && currPred.op === '=') {
+          const left = currPred.left;
+          let fnName: string | undefined;
+          if (
+            left.type === 'BinaryOp' &&
+            left.op === '*' &&
+            left.left.type === 'Identifier' &&
+            left.right.type === 'Identifier' &&
+            left.right.name === params[0]
+          ) {
+            fnName = left.left.name;
+          } else if (left.type === 'FunctionCall') {
+            fnName = left.callee;
+          }
+          if (fnName) {
+            const rule = {
+              type: 'forall_rule',
+              name: fnName,
+              params,
+              param: params[0],
+              body: currPred.right,
+              env: currentEnv,
+            };
+            currentEnv[fnName] = rule as any;
+            const clean = fnName.replace(/^:/, '');
+            currentEnv[clean] = rule as any;
+            currentEnv[':' + clean] = rule as any;
+            return { type: 'none' };
+          }
+        }
+      }
+    }
+
+    // 2. Bounded quantification evaluation:
+    const domVal = this.evalNode(node.domain, currentEnv);
+    let elements: Value[];
+
+    if (domVal.type === 'set_value' && domVal.elements) {
+      elements = domVal.elements;
+    } else if (
+      domVal.type === 'multiset' ||
+      domVal.type === 'list' ||
+      domVal.type === 'tuple'
+    ) {
+      elements = domVal.elements;
+    } else if (domVal.type === 'range') {
+      elements = [];
+      const step = domVal.step ?? 1;
+      if (step > 0) {
+        for (let x = domVal.start; x <= domVal.end; x += step) {
+          this.budget.check('quantifier_range', node.span);
+          elements.push({ type: 'rational', n: BigInt(Math.round(x)), d: 1n });
+        }
+      }
+    } else {
+      return { type: 'expression', ast: node, text: formatAST(node) };
+    }
+
+    let hasUnknown: UnknownValue | null = null;
+    let trueCount = 0;
+
+    for (let i = 0; i < elements.length; i++) {
+      this.budget.check('quantifier', node.span);
+      const val = elements[i];
+      const localEnv: Environment = {
+        ...currentEnv,
+        [node.variable]: val,
+      };
+      const cleanVar = node.variable.replace(/^:/, '');
+      localEnv[cleanVar] = val;
+      localEnv[':' + cleanVar] = val;
+
+      const res = this.evalNode(node.predicate, localEnv);
+
+      if (node.quantifier === 'forall') {
+        if (res.type === 'boolean') {
+          if (!res.value) {
+            return { type: 'boolean', value: false };
+          }
+        } else if (res.type === 'unknown') {
+          hasUnknown = res;
+        } else if (res.type === 'expression') {
+          return { type: 'expression', ast: node, text: formatAST(node) };
+        }
+      } else if (node.quantifier === 'exists') {
+        if (res.type === 'boolean') {
+          if (res.value) {
+            return { type: 'boolean', value: true };
+          }
+        } else if (res.type === 'unknown') {
+          hasUnknown = res;
+        } else if (res.type === 'expression') {
+          return { type: 'expression', ast: node, text: formatAST(node) };
+        }
+      } else if (node.quantifier === 'exists_unique') {
+        if (res.type === 'boolean') {
+          if (res.value) {
+            trueCount++;
+            if (trueCount > 1) {
+              return { type: 'boolean', value: false };
+            }
+          }
+        } else if (res.type === 'unknown') {
+          hasUnknown = res;
+        } else if (res.type === 'expression') {
+          return { type: 'expression', ast: node, text: formatAST(node) };
+        }
+      }
+    }
+
+    if (node.quantifier === 'forall') {
+      if (hasUnknown) return hasUnknown;
+      return { type: 'boolean', value: true };
+    } else if (node.quantifier === 'exists') {
+      if (hasUnknown) return hasUnknown;
+      return { type: 'boolean', value: false };
+    } else if (node.quantifier === 'exists_unique') {
+      if (hasUnknown && trueCount === 0) return hasUnknown;
+      return { type: 'boolean', value: trueCount === 1 };
+    }
+
+    return { type: 'expression', ast: node, text: formatAST(node) };
   }
 
   private evalSumOrProd(node: FunctionCallNode, currentEnv: Environment): Value {

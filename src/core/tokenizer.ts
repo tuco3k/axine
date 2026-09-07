@@ -151,6 +151,9 @@ export class Tokenizer {
         } else if (name === 'direct' && this.source.slice(this.pos, this.pos + 4) === '_sum') {
           name += '_sum';
           this.advance(); this.advance(); this.advance(); this.advance();
+        } else if (name === 'exists' && this.source.slice(this.pos, this.pos + 7) === '_unique') {
+          name += '_unique';
+          for (let k = 0; k < 7; k++) this.advance();
         }
         if (name === 'in' || name === 'isin') {
           tokens.push(this.makeToken('IN', 'in', startPos, startLine, startCol, leadingWhitespace));
@@ -423,6 +426,10 @@ export class Tokenizer {
             continue;
           }
           tokens.push(this.makeToken('EXISTS', '\u2203', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'exists_unique') {
+          tokens.push(this.makeToken('EXISTS_UNIQUE', '\u2203!', startPos, startLine, startCol, leadingWhitespace));
           continue;
         }
         if (name === 'le' || name === 'leq') {

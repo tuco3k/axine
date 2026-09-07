@@ -38,6 +38,8 @@ describe('Extended Invariant Harness: Expression Manipulation & Reduction', () =
     { name: 'Multiset (\\multiset)', expr: '\\multiset { 1, 1, 2 }', expectedType: 'Multiset' },
     { name: 'Fold (\\fold)', expr: '\\fold (+) \\over S \\from 0', expectedType: 'Fold' },
     { name: 'Map (\\map)', expr: '\\map (x -> x + 1) \\over S', expectedType: 'Map' },
+    { name: 'Quantifier (\\forall)', expr: '\\forall x \\in S, x > 0', expectedType: 'Quantifier' },
+    { name: 'Quantifier (\\exists)', expr: '\\exists x \\in S, x == 1', expectedType: 'Quantifier' },
   ];
 
   // Helper to compare ASTs ignoring span differences
@@ -226,6 +228,13 @@ describe('Extended Invariant Harness: Expression Manipulation & Reduction', () =
             collection: substitute(node.collection, target, replacement),
           };
         }
+        if (node.type === 'Quantifier') {
+          return {
+            ...node,
+            domain: substitute(node.domain, target, replacement),
+            predicate: substitute(node.predicate, target, replacement),
+          };
+        }
         return node;
       }
 
@@ -383,6 +392,21 @@ describe('Extended Invariant Harness: Expression Manipulation & Reduction', () =
           span: mapNode.span,
         };
         expect(astWithoutSpans(reconstructed)).toEqual(astWithoutSpans(mapNode));
+      }
+
+      // 12. QuantifierNode
+      const quantNode = parse('\\forall x \\in S, x > 0');
+      expect(quantNode.type).toBe('Quantifier');
+      if (quantNode.type === 'Quantifier') {
+        const reconstructed: ASTNode = {
+          type: 'Quantifier',
+          quantifier: quantNode.quantifier,
+          variable: quantNode.variable,
+          domain: quantNode.domain,
+          predicate: quantNode.predicate,
+          span: quantNode.span,
+        };
+        expect(astWithoutSpans(reconstructed)).toEqual(astWithoutSpans(quantNode));
       }
     });
   });

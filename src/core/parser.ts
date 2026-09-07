@@ -2361,7 +2361,7 @@ export class Parser {
     };
     if (this.peek().type === 'SET_IN' || this.peek().type === 'IN') {
       this.advance();
-      domain = this.parseExpression(PREC_COMPARE);
+      domain = this.parseExpression(PREC_WHERE);
     }
     if (this.peek().type === 'COMMA' || this.peek().type === 'COLON' || this.peek().type === 'BAR_SEP') {
       this.advance();
