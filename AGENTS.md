@@ -109,3 +109,21 @@ It also means the floor may grow to reach lower — bit operations,
 machine representation — if that is what lets fast numerics be written
 IN Axine rather than imported from outside. Extending reach is not an
 exception. Hiding an implementation behind a name is.
+
+## Development order
+Three phases, in order. Do not start a later one before an earlier one
+is done.
+
+1. THE LANGUAGE. The core, the floor, the capabilities. Axine
+   functioning in its own right — internally consistent, everything
+   expressible in Axine rather than hardcoded. C1 through C9.
+
+2. THE SIMULATION ENGINE. How the mathematical universe is shown:
+   spaces, sampling, slicing, navigation, robustness. Making the
+   graphing correct and fast.
+
+3. RENDERING. Document formatting, typesetting, layout, figures. Word-
+   like editing and output.
+
+Rendering is last because the earlier phases change what there is to
+render. A usable tool is the goal, not the milestone.
