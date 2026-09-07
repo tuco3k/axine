@@ -315,6 +315,15 @@ The ability to bind standard arithmetic and algebraic operators (`+`, `-`, `*`, 
 
 ---
 
+### 10. Machine Representation Primitives (Deferred)
+
+#### Status: Deferred (Not Rejected)
+Three primitives for a floor of 10 is a reasonable price, but nothing in C1–C9 needs it and E6 works without it. Machine representation is also a fundamentally different kind of thing than arithmetic — a rational is a rational regardless of storage, and `\mantissa` ties the language directly to IEEE-754 hardware specifics.
+
+*Decision*: Revisit after C9 lands, when there is a concrete, measured performance case from practical workloads rather than a hypothetical one.
+
+---
+
 ## B. The Dependency Graph & Minimal First Addition
 
 The nine capabilities form a strict directed acyclic dependency graph.
