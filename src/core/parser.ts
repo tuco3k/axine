@@ -17,6 +17,11 @@ import {
   BuildNode,
   QuoteNode,
   UnquoteNode,
+  SetNode,
+  SetComprehensionNode,
+  MultisetNode,
+  FoldNode,
+  MapNode,
   Span,
   Token,
   TokenType,
@@ -1241,6 +1246,20 @@ export class Parser {
       return this.parseUnquote();
     }
 
+    // Collections & Folding/Mapping (C2 & C3)
+    if (token.type === 'SET') {
+      return this.parseSet();
+    }
+    if (token.type === 'MULTISET') {
+      return this.parseMultiset();
+    }
+    if (token.type === 'FOLD') {
+      return this.parseFold();
+    }
+    if (token.type === 'MAP') {
+      return this.parseMap();
+    }
+
     // Conditionals: if <cond> then <expr> else <expr>
     if (token.type === 'IF') {
       this.advance(); // consume if
@@ -1410,9 +1429,16 @@ export class Parser {
       return this.parseBracketOp();
     }
 
-    // Custom prefix operator
+    // Custom prefix operator or bare operator
     if (token.type === 'CUSTOM_OP') {
       const opTok = this.advance();
+      if (this.peek().type === 'EOF' || this.peek().type === 'OVER' || this.peek().type === 'RPAREN') {
+        return {
+          type: 'Identifier',
+          name: opTok.value,
+          span: opTok.span,
+        };
+      }
       const operand = this.parseExpression(PREC_UNARY);
       return {
         type: 'UnaryOp',
@@ -1731,6 +1757,49 @@ export class Parser {
         return {
           type: 'Tuple',
           elements: [],
+          span,
+        };
+      }
+
+      // Operator section in parens: (+), (*), (-), (/), (**), (\u229b), etc.
+      const isOpTok = (t: TokenType) =>
+        t === 'PLUS' ||
+        t === 'MINUS' ||
+        t === 'STAR' ||
+        t === 'SLASH' ||
+        t === 'DOUBLE_SLASH' ||
+        t === 'PERCENT' ||
+        t === 'CARET' ||
+        t === 'EQ' ||
+        t === 'EQ_EQ' ||
+        t === 'NEQ' ||
+        t === 'LT' ||
+        t === 'LTE' ||
+        t === 'GT' ||
+        t === 'GTE' ||
+        t === 'AND' ||
+        t === 'OR' ||
+        t === 'CUSTOM_OP';
+
+      let lookaheadOp = 0;
+      while (isOpTok(this.peek(lookaheadOp).type)) {
+        lookaheadOp++;
+      }
+      if (lookaheadOp > 0 && this.peek(lookaheadOp).type === 'RPAREN') {
+        let opStr = '';
+        for (let i = 0; i < lookaheadOp; i++) {
+          opStr += this.advance().value;
+        }
+        const rParen = this.advance();
+        const span: Span = {
+          start: token.span.start,
+          end: rParen.span.end,
+          line: token.span.line,
+          col: token.span.col,
+        };
+        return {
+          type: 'Identifier',
+          name: opStr,
           span,
         };
       }
@@ -2845,7 +2914,7 @@ export class Parser {
     return [
       'DIMENSION', 'UNIT', 'MODULE', 'EXPORT', 'IMPORT', 'FROM', 'AS', 'KIND',
       'STEP', 'WITH', 'RECORD', 'IS', 'EXTENDS', 'OPERATIONS', 'AXIOMS', 'RULE', 'REQUIRES',
-      'VIEW', 'FOR'
+      'VIEW', 'FOR', 'SET', 'MULTISET', 'FOLD', 'MAP', 'OVER'
     ].includes(type);
   }
 
@@ -2924,7 +2993,15 @@ export class Parser {
       type === 'SIMPLIFY' ||
       type === 'CHECK' ||
       type === 'FIND' ||
-      type === 'BACKSLASH_IDENT'
+      type === 'BACKSLASH_IDENT' ||
+      type === 'MATCH' ||
+      type === 'BUILD' ||
+      type === 'QUOTE' ||
+      type === 'UNQUOTE' ||
+      type === 'SET' ||
+      type === 'MULTISET' ||
+      type === 'FOLD' ||
+      type === 'MAP'
     );
   }
 
@@ -3257,6 +3334,310 @@ export class Parser {
         end: rbrace.span.end,
         line: matchToken.span.line,
         col: matchToken.span.col,
+      },
+    };
+  }
+
+  private parseSet(): SetNode | SetComprehensionNode {
+    const setTok = this.advance(); // consume \set
+    const isBrace = this.peek().type === 'LBRACE';
+    const closeType: TokenType = isBrace ? 'RBRACE' : 'RPAREN';
+    if (isBrace) {
+      this.advance();
+    } else if (this.peek().type === 'LPAREN') {
+      this.advance();
+    } else {
+      throw createError(`Expected '{' or '(' after \\set`, this.peek().span);
+    }
+
+    if (this.peek().type === closeType) {
+      const closeTok = this.advance();
+      return {
+        type: 'Set',
+        elements: [],
+        span: {
+          start: setTok.span.start,
+          end: closeTok.span.end,
+          line: setTok.span.line,
+          col: setTok.span.col,
+        },
+      };
+    }
+
+    // Check if comprehension: lookahead for FOR at depth 0, or (IDENTIFIER + IN/SET_IN + WHERE/COLON/BAR_SEP)
+    let p = this.pos;
+    let depth = 0;
+    let hasFor = false;
+    let forPos = -1;
+    let hasIn = false;
+    let inPos = -1;
+    let hasWhereOrColon = false;
+
+    while (p < this.tokens.length && this.tokens[p].type !== 'EOF') {
+      const t = this.tokens[p].type;
+      if (t === 'LBRACE' || t === 'LPAREN' || t === 'LBRACKET') depth++;
+      else if (t === 'RBRACE' || t === 'RPAREN' || t === 'RBRACKET') {
+        if (depth === 0 && t === closeType) break;
+        depth--;
+      } else if (depth === 0) {
+        if (t === 'FOR') {
+          hasFor = true;
+          forPos = p;
+        } else if (t === 'IN' || t === 'SET_IN') {
+          hasIn = true;
+          inPos = p;
+        } else if (t === 'WHERE' || t === 'COLON' || t === 'BAR_SEP') {
+          hasWhereOrColon = true;
+        }
+      }
+      p++;
+    }
+
+    if (hasFor) {
+      // Form A: <expr> \for <var> \in <domain> [\where <condition>]
+      const exprTokens: Token[] = [];
+      while (this.pos < forPos) {
+        exprTokens.push(this.advance());
+      }
+      const lastSpan = exprTokens.length > 0 ? exprTokens[exprTokens.length - 1].span : setTok.span;
+      exprTokens.push({ type: 'EOF', value: '', span: lastSpan, leadingWhitespace: false });
+      const expr = (new Parser(exprTokens, { source: this.source })).parseExpression(PREC_NONE);
+
+      this.expect('FOR', '\\for');
+      const varTok = this.expect('IDENTIFIER', 'variable');
+      if (this.peek().type === 'IN' || this.peek().type === 'SET_IN') {
+        this.advance();
+      } else {
+        throw createError(`Expected '\\in' after variable in set comprehension`, this.peek().span);
+      }
+
+      const domainTokens: Token[] = [];
+      let ddepth = 0;
+      while (this.peek().type !== closeType && this.peek().type !== 'EOF') {
+        const t = this.peek().type;
+        if (ddepth === 0 && t === 'WHERE') break;
+        if (t === 'LBRACE' || t === 'LPAREN' || t === 'LBRACKET') ddepth++;
+        else if (t === 'RBRACE' || t === 'RPAREN' || t === 'RBRACKET') ddepth--;
+        domainTokens.push(this.advance());
+      }
+      const domLastSpan = domainTokens.length > 0 ? domainTokens[domainTokens.length - 1].span : varTok.span;
+      domainTokens.push({ type: 'EOF', value: '', span: domLastSpan, leadingWhitespace: false });
+      const domain = (new Parser(domainTokens, { source: this.source })).parseExpression(PREC_NONE);
+
+      let condition: ASTNode | undefined;
+      if (this.peek().type === 'WHERE') {
+        this.advance();
+        const condTokens: Token[] = [];
+        let cdepth = 0;
+        while (this.peek().type !== closeType && this.peek().type !== 'EOF') {
+          const t = this.peek().type;
+          if (t === 'LBRACE' || t === 'LPAREN' || t === 'LBRACKET') cdepth++;
+          else if (t === 'RBRACE' || t === 'RPAREN' || t === 'RBRACKET') cdepth--;
+          condTokens.push(this.advance());
+        }
+        const cLastSpan = condTokens.length > 0 ? condTokens[condTokens.length - 1].span : domLastSpan;
+        condTokens.push({ type: 'EOF', value: '', span: cLastSpan, leadingWhitespace: false });
+        condition = (new Parser(condTokens, { source: this.source })).parseExpression(PREC_NONE);
+      }
+
+      const closeTok = this.expect(closeType, isBrace ? '}' : ')');
+      return {
+        type: 'SetComprehension',
+        expr,
+        variable: varTok.value,
+        domain,
+        condition,
+        span: {
+          start: setTok.span.start,
+          end: closeTok.span.end,
+          line: setTok.span.line,
+          col: setTok.span.col,
+        },
+      };
+    }
+
+    if (hasIn && (hasWhereOrColon || inPos === this.pos + 1)) {
+      // Check if it's: \set { x \in S \where P(x) } or \set { x \in S }
+      if (this.peek().type === 'IDENTIFIER' && (this.peek(1).type === 'IN' || this.peek(1).type === 'SET_IN')) {
+        const varTok = this.advance();
+        this.advance(); // in
+        const domainTokens: Token[] = [];
+        let ddepth = 0;
+        while (this.peek().type !== closeType && this.peek().type !== 'EOF') {
+          const t = this.peek().type;
+          if (ddepth === 0 && (t === 'WHERE' || t === 'COLON' || t === 'BAR_SEP')) break;
+          if (t === 'LBRACE' || t === 'LPAREN' || t === 'LBRACKET') ddepth++;
+          else if (t === 'RBRACE' || t === 'RPAREN' || t === 'RBRACKET') ddepth--;
+          domainTokens.push(this.advance());
+        }
+        const domLastSpan = domainTokens.length > 0 ? domainTokens[domainTokens.length - 1].span : varTok.span;
+        domainTokens.push({ type: 'EOF', value: '', span: domLastSpan, leadingWhitespace: false });
+        const domain = (new Parser(domainTokens, { source: this.source })).parseExpression(PREC_NONE);
+
+        let condition: ASTNode | undefined;
+        if (this.peek().type === 'WHERE' || this.peek().type === 'COLON' || this.peek().type === 'BAR_SEP') {
+          this.advance();
+          const condTokens: Token[] = [];
+          let cdepth = 0;
+          while (this.peek().type !== closeType && this.peek().type !== 'EOF') {
+            const t = this.peek().type;
+            if (t === 'LBRACE' || t === 'LPAREN' || t === 'LBRACKET') cdepth++;
+            else if (t === 'RBRACE' || t === 'RPAREN' || t === 'RBRACKET') cdepth--;
+            condTokens.push(this.advance());
+          }
+          const cLastSpan = condTokens.length > 0 ? condTokens[condTokens.length - 1].span : domLastSpan;
+          condTokens.push({ type: 'EOF', value: '', span: cLastSpan, leadingWhitespace: false });
+          condition = (new Parser(condTokens, { source: this.source })).parseExpression(PREC_NONE);
+        }
+
+        const closeTok = this.expect(closeType, isBrace ? '}' : ')');
+        return {
+          type: 'SetComprehension',
+          expr: { type: 'Identifier', name: varTok.value, span: varTok.span },
+          variable: varTok.value,
+          domain,
+          condition,
+          span: {
+            start: setTok.span.start,
+            end: closeTok.span.end,
+            line: setTok.span.line,
+            col: setTok.span.col,
+          },
+        };
+      }
+    }
+
+    // Explicit comma-separated elements: \set { a, b, c }
+    const elements: ASTNode[] = [];
+    while (this.peek().type !== closeType && this.peek().type !== 'EOF') {
+      elements.push(this.parseExpression(PREC_NONE));
+      if (this.peek().type === 'COMMA') {
+        this.advance();
+      } else {
+        break;
+      }
+    }
+    const closeTok = this.expect(closeType, isBrace ? '}' : ')');
+    return {
+      type: 'Set',
+      elements,
+      span: {
+        start: setTok.span.start,
+        end: closeTok.span.end,
+        line: setTok.span.line,
+        col: setTok.span.col,
+      },
+    };
+  }
+
+  private parseMultiset(): MultisetNode {
+    const multiTok = this.advance(); // consume \multiset
+    const isBrace = this.peek().type === 'LBRACE';
+    const closeType: TokenType = isBrace ? 'RBRACE' : 'RPAREN';
+    if (isBrace) {
+      this.advance();
+    } else if (this.peek().type === 'LPAREN') {
+      this.advance();
+    } else {
+      throw createError(`Expected '{' or '(' after \\multiset`, this.peek().span);
+    }
+
+    const elements: ASTNode[] = [];
+    while (this.peek().type !== closeType && this.peek().type !== 'EOF') {
+      elements.push(this.parseExpression(PREC_NONE));
+      if (this.peek().type === 'COMMA') {
+        this.advance();
+      } else {
+        break;
+      }
+    }
+    const closeTok = this.expect(closeType, isBrace ? '}' : ')');
+    return {
+      type: 'Multiset',
+      elements,
+      span: {
+        start: multiTok.span.start,
+        end: closeTok.span.end,
+        line: multiTok.span.line,
+        col: multiTok.span.col,
+      },
+    };
+  }
+
+  private parseFold(): FoldNode {
+    const foldTok = this.advance(); // consume \fold
+    const opTokens: Token[] = [];
+    let depth = 0;
+    while (this.peek().type !== 'EOF') {
+      const t = this.peek().type;
+      if (t === 'LPAREN' || t === 'LBRACKET' || t === 'LBRACE') depth++;
+      else if (t === 'RPAREN' || t === 'RBRACKET' || t === 'RBRACE') depth--;
+      if (depth === 0 && t === 'OVER') break;
+      opTokens.push(this.advance());
+    }
+    const opLastSpan = opTokens.length > 0 ? opTokens[opTokens.length - 1].span : foldTok.span;
+    opTokens.push({ type: 'EOF', value: '', span: opLastSpan, leadingWhitespace: false });
+    const op = (new Parser(opTokens, { source: this.source })).parseExpression(PREC_NONE);
+
+    this.expect('OVER', '\\over');
+
+    const collTokens: Token[] = [];
+    let cdepth = 0;
+    while (this.peek().type !== 'EOF') {
+      const t = this.peek().type;
+      if (t === 'LPAREN' || t === 'LBRACKET' || t === 'LBRACE') cdepth++;
+      else if (t === 'RPAREN' || t === 'RBRACKET' || t === 'RBRACE') cdepth--;
+      if (cdepth === 0 && t === 'FROM') break;
+      collTokens.push(this.advance());
+    }
+    const cLastSpan = collTokens.length > 0 ? collTokens[collTokens.length - 1].span : foldTok.span;
+    collTokens.push({ type: 'EOF', value: '', span: cLastSpan, leadingWhitespace: false });
+    const collection = (new Parser(collTokens, { source: this.source })).parseExpression(PREC_NONE);
+
+    this.expect('FROM', '\\from');
+
+    const initial = this.parseExpression(PREC_NONE);
+    return {
+      type: 'Fold',
+      op,
+      collection,
+      initial,
+      span: {
+        start: foldTok.span.start,
+        end: initial.span.end,
+        line: foldTok.span.line,
+        col: foldTok.span.col,
+      },
+    };
+  }
+
+  private parseMap(): MapNode {
+    const mapTok = this.advance(); // consume \map
+    const fnTokens: Token[] = [];
+    let depth = 0;
+    while (this.peek().type !== 'EOF') {
+      const t = this.peek().type;
+      if (t === 'LPAREN' || t === 'LBRACKET' || t === 'LBRACE') depth++;
+      else if (t === 'RPAREN' || t === 'RBRACKET' || t === 'RBRACE') depth--;
+      if (depth === 0 && t === 'OVER') break;
+      fnTokens.push(this.advance());
+    }
+    const fnLastSpan = fnTokens.length > 0 ? fnTokens[fnTokens.length - 1].span : mapTok.span;
+    fnTokens.push({ type: 'EOF', value: '', span: fnLastSpan, leadingWhitespace: false });
+    const fn = (new Parser(fnTokens, { source: this.source })).parseExpression(PREC_NONE);
+
+    this.expect('OVER', '\\over');
+
+    const collection = this.parseExpression(PREC_NONE);
+    return {
+      type: 'Map',
+      fn,
+      collection,
+      span: {
+        start: mapTok.span.start,
+        end: collection.span.end,
+        line: mapTok.span.line,
+        col: mapTok.span.col,
       },
     };
   }

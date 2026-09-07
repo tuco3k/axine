@@ -134,6 +134,11 @@ export type TokenType =
   | 'BUILD'
   | 'QUOTE'
   | 'UNQUOTE'
+  | 'SET'
+  | 'MULTISET'
+  | 'FOLD'
+  | 'MAP'
+  | 'OVER'
   | 'OTHERWISE'
   | 'EOF';
 
@@ -198,7 +203,48 @@ export type ASTNode =
   | MatchNode
   | BuildNode
   | QuoteNode
-  | UnquoteNode;
+  | UnquoteNode
+  | SetNode
+  | SetComprehensionNode
+  | MultisetNode
+  | FoldNode
+  | MapNode;
+
+export interface SetNode {
+  type: 'Set';
+  elements: ASTNode[];
+  span: Span;
+}
+
+export interface SetComprehensionNode {
+  type: 'SetComprehension';
+  expr: ASTNode;
+  variable: string;
+  domain: ASTNode;
+  condition?: ASTNode;
+  span: Span;
+}
+
+export interface MultisetNode {
+  type: 'Multiset';
+  elements: ASTNode[];
+  span: Span;
+}
+
+export interface FoldNode {
+  type: 'Fold';
+  op: ASTNode;
+  collection: ASTNode;
+  initial: ASTNode;
+  span: Span;
+}
+
+export interface MapNode {
+  type: 'Map';
+  fn: ASTNode;
+  collection: ASTNode;
+  span: Span;
+}
 
 export interface WhereNode {
   type: 'Where';
@@ -687,11 +733,20 @@ export interface KindValue {
 
 export interface SetValue {
   type: 'set_value';
-  elementKind: MathKind;
+  elementKind?: MathKind;
   standardName?: string;
   isInfinite?: boolean;
   predicate?: ASTNode;
   elements?: Value[];
+  variable?: string;
+  domain?: Value;
+  expr?: ASTNode;
+  closure?: Record<string, Value>;
+}
+
+export interface MultisetValue {
+  type: 'multiset';
+  elements: Value[];
 }
 
 export interface DifferentialFormValue {
@@ -1067,6 +1122,7 @@ export type Value =
   | StringValue
   | KindValue
   | SetValue
+  | MultisetValue
   | DifferentialFormValue
   | VectorFieldValue
   | DistributionValue

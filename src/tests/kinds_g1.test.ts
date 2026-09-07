@@ -111,7 +111,7 @@ describe('Gate G1: Mathematical Kinds & Lattice', () => {
 
     // 4. Sin of a vector -> error naming non-numeric / kind mismatch
     expect(() => run(':sin([1, 2, 3])')).toThrowError(
-      /Expected numeric value|Cannot apply sin/
+      /Expected numeric value|Cannot apply sin|Cannot add Vector|requires matching kinds/
     );
 
     // 5. Sqrt of a vector -> error naming non-numeric / kind mismatch

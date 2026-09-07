@@ -248,6 +248,26 @@ export class Tokenizer {
           tokens.push(this.makeToken('UNQUOTE', 'unquote', startPos, startLine, startCol, leadingWhitespace));
           continue;
         }
+        if (name === 'set') {
+          tokens.push(this.makeToken('SET', 'set', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'multiset') {
+          tokens.push(this.makeToken('MULTISET', 'multiset', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'fold') {
+          tokens.push(this.makeToken('FOLD', 'fold', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'map') {
+          tokens.push(this.makeToken('MAP', 'map', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'over') {
+          tokens.push(this.makeToken('OVER', 'over', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
         if (name === 'otherwise') {
           tokens.push(this.makeToken('OTHERWISE', 'otherwise', startPos, startLine, startCol, leadingWhitespace));
           continue;

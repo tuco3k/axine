@@ -74,6 +74,11 @@ function getNodePrecedence(node: ASTNode): number {
     case 'Range':
     case 'AxisDecl':
     case 'Interval':
+    case 'Set':
+    case 'SetComprehension':
+    case 'Multiset':
+    case 'Fold':
+    case 'Map':
       return PREC_NONE;
     default:
       return PREC_NONE;
@@ -396,6 +401,30 @@ function formatNode(node: ASTNode, parentPrec: number): string {
       const casesStr = node.cases.map(c => `  \\case ${formatNode(c.pattern, PREC_NONE)}${c.guard ? ` \\if ${formatNode(c.guard, PREC_NONE)}` : ''}: ${formatNode(c.body, PREC_NONE)}`).join(',\n');
       const otherwiseStr = node.otherwise ? `,\n  \\otherwise: ${formatNode(node.otherwise, PREC_NONE)}` : '';
       return `\\match ${formatNode(node.expr, PREC_NONE)} {\n${casesStr}${otherwiseStr}\n}`;
+    }
+    case 'Set': {
+      return `\\set { ${node.elements.map(e => formatNode(e, PREC_NONE)).join(', ')} }`;
+    }
+    case 'SetComprehension': {
+      let res = `\\set { ${formatNode(node.expr, PREC_NONE)} \\for ${formatIdent(node.variable)} \\in ${formatNode(node.domain, PREC_NONE)}`;
+      if (node.condition) {
+        res += ` \\where ${formatNode(node.condition, PREC_NONE)}`;
+      }
+      res += ' }';
+      return res;
+    }
+    case 'Multiset': {
+      return `\\multiset { ${node.elements.map(e => formatNode(e, PREC_NONE)).join(', ')} }`;
+    }
+    case 'Fold': {
+      const opStr = (node.op.type === 'Identifier' && !node.op.name.match(/^[a-zA-Z_][a-zA-Z0-9_]*$/))
+        ? `(${node.op.name})`
+        : (node.op.type === 'Lambda' ? `(${formatNode(node.op, PREC_NONE)})` : formatNode(node.op, PREC_NONE));
+      return `\\fold ${opStr} \\over ${formatNode(node.collection, PREC_NONE)} \\from ${formatNode(node.initial, PREC_NONE)}`;
+    }
+    case 'Map': {
+      const fnStr = node.fn.type === 'Lambda' ? `(${formatNode(node.fn, PREC_NONE)})` : formatNode(node.fn, PREC_NONE);
+      return `\\map ${fnStr} \\over ${formatNode(node.collection, PREC_NONE)}`;
     }
     case 'BinaryOp': {
       return formatBinaryOp(node, parentPrec);

@@ -420,6 +420,45 @@ export function analyzeAST(
         }
         break;
       }
+      case 'Set':
+      case 'Multiset': {
+        for (const el of n.elements) {
+          walk(el);
+        }
+        break;
+      }
+      case 'SetComprehension': {
+        walk(n.domain);
+        const subParams = new Set(boundParams);
+        subParams.add(n.variable);
+        subParams.add(n.variable.replace(/^:/, ''));
+        if (n.condition) {
+          const condAnalysis = analyzeAST(n.condition, env, subParams, source);
+          for (const fv of condAnalysis.freeVariables) {
+            if (!subParams.has(fv) && !subParams.has(fv.replace(/^:/, ''))) {
+              freeVars.add(fv);
+            }
+          }
+        }
+        const exprAnalysis = analyzeAST(n.expr, env, subParams, source);
+        for (const fv of exprAnalysis.freeVariables) {
+          if (!subParams.has(fv) && !subParams.has(fv.replace(/^:/, ''))) {
+            freeVars.add(fv);
+          }
+        }
+        break;
+      }
+      case 'Fold': {
+        walk(n.op);
+        walk(n.collection);
+        walk(n.initial);
+        break;
+      }
+      case 'Map': {
+        walk(n.fn);
+        walk(n.collection);
+        break;
+      }
       case 'Claim': {
         isDef = true;
         definedName = n.name;

@@ -399,7 +399,9 @@ export function inferKindOfValue(val: Value): MathKind {
     case 'kind':
       return val.kind;
     case 'set_value':
-      return { name: 'Set', elementKind: val.elementKind, standardName: val.standardName, isInfinite: val.isInfinite };
+      return { name: 'Set', elementKind: val.elementKind || { name: 'Scalar', subtype: 'real' }, standardName: val.standardName, isInfinite: val.isInfinite };
+    case 'multiset':
+      return { name: 'Set', elementKind: { name: 'Scalar', subtype: 'real' } };
     case 'differential_form':
       return { name: 'DifferentialForm', degree: val.degree, manifold: val.manifold };
     case 'vector_field':

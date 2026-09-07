@@ -34,6 +34,10 @@ describe('Extended Invariant Harness: Expression Manipulation & Reduction', () =
     { name: 'Relation (=)', expr: 'x^2 + y^2 = 4', expectedType: 'BinaryOp' },
     { name: 'Nested Binary/Function', expr: ':sin(x) * :cos(y) - :sqrt(x^2 + 1)', expectedType: 'BinaryOp' },
     { name: 'Higher Power Rational', expr: '(x + 1)^3 / (x^2 + 2)', expectedType: 'BinaryOp' },
+    { name: 'Set (\\set)', expr: '\\set { 1, 2, 3 }', expectedType: 'Set' },
+    { name: 'Multiset (\\multiset)', expr: '\\multiset { 1, 1, 2 }', expectedType: 'Multiset' },
+    { name: 'Fold (\\fold)', expr: '\\fold (+) \\over S \\from 0', expectedType: 'Fold' },
+    { name: 'Map (\\map)', expr: '\\map (x -> x + 1) \\over S', expectedType: 'Map' },
   ];
 
   // Helper to compare ASTs ignoring span differences
@@ -196,6 +200,32 @@ describe('Extended Invariant Harness: Expression Manipulation & Reduction', () =
             args: node.args.map(a => substitute(a, target, replacement)),
           };
         }
+        if (node.type === 'Set') {
+          return {
+            ...node,
+            elements: node.elements.map(e => substitute(e, target, replacement)),
+          };
+        }
+        if (node.type === 'Multiset') {
+          return {
+            ...node,
+            elements: node.elements.map(e => substitute(e, target, replacement)),
+          };
+        }
+        if (node.type === 'Fold') {
+          return {
+            ...node,
+            op: substitute(node.op, target, replacement),
+            collection: substitute(node.collection, target, replacement),
+            initial: substitute(node.initial, target, replacement),
+          };
+        }
+        if (node.type === 'Map') {
+          return {
+            ...node,
+            collection: substitute(node.collection, target, replacement),
+          };
+        }
         return node;
       }
 
@@ -302,6 +332,57 @@ describe('Extended Invariant Harness: Expression Manipulation & Reduction', () =
           span: relNode.span,
         };
         expect(astWithoutSpans(reconstructed)).toEqual(astWithoutSpans(relNode));
+      }
+
+      // 8. SetNode
+      const setNode = parse('\\set { 1, 2, 3 }');
+      expect(setNode.type).toBe('Set');
+      if (setNode.type === 'Set') {
+        const reconstructed: ASTNode = {
+          type: 'Set',
+          elements: setNode.elements,
+          span: setNode.span,
+        };
+        expect(astWithoutSpans(reconstructed)).toEqual(astWithoutSpans(setNode));
+      }
+
+      // 9. MultisetNode
+      const multisetNode = parse('\\multiset { 1, 1, 2 }');
+      expect(multisetNode.type).toBe('Multiset');
+      if (multisetNode.type === 'Multiset') {
+        const reconstructed: ASTNode = {
+          type: 'Multiset',
+          elements: multisetNode.elements,
+          span: multisetNode.span,
+        };
+        expect(astWithoutSpans(reconstructed)).toEqual(astWithoutSpans(multisetNode));
+      }
+
+      // 10. FoldNode
+      const foldNode = parse('\\fold (+) \\over S \\from 0');
+      expect(foldNode.type).toBe('Fold');
+      if (foldNode.type === 'Fold') {
+        const reconstructed: ASTNode = {
+          type: 'Fold',
+          op: foldNode.op,
+          collection: foldNode.collection,
+          initial: foldNode.initial,
+          span: foldNode.span,
+        };
+        expect(astWithoutSpans(reconstructed)).toEqual(astWithoutSpans(foldNode));
+      }
+
+      // 11. MapNode
+      const mapNode = parse('\\map (x -> x + 1) \\over S');
+      expect(mapNode.type).toBe('Map');
+      if (mapNode.type === 'Map') {
+        const reconstructed: ASTNode = {
+          type: 'Map',
+          fn: mapNode.fn,
+          collection: mapNode.collection,
+          span: mapNode.span,
+        };
+        expect(astWithoutSpans(reconstructed)).toEqual(astWithoutSpans(mapNode));
       }
     });
   });

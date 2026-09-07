@@ -2871,8 +2871,10 @@ export function formatValue(val: Value): string {
       return `[Described: ${val.namedOperation || (val as any).operation || 'unevaluable'}]`;
     case 'set_value':
       if (val.standardName) return val.standardName;
-      if (val.isInfinite) return `Set(infinite, of=${formatKind(val.elementKind)})`;
+      if (val.isInfinite) return `Set(infinite, of=${val.elementKind ? formatKind(val.elementKind) : 'any'})`;
       return `Set(${(val.elements ?? []).map(e => formatValue(e)).join(', ')})`;
+    case 'multiset':
+      return `Multiset(${(val.elements ?? []).map(e => formatValue(e)).join(', ')})`;
     case 'record': {
       const fieldsStr = Object.entries(val.fields)
         .map(([k, v]) => `${k}: ${formatValue(v)}`)

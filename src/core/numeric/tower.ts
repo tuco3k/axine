@@ -78,6 +78,17 @@ export function valueToASTNode(val: Value, span?: Span): ASTNode {
       return { type: 'Tuple', elements: val.elements.map(e => valueToASTNode(e, s)), span: s };
     case 'list':
       return { type: 'List', elements: val.elements.map(e => valueToASTNode(e, s)), span: s };
+    case 'set_value': {
+      if (val.standardName) {
+        return { type: 'Identifier', name: val.standardName, span: s };
+      }
+      if (val.elements) {
+        return { type: 'Set', elements: val.elements.map(e => valueToASTNode(e, s)), span: s };
+      }
+      return { type: 'Set', elements: [], span: s };
+    }
+    case 'multiset':
+      return { type: 'Multiset', elements: val.elements.map(e => valueToASTNode(e, s)), span: s };
     case 'string':
       return { type: 'StringLiteral', value: val.value, span: s };
     default:
@@ -894,10 +905,128 @@ export function compareValues(op: '=' | '==' | '!=' | '<' | '<=' | '>' | '>=', a
     return { type: 'none' };
   }
 
-  // Handle boolean values
-  if (a.type === 'boolean' && b.type === 'boolean') {
-    if (op === '=' || op === '==') return { type: 'boolean', value: a.value === b.value };
-    if (op === '!=') return { type: 'boolean', value: a.value !== b.value };
+  // Handle equality on non-numeric / structural values
+  const isEqOp = op === '=' || op === '==' || op === '!=' || (op as any) === '\u2260';
+  if (isEqOp) {
+    // Handle boolean values
+    if (a.type === 'boolean' && b.type === 'boolean') {
+      if (op === '=' || op === '==') return { type: 'boolean', value: a.value === b.value };
+      return { type: 'boolean', value: a.value !== b.value };
+    }
+
+    // Handle strings
+    if (a.type === 'string' || b.type === 'string') {
+      const isEq = a.type === 'string' && b.type === 'string' && a.value === b.value;
+      return { type: 'boolean', value: (op === '=' || op === '==') ? isEq : !isEq };
+    }
+
+    // Handle lists
+    if (a.type === 'list' || b.type === 'list') {
+      if (a.type === 'list' && b.type === 'list') {
+        let isEq = a.elements.length === b.elements.length;
+        if (isEq) {
+          for (let i = 0; i < a.elements.length; i++) {
+            const sub = compareValues('==', a.elements[i], b.elements[i], span);
+            if (sub.type !== 'boolean' || !sub.value) {
+              isEq = false;
+              break;
+            }
+          }
+        }
+        return { type: 'boolean', value: (op === '=' || op === '==') ? isEq : !isEq };
+      }
+      return { type: 'boolean', value: (op === '=' || op === '==') ? false : true };
+    }
+
+    // Handle tuples
+    if (a.type === 'tuple' || b.type === 'tuple') {
+      if (a.type === 'tuple' && b.type === 'tuple') {
+        let isEq = a.elements.length === b.elements.length;
+        if (isEq) {
+          for (let i = 0; i < a.elements.length; i++) {
+            const sub = compareValues('==', a.elements[i], b.elements[i], span);
+            if (sub.type !== 'boolean' || !sub.value) {
+              isEq = false;
+              break;
+            }
+          }
+        }
+        return { type: 'boolean', value: (op === '=' || op === '==') ? isEq : !isEq };
+      }
+      return { type: 'boolean', value: (op === '=' || op === '==') ? false : true };
+    }
+
+    // Handle set values
+    if (a.type === 'set_value' || b.type === 'set_value') {
+      if (a.type === 'set_value' && b.type === 'set_value') {
+        if (a.standardName && b.standardName) {
+          const isEq = a.standardName === b.standardName;
+          return { type: 'boolean', value: (op === '=' || op === '==') ? isEq : !isEq };
+        }
+        if (a.elements && b.elements) {
+          let isEq = a.elements.length === b.elements.length;
+          if (isEq) {
+            for (const x of a.elements) {
+              const hasX = b.elements.some(y => {
+                const sub = compareValues('==', x, y, span);
+                return sub.type === 'boolean' && sub.value;
+              });
+              if (!hasX) {
+                isEq = false;
+                break;
+              }
+            }
+          }
+          return { type: 'boolean', value: (op === '=' || op === '==') ? isEq : !isEq };
+        }
+        return { type: 'boolean', value: (op === '=' || op === '==') ? false : true };
+      }
+      return { type: 'boolean', value: (op === '=' || op === '==') ? false : true };
+    }
+
+    // Handle multisets
+    if (a.type === 'multiset' || b.type === 'multiset') {
+      if (a.type === 'multiset' && b.type === 'multiset') {
+        let isEq = a.elements.length === b.elements.length;
+        if (isEq) {
+          const bRemaining = [...b.elements];
+          for (const x of a.elements) {
+            const idx = bRemaining.findIndex(y => {
+              const sub = compareValues('==', x, y, span);
+              return sub.type === 'boolean' && sub.value;
+            });
+            if (idx === -1) {
+              isEq = false;
+              break;
+            }
+            bRemaining.splice(idx, 1);
+          }
+        }
+        return { type: 'boolean', value: (op === '=' || op === '==') ? isEq : !isEq };
+      }
+      return { type: 'boolean', value: (op === '=' || op === '==') ? false : true };
+    }
+
+    // Handle records
+    if (a.type === 'record' || b.type === 'record') {
+      if (a.type === 'record' && b.type === 'record') {
+        if (a.typeName !== b.typeName) {
+          return { type: 'boolean', value: (op === '=' || op === '==') ? false : true };
+        }
+        const aKeys = Object.keys(a.fields);
+        const bKeys = Object.keys(b.fields);
+        let isEq = aKeys.length === bKeys.length;
+        if (isEq) {
+          for (const k of aKeys) {
+            if (!(k in b.fields)) { isEq = false; break; }
+            const sub = compareValues('==', k in b.fields ? a.fields[k] : { type: 'none' }, b.fields[k], span);
+            if (sub.type !== 'boolean' || !sub.value) { isEq = false; break; }
+          }
+        }
+        return { type: 'boolean', value: (op === '=' || op === '==') ? isEq : !isEq };
+      }
+      return { type: 'boolean', value: (op === '=' || op === '==') ? false : true };
+    }
   }
 
   let cmp: number;

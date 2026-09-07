@@ -46,6 +46,11 @@ import {
   TupleNode,
   ListNode,
   ExpressionValue,
+  SetNode,
+  SetComprehensionNode,
+  MultisetNode,
+  FoldNode,
+  MapNode,
 } from './types';
 import { compileAST } from './compiler';
 import { BUNDLED_DOCUMENTS } from '../document/virtual_documents';
@@ -1036,12 +1041,23 @@ export class Evaluator {
           }
           return { type: 'boolean', value: this.isTruthy(left) || this.isTruthy(right) };
         }
-        if (node.op === 'in') {
-          throw createError(`Invalid use of 'in' operator`, node.span, {
-            expected: 'range expression in graph or series',
-            suggestion: 'Use range in graph(expr, x in a..b)',
-            source: this.source,
-          });
+        if (node.op === 'in' || node.op === 'SET_IN') {
+          return this.evalNode({
+            type: 'SetOp',
+            op: 'in',
+            left: node.left,
+            right: node.right,
+            span: node.span,
+          }, currentEnv);
+        }
+        if (node.op === 'notin' || node.op === 'SET_NOTIN') {
+          return this.evalNode({
+            type: 'SetOp',
+            op: 'notin',
+            left: node.left,
+            right: node.right,
+            span: node.span,
+          }, currentEnv);
         }
 
         if (node.op === '*' && node.left.type === 'Identifier') {
@@ -1847,8 +1863,37 @@ export class Evaluator {
                 });
                 return { type: 'boolean', value: node.op === 'in' ? found : !found };
               }
+              if (rightVal.domain && rightVal.variable) {
+                const inDomainRes = this.evalNode({
+                  type: 'SetOp',
+                  op: 'in',
+                  left: { type: 'Identifier', name: '__item__', span: node.span },
+                  right: valueToASTNode(rightVal.domain, node.span),
+                  span: node.span,
+                }, { ...currentEnv, __item__: leftVal });
+
+                if (inDomainRes.type === 'boolean' && !inDomainRes.value) {
+                  return { type: 'boolean', value: node.op === 'in' ? false : true };
+                }
+
+                if (rightVal.predicate) {
+                  const localEnv: Environment = {
+                    ...currentEnv,
+                    ...(rightVal.closure || {}),
+                    [rightVal.variable]: leftVal,
+                    [rightVal.variable.replace(/^:/, '')]: leftVal,
+                    [':' + rightVal.variable.replace(/^:/, '')]: leftVal,
+                  };
+                  const condVal = this.evalNode(rightVal.predicate, localEnv);
+                  if (condVal.type === 'boolean') {
+                    return { type: 'boolean', value: node.op === 'in' ? condVal.value : !condVal.value };
+                  }
+                } else if (inDomainRes.type === 'boolean') {
+                  return { type: 'boolean', value: node.op === 'in' ? inDomainRes.value : !inDomainRes.value };
+                }
+              }
             }
-            if (rightVal.type === 'list' || rightVal.type === 'tuple') {
+            if (rightVal.type === 'multiset' || rightVal.type === 'list' || rightVal.type === 'tuple') {
               const found = rightVal.elements.some(e => {
                 try {
                   return (compareValues('==', leftVal, e, node.span) as any).value === true;
@@ -1858,6 +1903,14 @@ export class Evaluator {
               });
               const res = node.op === 'in' ? found : !found;
               return { type: 'boolean', value: res };
+            }
+            if (rightVal.type === 'range') {
+              const numLeft = leftVal.type === 'rational' ? Number(leftVal.n) / Number(leftVal.d) : leftVal.type === 'float' ? leftVal.value : NaN;
+              if (!isNaN(numLeft)) {
+                const step = rightVal.step ?? 1;
+                const inside = numLeft >= rightVal.start && numLeft <= rightVal.end && (Math.abs((numLeft - rightVal.start) % step) < 1e-9 || Math.abs((numLeft - rightVal.start) % step - step) < 1e-9);
+                return { type: 'boolean', value: node.op === 'in' ? inside : !inside };
+              }
             }
           }
         } catch {
@@ -1915,6 +1968,103 @@ export class Evaluator {
       }
       case 'Match': {
         return this.evalMatch(node, currentEnv);
+      }
+      case 'Set': {
+        const rawElements = node.elements.map(el => this.evalNode(el, currentEnv));
+        const deduplicated: Value[] = [];
+        for (const el of rawElements) {
+          const already = deduplicated.some(existing => {
+            try {
+              return (compareValues('==', el, existing, node.span) as any).value === true;
+            } catch {
+              return false;
+            }
+          });
+          if (!already) {
+            deduplicated.push(el);
+          }
+        }
+        return {
+          type: 'set_value',
+          elements: deduplicated,
+        };
+      }
+      case 'SetComprehension': {
+        const domainVal = this.evalNode(node.domain, currentEnv);
+        let domainElements: Value[] | null = null;
+        if (domainVal.type === 'set_value' && domainVal.elements) {
+          domainElements = domainVal.elements;
+        } else if (domainVal.type === 'list' || domainVal.type === 'tuple' || domainVal.type === 'multiset') {
+          domainElements = domainVal.elements;
+        } else if (domainVal.type === 'range') {
+          domainElements = [];
+          const step = domainVal.step ?? 1;
+          if (step > 0) {
+            for (let x = domainVal.start; x <= domainVal.end; x += step) {
+              this.budget.check('set_comprehension_range', node.span);
+              domainElements.push({ type: 'rational', n: BigInt(Math.round(x)), d: 1n });
+            }
+          }
+        }
+
+        if (domainElements !== null) {
+          const collected: Value[] = [];
+          for (const item of domainElements) {
+            this.budget.check('set_comprehension', node.span);
+            const localEnv: Environment = {
+              ...currentEnv,
+              [node.variable]: item,
+              [node.variable.replace(/^:/, '')]: item,
+              [':' + node.variable.replace(/^:/, '')]: item,
+            };
+            if (node.condition) {
+              const condVal = this.evalNode(node.condition, localEnv);
+              if (condVal.type === 'boolean' && !condVal.value) {
+                continue;
+              }
+              if (condVal.type === 'none') {
+                continue;
+              }
+            }
+            const elemVal = this.evalNode(node.expr, localEnv);
+            const already = collected.some(existing => {
+              try {
+                return (compareValues('==', elemVal, existing, node.span) as any).value === true;
+              } catch {
+                return false;
+              }
+            });
+            if (!already) {
+              collected.push(elemVal);
+            }
+          }
+          return {
+            type: 'set_value',
+            elements: collected,
+          };
+        }
+
+        return {
+          type: 'set_value',
+          variable: node.variable,
+          domain: domainVal,
+          predicate: node.condition,
+          expr: node.expr,
+          closure: { ...currentEnv },
+        };
+      }
+      case 'Multiset': {
+        const elements = node.elements.map(el => this.evalNode(el, currentEnv));
+        return {
+          type: 'multiset',
+          elements,
+        };
+      }
+      case 'Fold': {
+        return this.evalFold(node, currentEnv);
+      }
+      case 'Map': {
+        return this.evalMap(node, currentEnv);
       }
       default: {
         return { type: 'expression', ast: node, text: formatAST(node) };
@@ -2054,7 +2204,7 @@ export class Evaluator {
       return this.evalRangeBuiltin(node, currentEnv);
     }
     if (callee === 'map') {
-      return this.evalMap(node, currentEnv);
+      return this.evalMapFunctionCall(node, currentEnv);
     }
     if (callee === 'filter') {
       return this.evalFilter(node, currentEnv);
@@ -2109,7 +2259,7 @@ export class Evaluator {
       return this.evalUnfold(node, currentEnv);
     }
     if (callee === 'fold') {
-      return this.evalFold(node, currentEnv);
+      return this.evalFoldFunctionCall(node, currentEnv);
     }
     if (callee === 'count') {
       return this.evalCount(node, currentEnv);
@@ -2487,6 +2637,163 @@ export class Evaluator {
     throw createError(`Expected function or lambda, got ${fnVal.type}`, span ?? { start: 0, end: 0, line: 1, col: 1 });
   }
 
+  private evalFold(node: FoldNode, currentEnv: Environment): Value {
+    const collVal = this.evalNode(node.collection, currentEnv);
+    let elements: Value[];
+    if (collVal.type === 'set_value' && collVal.elements) {
+      elements = collVal.elements;
+    } else if (collVal.type === 'list' || collVal.type === 'tuple' || collVal.type === 'multiset') {
+      elements = collVal.elements;
+    } else if (collVal.type === 'range') {
+      elements = [];
+      const step = collVal.step ?? 1;
+      if (step > 0) {
+        for (let x = collVal.start; x <= collVal.end; x += step) {
+          this.budget.check('fold_range', node.span);
+          elements.push({ type: 'rational', n: BigInt(Math.round(x)), d: 1n });
+        }
+      }
+    } else {
+      return { type: 'expression', ast: node, text: formatAST(node) };
+    }
+
+    let acc = this.evalNode(node.initial, currentEnv);
+    if (acc.type === 'unknown') return acc;
+
+    let opVal: Value | null = null;
+    let isOpSymbol = false;
+    let opSymbolName = '';
+
+    if (node.op.type === 'BinaryOp') {
+      isOpSymbol = true;
+      opSymbolName = node.op.op;
+    } else if (node.op.type === 'Identifier') {
+      const idName = node.op.name;
+      const isUserOp = this.userOperators.has(idName) || (currentEnv as any).__operators__?.has(idName);
+      if (idName === '+' || idName === '*' || idName === '-' || idName === '/' || idName === '^' || idName === '%' || isUserOp) {
+        isOpSymbol = true;
+        opSymbolName = idName;
+      } else {
+        try {
+          const evaluated = this.evalNode(node.op, currentEnv);
+          if (evaluated.type === 'function' || evaluated.type === 'lambda' || evaluated.type === 'builtin') {
+            opVal = evaluated;
+          } else {
+            isOpSymbol = true;
+            opSymbolName = idName;
+          }
+        } catch {
+          isOpSymbol = true;
+          opSymbolName = idName;
+        }
+      }
+    } else {
+      opVal = this.evalNode(node.op, currentEnv);
+    }
+
+    for (let i = 0; i < elements.length; i++) {
+      this.budget.check('fold', node.span);
+      const item = elements[i];
+      if (isOpSymbol) {
+        if (opSymbolName === '+' || opSymbolName === 'add') {
+          acc = addValues(acc, item, node.span);
+        } else if (opSymbolName === '*' || opSymbolName === 'mul') {
+          acc = mulValues(acc, item, node.span);
+        } else if (opSymbolName === '-' || opSymbolName === 'sub') {
+          acc = subValues(acc, item, node.span);
+        } else if (opSymbolName === '/' || opSymbolName === 'div') {
+          acc = divValues(acc, item, node.span);
+        } else {
+          const userOp = this.userOperators.get(opSymbolName) || (currentEnv as any).__operators__?.get(opSymbolName);
+          if (userOp) {
+            const callEnv: Environment = {
+              ...userOp.env,
+              ...currentEnv,
+              [userOp.params[0]]: acc,
+              [userOp.params[1]]: item,
+            };
+            acc = this.evalNode(userOp.body, callEnv);
+          } else {
+            acc = this.invokeCallable(opVal || { type: 'Identifier', name: opSymbolName } as any, [acc, item], node.span);
+          }
+        }
+      } else if (opVal) {
+        if (opVal.type === 'lambda') {
+          if (opVal.params.length === 2) {
+            const p0 = opVal.params[0].toLowerCase().replace(/^:/, '');
+            const p1 = opVal.params[1].toLowerCase().replace(/^:/, '');
+            if (p0.includes('acc') || p0.includes('init')) {
+              acc = this.invokeCallable(opVal, [acc, item], node.span);
+            } else if (p1.includes('acc') || p1.includes('init')) {
+              acc = this.invokeCallable(opVal, [item, acc], node.span);
+            } else {
+              acc = this.invokeCallable(opVal, [acc, item], node.span);
+            }
+          } else {
+            acc = this.invokeCallable(opVal, [acc, item], node.span);
+          }
+        } else {
+          acc = this.invokeCallable(opVal, [acc, item], node.span);
+        }
+      }
+      if (acc.type === 'unknown') return acc;
+    }
+
+    return acc;
+  }
+
+  private evalMap(node: MapNode, currentEnv: Environment): Value {
+    const collVal = this.evalNode(node.collection, currentEnv);
+    let elements: Value[];
+    if (collVal.type === 'set_value' && collVal.elements) {
+      elements = collVal.elements;
+    } else if (collVal.type === 'list' || collVal.type === 'tuple' || collVal.type === 'multiset') {
+      elements = collVal.elements;
+    } else if (collVal.type === 'range') {
+      elements = [];
+      const step = collVal.step ?? 1;
+      if (step > 0) {
+        for (let x = collVal.start; x <= collVal.end; x += step) {
+          this.budget.check('map_range', node.span);
+          elements.push({ type: 'rational', n: BigInt(Math.round(x)), d: 1n });
+        }
+      }
+    } else {
+      return { type: 'expression', ast: node, text: formatAST(node) };
+    }
+
+    const fnVal = this.evalNode(node.fn, currentEnv);
+    const mapped: Value[] = [];
+    for (let i = 0; i < elements.length; i++) {
+      this.budget.check('map', node.span);
+      const res = this.invokeCallable(fnVal, [elements[i]], node.span);
+      if (res.type === 'unknown') return res;
+      mapped.push(res);
+    }
+
+    if (collVal.type === 'set_value') {
+      const deduplicated: Value[] = [];
+      for (const el of mapped) {
+        const already = deduplicated.some(existing => {
+          try {
+            return (compareValues('==', el, existing, node.span) as any).value === true;
+          } catch {
+            return false;
+          }
+        });
+        if (!already) deduplicated.push(el);
+      }
+      return { type: 'set_value', elements: deduplicated };
+    }
+    if (collVal.type === 'multiset') {
+      return { type: 'multiset', elements: mapped };
+    }
+    if (collVal.type === 'tuple') {
+      return { type: 'tuple', elements: mapped };
+    }
+    return { type: 'list', elements: mapped };
+  }
+
   private evalSumOrProd(node: FunctionCallNode, currentEnv: Environment): Value {
     const isSum = node.callee === 'sum';
 
@@ -2565,7 +2872,7 @@ export class Evaluator {
     throw createError('range() expects range(a..b) or range(a, b, step)', node.span);
   }
 
-  private evalMap(node: FunctionCallNode, currentEnv: Environment): Value {
+  private evalMapFunctionCall(node: FunctionCallNode, currentEnv: Environment): Value {
     if (node.args.length !== 2) throw createError('map(f, collection) requires 2 arguments', node.span);
     const fnVal = this.evalNode(node.args[0], currentEnv);
     const colVal = this.evalNode(node.args[1], currentEnv);
@@ -2925,7 +3232,7 @@ export class Evaluator {
     return { type: 'list', elements };
   }
 
-  private evalFold(node: FunctionCallNode, currentEnv: Environment): Value {
+  private evalFoldFunctionCall(node: FunctionCallNode, currentEnv: Environment): Value {
     if (node.args.length !== 3) throw createError('fold(f, list, initial) requires 3 arguments', node.span);
     const fnVal = this.evalNode(node.args[0], currentEnv);
     const listVal = this.evalNode(node.args[1], currentEnv);
@@ -3742,10 +4049,30 @@ export class Evaluator {
           a.operands.every((opNode, i) => this.areASTNodesEqual(opNode, bBr.operands[i]));
       }
       case 'Tuple':
-      case 'List': {
-        const bList = b as TupleNode | ListNode;
+      case 'List':
+      case 'Set':
+      case 'Multiset': {
+        const bList = b as TupleNode | ListNode | SetNode | MultisetNode;
         return a.elements.length === bList.elements.length &&
           a.elements.every((el, i) => this.areASTNodesEqual(el, bList.elements[i]));
+      }
+      case 'SetComprehension': {
+        const bComp = b as SetComprehensionNode;
+        return a.variable.replace(/^:/, '') === bComp.variable.replace(/^:/, '') &&
+          this.areASTNodesEqual(a.expr, bComp.expr) &&
+          this.areASTNodesEqual(a.domain, bComp.domain) &&
+          ((!a.condition && !bComp.condition) || (!!a.condition && !!bComp.condition && this.areASTNodesEqual(a.condition, bComp.condition)));
+      }
+      case 'Fold': {
+        const bFold = b as FoldNode;
+        return this.areASTNodesEqual(a.op, bFold.op) &&
+          this.areASTNodesEqual(a.collection, bFold.collection) &&
+          this.areASTNodesEqual(a.initial, bFold.initial);
+      }
+      case 'Map': {
+        const bMap = b as MapNode;
+        return this.areASTNodesEqual(a.fn, bMap.fn) &&
+          this.areASTNodesEqual(a.collection, bMap.collection);
       }
       default:
         return formatAST(a) === formatAST(b);
