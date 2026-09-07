@@ -143,8 +143,37 @@ export function sample2D(
     }
   }
 
-  // If everywhere positive or everywhere negative (no sign changes), return empty
-  if (!hasValidFinite || allPositive || allNegative) {
+  // If everywhere positive or everywhere negative (no sign changes), check for isolated zero roots
+  if (!hasValidFinite) {
+    return { polylines: [], bounds: null, sampleCount: nx * ny, fallbackCount };
+  }
+
+  if (allPositive || allNegative) {
+    const isolatedPolys: Polyline2D[] = [];
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (let j = 0; j < ny; j++) {
+      const y = yR.min + j * dy;
+      const rowOffset = j * nx;
+      for (let i = 0; i < nx; i++) {
+        const x = xR.min + i * dx;
+        const val = grid[rowOffset + i];
+        if (Number.isFinite(val) && Math.abs(val) <= 1e-12) {
+          isolatedPolys.push({ points: [[x, y]], closed: true });
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (isolatedPolys.length > 0) {
+      return {
+        polylines: isolatedPolys,
+        bounds: { minX, maxX, minY, maxY },
+        sampleCount: nx * ny,
+        fallbackCount,
+      };
+    }
     return { polylines: [], bounds: null, sampleCount: nx * ny, fallbackCount };
   }
 
@@ -184,73 +213,160 @@ export function sample2D(
       const caseIndex = b0 | (b1 << 1) | (b2 << 2) | (b3 << 3);
       if (caseIndex === 0 || caseIndex === 15) continue;
 
-      const e0 = (): Point2D => {
-        let t = Number.isFinite(v0) && Number.isFinite(v1) && Math.abs(v1 - v0) > 1e-15 ? -v0 / (v1 - v0) : 0.5;
-        t = Math.max(0, Math.min(1, Number.isFinite(t) ? t : 0.5));
-        return [x0 + t * dx, y0];
+      const getEdgeRoot = (eIdx: number): Point2D | null => {
+        let pAx = 0, pAy = 0, vA = 0;
+        let pBx = 0, pBy = 0, vB = 0;
+        if (eIdx === 0) {
+          pAx = x0; pAy = y0; vA = v0;
+          pBx = x1; pBy = y0; vB = v1;
+        } else if (eIdx === 1) {
+          pAx = x1; pAy = y0; vA = v1;
+          pBx = x1; pBy = y1; vB = v2;
+        } else if (eIdx === 2) {
+          pAx = x0; pAy = y1; vA = v3;
+          pBx = x1; pBy = y1; vB = v2;
+        } else {
+          pAx = x0; pAy = y0; vA = v0;
+          pBx = x0; pBy = y1; vB = v3;
+        }
+
+        const aFinite = Number.isFinite(vA);
+        const bFinite = Number.isFinite(vB);
+        if (!aFinite && !bFinite) return null;
+
+        if (aFinite && !bFinite) {
+          // Bisect to locate domain boundary
+          let low = 0, high = 1;
+          for (let step = 0; step < 8; step++) {
+            const mid = (low + high) / 2;
+            const mx = pAx + mid * (pBx - pAx);
+            const my = pAy + mid * (pBy - pAy);
+            if (Number.isFinite(fn(mx, my))) {
+              low = mid;
+            } else {
+              high = mid;
+            }
+          }
+          return [pAx + low * (pBx - pAx), pAy + low * (pBy - pAy)];
+        }
+
+        if (!aFinite && bFinite) {
+          let low = 0, high = 1;
+          for (let step = 0; step < 8; step++) {
+            const mid = (low + high) / 2;
+            const mx = pAx + mid * (pBx - pAx);
+            const my = pAy + mid * (pBy - pAy);
+            if (Number.isFinite(fn(mx, my))) {
+              high = mid;
+            } else {
+              low = mid;
+            }
+          }
+          return [pAx + high * (pBx - pAx), pAy + high * (pBy - pAy)];
+        }
+
+        // Both finite: check sign change
+        if ((vA >= 0 && vB >= 0) || (vA < 0 && vB < 0)) return null;
+
+        let t = -vA / (vB - vA);
+        if (!Number.isFinite(t)) t = 0.5;
+        t = Math.max(0, Math.min(1, t));
+
+        const rx = pAx + t * (pBx - pAx);
+        const ry = pAy + t * (pBy - pAy);
+        const rv = fn(rx, ry);
+
+        if (!Number.isFinite(rv)) return null;
+
+        const maxCorner = Math.max(Math.abs(vA), Math.abs(vB));
+        // Asymptote / pole detection: if value diverges between corners, reject
+        if (Math.abs(rv) > maxCorner * 2.0 + 5.0) {
+          return null;
+        }
+
+        // Discontinuous step check: if residual is too large, bisect or reject
+        if (Math.abs(vB - vA) > 1.0 && Math.abs(rv) > 0.5 * maxCorner + 0.5) {
+          let low = 0, high = 1;
+          let bestT = t, minRes = Math.abs(rv);
+          for (let step = 0; step < 4; step++) {
+            const mid = (low + high) / 2;
+            const mx = pAx + mid * (pBx - pAx);
+            const my = pAy + mid * (pBy - pAy);
+            const mv = fn(mx, my);
+            if (!Number.isFinite(mv)) break;
+            if (Math.abs(mv) < minRes) {
+              minRes = Math.abs(mv);
+              bestT = mid;
+            }
+            if ((vA >= 0 && mv < 0) || (vA < 0 && mv >= 0)) {
+              high = mid;
+            } else {
+              low = mid;
+            }
+          }
+          if (minRes > maxCorner * 0.9 + 1.0) {
+            return null;
+          }
+          return [pAx + bestT * (pBx - pAx), pAy + bestT * (pBy - pAy)];
+        }
+
+        return [rx, ry];
       };
-      const e1 = (): Point2D => {
-        let t = Number.isFinite(v1) && Number.isFinite(v2) && Math.abs(v2 - v1) > 1e-15 ? -v1 / (v2 - v1) : 0.5;
-        t = Math.max(0, Math.min(1, Number.isFinite(t) ? t : 0.5));
-        return [x1, y0 + t * dy];
-      };
-      const e2 = (): Point2D => {
-        let t = Number.isFinite(v3) && Number.isFinite(v2) && Math.abs(v2 - v3) > 1e-15 ? -v3 / (v2 - v3) : 0.5;
-        t = Math.max(0, Math.min(1, Number.isFinite(t) ? t : 0.5));
-        return [x0 + t * dx, y1];
-      };
-      const e3 = (): Point2D => {
-        let t = Number.isFinite(v0) && Number.isFinite(v3) && Math.abs(v3 - v0) > 1e-15 ? -v0 / (v3 - v0) : 0.5;
-        t = Math.max(0, Math.min(1, Number.isFinite(t) ? t : 0.5));
-        return [x0, y0 + t * dy];
+
+      const pushSegment = (idxA: number, idxB: number) => {
+        const p1 = getEdgeRoot(idxA);
+        const p2 = getEdgeRoot(idxB);
+        if (p1 && p2) {
+          segments.push({ p1, p2 });
+        }
       };
 
       switch (caseIndex) {
         case 1: // 0001
         case 14: // 1110
-          segments.push({ p1: e3(), p2: e0() });
+          pushSegment(3, 0);
           break;
         case 2: // 0010
         case 13: // 1101
-          segments.push({ p1: e0(), p2: e1() });
+          pushSegment(0, 1);
           break;
         case 3: // 0011
         case 12: // 1100
-          segments.push({ p1: e3(), p2: e1() });
+          pushSegment(3, 1);
           break;
         case 4: // 0100
         case 11: // 1011
-          segments.push({ p1: e1(), p2: e2() });
+          pushSegment(1, 2);
           break;
         case 5: {
           // 0101 (Saddle case)
           const vCenter = (v0 + v1 + v2 + v3) / 4;
           if (vCenter >= 0) {
-            segments.push({ p1: e3(), p2: e2() });
-            segments.push({ p1: e0(), p2: e1() });
+            pushSegment(3, 2);
+            pushSegment(0, 1);
           } else {
-            segments.push({ p1: e3(), p2: e0() });
-            segments.push({ p1: e1(), p2: e2() });
+            pushSegment(3, 0);
+            pushSegment(1, 2);
           }
           break;
         }
         case 6: // 0110
         case 9: // 1001
-          segments.push({ p1: e0(), p2: e2() });
+          pushSegment(0, 2);
           break;
         case 7: // 0111
         case 8: // 1000
-          segments.push({ p1: e3(), p2: e2() });
+          pushSegment(3, 2);
           break;
         case 10: {
           // 1010 (Saddle case)
           const vCenter = (v0 + v1 + v2 + v3) / 4;
           if (vCenter >= 0) {
-            segments.push({ p1: e3(), p2: e0() });
-            segments.push({ p1: e1(), p2: e2() });
+            pushSegment(3, 0);
+            pushSegment(1, 2);
           } else {
-            segments.push({ p1: e3(), p2: e2() });
-            segments.push({ p1: e0(), p2: e1() });
+            pushSegment(3, 2);
+            pushSegment(0, 1);
           }
           break;
         }
@@ -484,7 +600,55 @@ export function sample3D(
     }
   }
 
-  if (!hasValidFinite || allPositive || allNegative) {
+  if (!hasValidFinite) {
+    return {
+      vertices: [],
+      triangles: [],
+      positions: new Float32Array(0),
+      indices: new Uint32Array(0),
+      bounds: null,
+      sampleCount: totalSamples,
+    };
+  }
+
+  if (allPositive || allNegative) {
+    const isolatedVertices: Point3D[] = [];
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (let k = 0; k < nz; k++) {
+      const z = zR.min + k * dz;
+      const sliceOffset = k * ny * nx;
+      for (let j = 0; j < ny; j++) {
+        const y = yR.min + j * dy;
+        const rowOffset = sliceOffset + j * nx;
+        for (let i = 0; i < nx; i++) {
+          const x = xR.min + i * dx;
+          const val = grid[rowOffset + i];
+          if (Number.isFinite(val) && Math.abs(val) <= 1e-12) {
+            isolatedVertices.push([x, y, z]);
+            if (x < minX) minX = x; if (x > maxX) maxX = x;
+            if (y < minY) minY = y; if (y > maxY) maxY = y;
+            if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+          }
+        }
+      }
+    }
+    if (isolatedVertices.length > 0) {
+      const positions = new Float32Array(isolatedVertices.length * 3);
+      for (let i = 0; i < isolatedVertices.length; i++) {
+        positions[i * 3] = isolatedVertices[i][0];
+        positions[i * 3 + 1] = isolatedVertices[i][1];
+        positions[i * 3 + 2] = isolatedVertices[i][2];
+      }
+      return {
+        vertices: isolatedVertices,
+        triangles: [],
+        positions,
+        indices: new Uint32Array(0),
+        bounds: { minX, maxX, minY, maxY, minZ, maxZ },
+        sampleCount: totalSamples,
+        fallbackCount,
+      };
+    }
     return {
       vertices: [],
       triangles: [],
@@ -527,13 +691,61 @@ export function sample3D(
       const pBy = y0 + CORNER_Y[vB_idx] * dy;
       const pBz = z0 + CORNER_Z[vB_idx] * dz;
 
-      let t = -vA / (vB - vA);
-      if (!Number.isFinite(t)) t = 0.5;
-      t = Math.max(0, Math.min(1, t));
+      const aFinite = Number.isFinite(vA);
+      const bFinite = Number.isFinite(vB);
+      if (!aFinite && !bFinite) return -1;
 
-      const vx = pAx + t * (pBx - pAx);
-      const vy = pAy + t * (pBy - pAy);
-      const vz = pAz + t * (pBz - pAz);
+      let vx: number, vy: number, vz: number;
+
+      if (aFinite && !bFinite) {
+        let low = 0, high = 1;
+        for (let step = 0; step < 8; step++) {
+          const mid = (low + high) / 2;
+          const mx = pAx + mid * (pBx - pAx);
+          const my = pAy + mid * (pBy - pAy);
+          const mz = pAz + mid * (pBz - pAz);
+          if (Number.isFinite(fn(mx, my, mz))) {
+            low = mid;
+          } else {
+            high = mid;
+          }
+        }
+        vx = pAx + low * (pBx - pAx);
+        vy = pAy + low * (pBy - pAy);
+        vz = pAz + low * (pBz - pAz);
+      } else if (!aFinite && bFinite) {
+        let low = 0, high = 1;
+        for (let step = 0; step < 8; step++) {
+          const mid = (low + high) / 2;
+          const mx = pAx + mid * (pBx - pAx);
+          const my = pAy + mid * (pBy - pAy);
+          const mz = pAz + mid * (pBz - pAz);
+          if (Number.isFinite(fn(mx, my, mz))) {
+            high = mid;
+          } else {
+            low = mid;
+          }
+        }
+        vx = pAx + high * (pBx - pAx);
+        vy = pAy + high * (pBy - pAy);
+        vz = pAz + high * (pBz - pAz);
+      } else {
+        let t = -vA / (vB - vA);
+        if (!Number.isFinite(t)) t = 0.5;
+        t = Math.max(0, Math.min(1, t));
+
+        vx = pAx + t * (pBx - pAx);
+        vy = pAy + t * (pBy - pAy);
+        vz = pAz + t * (pBz - pAz);
+
+        const rv = fn(vx, vy, vz);
+        if (!Number.isFinite(rv)) return -1;
+
+        const maxCorner = Math.max(Math.abs(vA), Math.abs(vB));
+        if (Math.abs(rv) > maxCorner * 2.0 + 5.0) {
+          return -1;
+        }
+      }
 
       vIdx = vertices.length;
       vertices.push([vx, vy, vz]);
@@ -606,7 +818,9 @@ export function sample3D(
           const idx1 = getEdgeVertex(i, j, k, e1, x0, y0, z0, valA1, valB1);
           const idx2 = getEdgeVertex(i, j, k, e2, x0, y0, z0, valA2, valB2);
 
-          triangles.push([idx0, idx1, idx2]);
+          if (idx0 !== -1 && idx1 !== -1 && idx2 !== -1) {
+            triangles.push([idx0, idx1, idx2]);
+          }
         }
       }
     }
