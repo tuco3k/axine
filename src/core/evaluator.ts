@@ -35,6 +35,17 @@ import {
   SpaceValue,
   SpatialEntity,
   BlockNode,
+  MatchNode,
+  BuildNode,
+  QuoteNode,
+  UnquoteNode,
+  NumberLiteralNode,
+  StringLiteralNode,
+  IdentifierNode,
+  BracketOpNode,
+  TupleNode,
+  ListNode,
+  ExpressionValue,
 } from './types';
 import { compileAST } from './compiler';
 import { BUNDLED_DOCUMENTS } from '../document/virtual_documents';
@@ -468,7 +479,8 @@ export class Evaluator {
         if (ast.left.type === 'Identifier') {
           try {
             const rVal = this.evalNode(ast.right, this.env);
-            if (rVal && rVal.type !== 'expression' && rVal.type !== 'space' && rVal.type !== 'unknown') {
+            const isExplicitVal = rVal && rVal.type === 'expression' && (ast.right.type === 'Quote' || ast.right.type === 'Build' || ast.right.type === 'Match' || ast.right.type === 'StringLiteral');
+            if (rVal && (rVal.type !== 'expression' || isExplicitVal) && rVal.type !== 'space' && rVal.type !== 'unknown') {
               boundVar = ast.left.name;
               boundVal = rVal;
             }
@@ -477,7 +489,8 @@ export class Evaluator {
         if (!boundVar && ast.right.type === 'Identifier') {
           try {
             const lVal = this.evalNode(ast.left, this.env);
-            if (lVal && lVal.type !== 'expression' && lVal.type !== 'space' && lVal.type !== 'unknown') {
+            const isExplicitVal = lVal && lVal.type === 'expression' && (ast.left.type === 'Quote' || ast.left.type === 'Build' || ast.left.type === 'Match' || ast.left.type === 'StringLiteral');
+            if (lVal && (lVal.type !== 'expression' || isExplicitVal) && lVal.type !== 'space' && lVal.type !== 'unknown') {
               boundVar = ast.right.name;
               boundVal = lVal;
             }
@@ -632,7 +645,8 @@ export class Evaluator {
         if (stmt.type === 'Assignment') {
           try {
             const val = this.evalNode(stmt.value, blockEnv);
-            if (val && val.type !== 'expression' && val.type !== 'space' && val.type !== 'unknown') {
+            const isExplicitVal = val && val.type === 'expression' && (stmt.value.type === 'Quote' || stmt.value.type === 'Build' || stmt.value.type === 'Match' || stmt.value.type === 'StringLiteral');
+            if (val && (val.type !== 'expression' || isExplicitVal) && val.type !== 'space' && val.type !== 'unknown') {
               blockEnv[stmt.target] = val;
               lastVal = val;
             }
@@ -641,7 +655,8 @@ export class Evaluator {
           if (stmt.left.type === 'Identifier') {
             try {
               const val = this.evalNode(stmt.right, blockEnv);
-              if (val && val.type !== 'expression' && val.type !== 'space' && val.type !== 'unknown') {
+              const isExplicitVal = val && val.type === 'expression' && (stmt.right.type === 'Quote' || stmt.right.type === 'Build' || stmt.right.type === 'Match' || stmt.right.type === 'StringLiteral');
+              if (val && (val.type !== 'expression' || isExplicitVal) && val.type !== 'space' && val.type !== 'unknown') {
                 if (val.type === 'record_constructor' && val.name === 'Record') {
                   val.name = stmt.left.name;
                 }
@@ -756,7 +771,8 @@ export class Evaluator {
             if (stmt.left.type === 'Identifier') {
               try {
                 const rVal = this.evalNode(stmt.right, blockEnv);
-                if (rVal && rVal.type !== 'expression' && rVal.type !== 'space' && rVal.type !== 'unknown') {
+                const isExplicitVal = rVal && rVal.type === 'expression' && (stmt.right.type === 'Quote' || stmt.right.type === 'Build' || stmt.right.type === 'Match' || stmt.right.type === 'StringLiteral');
+                if (rVal && (rVal.type !== 'expression' || isExplicitVal) && rVal.type !== 'space' && rVal.type !== 'unknown') {
                   boundVar = stmt.left.name;
                   boundVal = rVal;
                 }
@@ -764,7 +780,8 @@ export class Evaluator {
             } else if (stmt.right.type === 'Identifier') {
               try {
                 const lVal = this.evalNode(stmt.left, blockEnv);
-                if (lVal && lVal.type !== 'expression' && lVal.type !== 'space' && lVal.type !== 'unknown') {
+                const isExplicitVal = lVal && lVal.type === 'expression' && (stmt.left.type === 'Quote' || stmt.left.type === 'Build' || stmt.left.type === 'Match' || stmt.left.type === 'StringLiteral');
+                if (lVal && (lVal.type !== 'expression' || isExplicitVal) && lVal.type !== 'space' && lVal.type !== 'unknown') {
                   boundVar = stmt.right.name;
                   boundVal = lVal;
                 }
@@ -1886,6 +1903,18 @@ export class Evaluator {
       }
       case 'Probability': {
         return { type: 'expression', ast: node, text: formatAST(node) };
+      }
+      case 'Quote': {
+        return this.evalQuote(node, currentEnv);
+      }
+      case 'Unquote': {
+        return this.evalUnquote(node, currentEnv);
+      }
+      case 'Build': {
+        return this.evalBuild(node, currentEnv);
+      }
+      case 'Match': {
+        return this.evalMatch(node, currentEnv);
       }
       default: {
         return { type: 'expression', ast: node, text: formatAST(node) };
@@ -3298,53 +3327,473 @@ export class Evaluator {
     return { value: last, converged: true };
   }
 
-  private matchPattern(pattern: ASTNode, target: ASTNode, boundVars: Set<string> = new Set()): { matched: boolean; bindings: Record<string, ASTNode> } {
-    if (pattern.type === 'Identifier') {
-      if (pattern.name.length === 1 || !/^(pi|e|tau|phi)$/.test(pattern.name)) {
-        return { matched: true, bindings: { [pattern.name]: target } };
-      }
-      if (target.type === 'Identifier' && target.name === pattern.name) {
-        return { matched: true, bindings: {} };
-      }
-      return { matched: false, bindings: {} };
+  private evalQuote(node: QuoteNode, _currentEnv: Environment): Value {
+    return {
+      type: 'expression',
+      ast: node.expr,
+      text: formatAST(node.expr),
+    };
+  }
+
+  private evalUnquote(node: UnquoteNode, currentEnv: Environment): Value {
+    const val = this.evalNode(node.expr, currentEnv);
+    if (val.type === 'expression') {
+      return this.evalNode(val.ast, currentEnv);
     }
+    return val;
+  }
+
+  private evalBuild(node: BuildNode, currentEnv: Environment): Value {
+    if (node.nodeType === 'Template' && node.template) {
+      const builtAst = this.spliceBuildTemplate(node.template, currentEnv);
+      return {
+        type: 'expression',
+        ast: builtAst,
+        text: formatAST(builtAst),
+      };
+    }
+
+    const nt = node.nodeType.replace(/^:/, '');
+    const evaluatedArgs: Value[] = (node.args || []).map(arg => this.evalNode(arg, currentEnv));
+
+    let constructedAst: ASTNode;
+    switch (nt) {
+      case 'NumberLiteral': {
+        const v = evaluatedArgs[0];
+        const num = v ? (v.type === 'rational' ? Number(v.n) / Number(v.d) : v.type === 'float' ? v.value : Number((v as any).value ?? (v as any).raw ?? 0)) : 0;
+        const raw = v ? (v.type === 'rational' && v.d === 1n ? v.n.toString() : num.toString()) : '0';
+        const numNode: NumberLiteralNode = {
+          type: 'NumberLiteral',
+          raw,
+          span: node.span,
+        };
+        constructedAst = numNode;
+        break;
+      }
+      case 'StringLiteral': {
+        const v = evaluatedArgs[0];
+        const strNode: StringLiteralNode = {
+          type: 'StringLiteral',
+          value: v ? (v.type === 'string' ? v.value : formatAST(valueToASTNode(v, node.span))) : '',
+          span: node.span,
+        };
+        constructedAst = strNode;
+        break;
+      }
+      case 'Identifier': {
+        const v = evaluatedArgs[0];
+        let name = '';
+        if (node.args && node.args[0] && node.args[0].type === 'Identifier') {
+          name = node.args[0].name;
+        } else if (v && v.type === 'string') {
+          name = v.value;
+        } else if (v && v.type === 'expression' && v.ast.type === 'Identifier') {
+          name = v.ast.name;
+        } else if (v) {
+          name = formatAST(valueToASTNode(v, node.span));
+        }
+        const idNode: IdentifierNode = {
+          type: 'Identifier',
+          name: name.replace(/^:/, ''),
+          span: node.span,
+        };
+        constructedAst = idNode;
+        break;
+      }
+      case 'BinaryOp': {
+        let op = '+';
+        let leftVal: Value | undefined;
+        let rightVal: Value | undefined;
+        if (node.args && node.args.length >= 3) {
+          if (node.args[0].type === 'StringLiteral') {
+            op = node.args[0].value;
+          } else if (node.args[0].type === 'Identifier') {
+            op = node.args[0].name;
+          } else if (evaluatedArgs[0].type === 'string') {
+            op = evaluatedArgs[0].value;
+          }
+          leftVal = evaluatedArgs[1];
+          rightVal = evaluatedArgs[2];
+        } else if (evaluatedArgs.length === 2) {
+          leftVal = evaluatedArgs[0];
+          rightVal = evaluatedArgs[1];
+        }
+        const leftAST = leftVal ? (leftVal.type === 'expression' ? leftVal.ast : valueToASTNode(leftVal, node.span)) : { type: 'Identifier' as const, name: 'a', span: node.span };
+        const rightAST = rightVal ? (rightVal.type === 'expression' ? rightVal.ast : valueToASTNode(rightVal, node.span)) : { type: 'Identifier' as const, name: 'b', span: node.span };
+        const binNode: BinaryOpNode = {
+          type: 'BinaryOp',
+          op,
+          left: leftAST,
+          right: rightAST,
+          isImplicit: false,
+          span: node.span,
+        };
+        constructedAst = binNode;
+        break;
+      }
+      case 'UnaryOp': {
+        let op = '-';
+        let operandVal: Value | undefined;
+        if (node.args && node.args.length >= 2) {
+          if (node.args[0].type === 'StringLiteral') op = node.args[0].value;
+          else if (node.args[0].type === 'Identifier') op = node.args[0].name;
+          else if (evaluatedArgs[0].type === 'string') op = evaluatedArgs[0].value;
+          operandVal = evaluatedArgs[1];
+        } else if (evaluatedArgs.length === 1) {
+          operandVal = evaluatedArgs[0];
+        }
+        const operandAST = operandVal ? (operandVal.type === 'expression' ? operandVal.ast : valueToASTNode(operandVal, node.span)) : { type: 'Identifier' as const, name: 'x', span: node.span };
+        const unNode: UnaryOpNode = {
+          type: 'UnaryOp',
+          op,
+          operand: operandAST,
+          span: node.span,
+        };
+        constructedAst = unNode;
+        break;
+      }
+      case 'PostfixOp': {
+        let op = '!';
+        let operandVal: Value | undefined;
+        if (node.args && node.args.length >= 2) {
+          if (node.args[0].type === 'StringLiteral') op = node.args[0].value;
+          else if (node.args[0].type === 'Identifier') op = node.args[0].name;
+          else if (evaluatedArgs[0].type === 'string') op = evaluatedArgs[0].value;
+          operandVal = evaluatedArgs[1];
+        } else if (evaluatedArgs.length === 1) {
+          operandVal = evaluatedArgs[0];
+        }
+        const operandAST = operandVal ? (operandVal.type === 'expression' ? operandVal.ast : valueToASTNode(operandVal, node.span)) : { type: 'Identifier' as const, name: 'x', span: node.span };
+        const postNode: PostfixOpNode = {
+          type: 'PostfixOp',
+          op,
+          operand: operandAST,
+          span: node.span,
+        };
+        constructedAst = postNode;
+        break;
+      }
+      case 'FunctionCall': {
+        let callee = 'f';
+        let callArgs: ASTNode[] = [];
+        if (node.args && node.args.length > 0) {
+          if (node.args[0].type === 'Identifier') callee = node.args[0].name;
+          else if (node.args[0].type === 'StringLiteral') callee = node.args[0].value;
+          else if (evaluatedArgs[0].type === 'string') callee = evaluatedArgs[0].value;
+
+          if (evaluatedArgs.length > 1) {
+            if (evaluatedArgs[1].type === 'list' || evaluatedArgs[1].type === 'tuple') {
+              callArgs = evaluatedArgs[1].elements.map(el => el.type === 'expression' ? el.ast : valueToASTNode(el, node.span));
+            } else {
+              callArgs = evaluatedArgs.slice(1).map(el => el.type === 'expression' ? el.ast : valueToASTNode(el, node.span));
+            }
+          }
+        }
+        const fnNode: FunctionCallNode = {
+          type: 'FunctionCall',
+          callee: callee.replace(/^:/, ''),
+          args: callArgs,
+          isBare: false,
+          span: node.span,
+        };
+        constructedAst = fnNode;
+        break;
+      }
+      case 'Diff': {
+        let varName = 'x';
+        let diffExpr: ASTNode = { type: 'Identifier', name: 'y', span: node.span };
+        if (node.args && node.args.length >= 2) {
+          if (node.args[0].type === 'Identifier') varName = node.args[0].name;
+          else if (node.args[0].type === 'StringLiteral') varName = node.args[0].value;
+          else if (evaluatedArgs[0].type === 'string') varName = evaluatedArgs[0].value;
+
+          const eVal = evaluatedArgs[1];
+          diffExpr = eVal.type === 'expression' ? eVal.ast : valueToASTNode(eVal, node.span);
+        } else if (evaluatedArgs.length === 1) {
+          const eVal = evaluatedArgs[0];
+          diffExpr = eVal.type === 'expression' ? eVal.ast : valueToASTNode(eVal, node.span);
+        }
+        const diffNode: DiffNode = {
+          type: 'Diff',
+          variable: varName.replace(/^:/, ''),
+          expr: diffExpr,
+          isPartial: false,
+          span: node.span,
+        };
+        constructedAst = diffNode;
+        break;
+      }
+      case 'BracketOp': {
+        let op: any = 'abs';
+        let operandAST: ASTNode = { type: 'Identifier', name: 'x', span: node.span };
+        if (node.args && node.args.length >= 2) {
+          if (node.args[0].type === 'Identifier') op = node.args[0].name;
+          else if (node.args[0].type === 'StringLiteral') op = node.args[0].value;
+          else if (evaluatedArgs[0].type === 'string') op = evaluatedArgs[0].value;
+
+          const iVal = evaluatedArgs[1];
+          operandAST = iVal.type === 'expression' ? iVal.ast : valueToASTNode(iVal, node.span);
+        } else if (evaluatedArgs.length === 1) {
+          const iVal = evaluatedArgs[0];
+          operandAST = iVal.type === 'expression' ? iVal.ast : valueToASTNode(iVal, node.span);
+        }
+        const bracketNode: BracketOpNode = {
+          type: 'BracketOp',
+          op,
+          operands: [operandAST],
+          span: node.span,
+        };
+        constructedAst = bracketNode;
+        break;
+      }
+      case 'Tuple': {
+        const rawList = (evaluatedArgs.length === 1 && (evaluatedArgs[0].type === 'list' || evaluatedArgs[0].type === 'tuple'))
+          ? evaluatedArgs[0].elements
+          : evaluatedArgs;
+        const elements = rawList.map(el => el.type === 'expression' ? el.ast : valueToASTNode(el, node.span));
+        const tupleNode: TupleNode = {
+          type: 'Tuple',
+          elements,
+          span: node.span,
+        };
+        constructedAst = tupleNode;
+        break;
+      }
+      case 'List': {
+        const rawList = (evaluatedArgs.length === 1 && (evaluatedArgs[0].type === 'list' || evaluatedArgs[0].type === 'tuple'))
+          ? evaluatedArgs[0].elements
+          : evaluatedArgs;
+        const elements = rawList.map(el => el.type === 'expression' ? el.ast : valueToASTNode(el, node.span));
+        const listNode: ListNode = {
+          type: 'List',
+          elements,
+          span: node.span,
+        };
+        constructedAst = listNode;
+        break;
+      }
+      default: {
+        const fallbackNode: IdentifierNode = {
+          type: 'Identifier',
+          name: nt,
+          span: node.span,
+        };
+        constructedAst = fallbackNode;
+        break;
+      }
+    }
+
+    return {
+      type: 'expression',
+      ast: constructedAst,
+      text: formatAST(constructedAst),
+    };
+  }
+
+  private spliceBuildTemplate(template: ASTNode, currentEnv: Environment): ASTNode {
+    if (template.type === 'Unquote') {
+      const val = this.evalNode(template.expr, currentEnv);
+      if (val.type === 'expression') return val.ast;
+      return valueToASTNode(val, template.span);
+    }
+    if (template.type === 'Identifier') {
+      const name = template.name;
+      const cleanName = name.replace(/^:/, '');
+      const val = currentEnv[name] !== undefined ? currentEnv[name] : currentEnv[cleanName];
+      if (val && val.type === 'expression') {
+        return val.ast;
+      }
+      return template;
+    }
+    switch (template.type) {
+      case 'BinaryOp':
+        return {
+          ...template,
+          left: this.spliceBuildTemplate(template.left, currentEnv),
+          right: this.spliceBuildTemplate(template.right, currentEnv),
+        };
+      case 'UnaryOp':
+        return {
+          ...template,
+          operand: this.spliceBuildTemplate(template.operand, currentEnv),
+        };
+      case 'PostfixOp':
+        return {
+          ...template,
+          operand: this.spliceBuildTemplate(template.operand, currentEnv),
+        };
+      case 'FunctionCall':
+        return {
+          ...template,
+          args: template.args.map(a => this.spliceBuildTemplate(a, currentEnv)),
+        };
+      case 'Diff':
+        return {
+          ...template,
+          expr: this.spliceBuildTemplate(template.expr, currentEnv),
+        };
+      case 'BracketOp':
+        return {
+          ...template,
+          operands: template.operands.map(opNode => this.spliceBuildTemplate(opNode, currentEnv)),
+        };
+      case 'Tuple':
+        return {
+          ...template,
+          elements: template.elements.map(e => this.spliceBuildTemplate(e, currentEnv)),
+        };
+      case 'List':
+        return {
+          ...template,
+          elements: template.elements.map(e => this.spliceBuildTemplate(e, currentEnv)),
+        };
+    }
+    return template;
+  }
+
+  private evalMatch(node: MatchNode, currentEnv: Environment): Value {
+    const targetVal = this.evalNode(node.expr, currentEnv);
+    const targetAST: ASTNode = targetVal.type === 'expression'
+      ? targetVal.ast
+      : valueToASTNode(targetVal, node.expr.span);
+
+    for (const c of node.cases) {
+      const matchRes = this.matchPattern(c.pattern, targetAST);
+      if (matchRes.matched) {
+        const caseEnv: Environment = Object.create(currentEnv);
+        for (const [varName, boundAST] of Object.entries(matchRes.bindings)) {
+          const exprVal: ExpressionValue = {
+            type: 'expression',
+            ast: boundAST,
+            text: formatAST(boundAST),
+          };
+          const clean = varName.replace(/^:/, '');
+          caseEnv[clean] = exprVal;
+          caseEnv[':' + clean] = exprVal;
+        }
+
+        if (c.guard) {
+          const guardVal = this.evalNode(c.guard, caseEnv);
+          const isTrue = guardVal.type === 'boolean'
+            ? guardVal.value
+            : (guardVal.type === 'rational' ? guardVal.n !== 0n : (guardVal.type === 'float' ? guardVal.value !== 0 : true));
+          if (isTrue) {
+            return this.evalNode(c.body, caseEnv);
+          }
+        } else {
+          return this.evalNode(c.body, caseEnv);
+        }
+      }
+    }
+
+    if (node.otherwise) {
+      return this.evalNode(node.otherwise, currentEnv);
+    }
+
+    throw createError(
+      `No matching pattern in \\match for expression '${formatAST(targetAST)}'`,
+      node.span,
+      {
+        expected: 'a matching \\case pattern or \\otherwise fallback',
+        suggestion: 'Add an \\otherwise clause or expand \\case patterns to cover all cases',
+        source: this.source,
+      }
+    );
+  }
+
+  private areASTNodesEqual(a: ASTNode, b: ASTNode): boolean {
+    if (a === b) return true;
+    if (!a || !b || a.type !== b.type) return false;
+    switch (a.type) {
+      case 'NumberLiteral': {
+        const bNum = b as NumberLiteralNode;
+        return a.raw === bNum.raw;
+      }
+      case 'StringLiteral': {
+        return a.value === (b as StringLiteralNode).value;
+      }
+      case 'Identifier': {
+        return a.name.replace(/^:/, '') === (b as IdentifierNode).name.replace(/^:/, '');
+      }
+      case 'UnaryOp':
+      case 'PostfixOp': {
+        const bOp = b as UnaryOpNode | PostfixOpNode;
+        return a.op === bOp.op && this.areASTNodesEqual(a.operand, bOp.operand);
+      }
+      case 'BinaryOp': {
+        const bBin = b as BinaryOpNode;
+        return a.op === bBin.op && this.areASTNodesEqual(a.left, bBin.left) && this.areASTNodesEqual(a.right, bBin.right);
+      }
+      case 'FunctionCall': {
+        const bFn = b as FunctionCallNode;
+        return a.callee.replace(/^:/, '') === bFn.callee.replace(/^:/, '') &&
+          a.args.length === bFn.args.length &&
+          a.args.every((arg, i) => this.areASTNodesEqual(arg, bFn.args[i]));
+      }
+      case 'Diff': {
+        const bDiff = b as DiffNode;
+        return a.variable.replace(/^:/, '') === bDiff.variable.replace(/^:/, '') &&
+          this.areASTNodesEqual(a.expr, bDiff.expr);
+      }
+      case 'BracketOp': {
+        const bBr = b as BracketOpNode;
+        return a.op === bBr.op &&
+          a.operands.length === bBr.operands.length &&
+          a.operands.every((opNode, i) => this.areASTNodesEqual(opNode, bBr.operands[i]));
+      }
+      case 'Tuple':
+      case 'List': {
+        const bList = b as TupleNode | ListNode;
+        return a.elements.length === bList.elements.length &&
+          a.elements.every((el, i) => this.areASTNodesEqual(el, bList.elements[i]));
+      }
+      default:
+        return formatAST(a) === formatAST(b);
+    }
+  }
+
+  private matchPattern(pattern: ASTNode, target: ASTNode, boundVars: Record<string, ASTNode> = {}): { matched: boolean; bindings: Record<string, ASTNode> } {
+    if (pattern.type === 'Identifier') {
+      const name = pattern.name;
+      if (name === '_') {
+        return { matched: true, bindings: { ...boundVars } };
+      }
+      if (name === 'pi' || name === 'e' || name === 'tau' || name === 'phi') {
+        if (target.type === 'Identifier' && target.name === name) {
+          return { matched: true, bindings: { ...boundVars } };
+        }
+        return { matched: false, bindings: {} };
+      }
+      if (name in boundVars) {
+        if (this.areASTNodesEqual(boundVars[name], target)) {
+          return { matched: true, bindings: { ...boundVars } };
+        }
+        return { matched: false, bindings: {} };
+      }
+      return { matched: true, bindings: { ...boundVars, [name]: target } };
+    }
+
     if (pattern.type !== target.type) {
       return { matched: false, bindings: {} };
     }
+
     switch (pattern.type) {
-      case 'NumberLiteral':
-        return { matched: pattern.raw === (target as any).raw, bindings: {} };
-      case 'StringLiteral':
-        return { matched: pattern.value === (target as any).value, bindings: {} };
-      case 'Diff': {
-        const targetDiff = target as DiffNode;
-        const m = this.matchPattern(pattern.expr, targetDiff.expr, boundVars);
-        return m;
+      case 'NumberLiteral': {
+        const targetNum = target as NumberLiteralNode;
+        const matched = pattern.raw === targetNum.raw;
+        return { matched, bindings: matched ? { ...boundVars } : {} };
       }
-      case 'FunctionCall': {
-        const targetFn = target as FunctionCallNode;
-        if (pattern.callee !== targetFn.callee && pattern.callee !== 'myfunc' && pattern.callee.length > 1) {
-          return { matched: false, bindings: {} };
-        }
-        if (pattern.args.length !== targetFn.args.length) {
-          return { matched: false, bindings: {} };
-        }
-        const combinedBindings: Record<string, ASTNode> = {};
-        for (let i = 0; i < pattern.args.length; i++) {
-          const m = this.matchPattern(pattern.args[i], targetFn.args[i], boundVars);
-          if (!m.matched) return { matched: false, bindings: {} };
-          Object.assign(combinedBindings, m.bindings);
-        }
-        return { matched: true, bindings: combinedBindings };
+      case 'StringLiteral': {
+        const targetStr = target as StringLiteralNode;
+        const matched = pattern.value === targetStr.value;
+        return { matched, bindings: matched ? { ...boundVars } : {} };
       }
       case 'BinaryOp': {
         const targetBin = target as BinaryOpNode;
         if (pattern.op !== targetBin.op) return { matched: false, bindings: {} };
         const mLeft = this.matchPattern(pattern.left, targetBin.left, boundVars);
         if (!mLeft.matched) return { matched: false, bindings: {} };
-        const mRight = this.matchPattern(pattern.right, targetBin.right, boundVars);
-        if (!mRight.matched) return { matched: false, bindings: {} };
-        return { matched: true, bindings: { ...mLeft.bindings, ...mRight.bindings } };
+        return this.matchPattern(pattern.right, targetBin.right, mLeft.bindings);
       }
       case 'UnaryOp': {
         const targetUnary = target as UnaryOpNode;
@@ -3356,14 +3805,87 @@ export class Evaluator {
         if (pattern.op !== targetPostfix.op) return { matched: false, bindings: {} };
         return this.matchPattern(pattern.operand, targetPostfix.operand, boundVars);
       }
+      case 'FunctionCall': {
+        const targetFn = target as FunctionCallNode;
+        const pCallee = pattern.callee.replace(/^:/, '');
+        const tCallee = targetFn.callee.replace(/^:/, '');
+        if (pCallee !== tCallee && pCallee !== '_' && pCallee !== 'myfunc' && pCallee.length > 1) {
+          return { matched: false, bindings: {} };
+        }
+        if (pattern.args.length !== targetFn.args.length) {
+          return { matched: false, bindings: {} };
+        }
+        let currBindings = { ...boundVars };
+        for (let i = 0; i < pattern.args.length; i++) {
+          const m = this.matchPattern(pattern.args[i], targetFn.args[i], currBindings);
+          if (!m.matched) return { matched: false, bindings: {} };
+          currBindings = m.bindings;
+        }
+        return { matched: true, bindings: currBindings };
+      }
+      case 'Diff': {
+        const targetDiff = target as DiffNode;
+        let currBindings = { ...boundVars };
+        if (pattern.variable !== '_' && pattern.variable !== targetDiff.variable) {
+          if (pattern.variable in currBindings) {
+            if (currBindings[pattern.variable].type !== 'Identifier' || (currBindings[pattern.variable] as any).name !== targetDiff.variable) {
+              return { matched: false, bindings: {} };
+            }
+          } else {
+            currBindings[pattern.variable] = { type: 'Identifier', name: targetDiff.variable, span: pattern.span };
+          }
+        }
+        return this.matchPattern(pattern.expr, targetDiff.expr, currBindings);
+      }
+      case 'BracketOp': {
+        const targetBracket = target as BracketOpNode;
+        if (pattern.op !== targetBracket.op || pattern.operands.length !== targetBracket.operands.length) return { matched: false, bindings: {} };
+        let currBindings = { ...boundVars };
+        for (let i = 0; i < pattern.operands.length; i++) {
+          const m = this.matchPattern(pattern.operands[i], targetBracket.operands[i], currBindings);
+          if (!m.matched) return { matched: false, bindings: {} };
+          currBindings = m.bindings;
+        }
+        return { matched: true, bindings: currBindings };
+      }
+      case 'Tuple': {
+        const targetTuple = target as TupleNode;
+        if (pattern.elements.length !== targetTuple.elements.length) return { matched: false, bindings: {} };
+        let currBindings = { ...boundVars };
+        for (let i = 0; i < pattern.elements.length; i++) {
+          const m = this.matchPattern(pattern.elements[i], targetTuple.elements[i], currBindings);
+          if (!m.matched) return { matched: false, bindings: {} };
+          currBindings = m.bindings;
+        }
+        return { matched: true, bindings: currBindings };
+      }
+      case 'List': {
+        const targetList = target as ListNode;
+        if (pattern.elements.length !== targetList.elements.length) return { matched: false, bindings: {} };
+        let currBindings = { ...boundVars };
+        for (let i = 0; i < pattern.elements.length; i++) {
+          const m = this.matchPattern(pattern.elements[i], targetList.elements[i], currBindings);
+          if (!m.matched) return { matched: false, bindings: {} };
+          currBindings = m.bindings;
+        }
+        return { matched: true, bindings: currBindings };
+      }
     }
     return { matched: false, bindings: {} };
   }
 
   private substitutePatternBindings(replacement: ASTNode, bindings: Record<string, ASTNode>): ASTNode {
     if (replacement.type === 'Identifier') {
-      if (replacement.name in bindings) {
-        return bindings[replacement.name];
+      const name = replacement.name;
+      const clean = name.replace(/^:/, '');
+      if (name in bindings) {
+        return bindings[name];
+      }
+      if (clean in bindings) {
+        return bindings[clean];
+      }
+      if ((':' + clean) in bindings) {
+        return bindings[':' + clean];
       }
       return replacement;
     }
@@ -3394,6 +3916,35 @@ export class Evaluator {
           ...replacement,
           expr: this.substitutePatternBindings(replacement.expr, bindings),
         };
+      case 'BracketOp':
+        return {
+          ...replacement,
+          operands: replacement.operands.map(opNode => this.substitutePatternBindings(opNode, bindings)),
+        };
+      case 'Tuple':
+        return {
+          ...replacement,
+          elements: replacement.elements.map(e => this.substitutePatternBindings(e, bindings)),
+        };
+      case 'List':
+        return {
+          ...replacement,
+          elements: replacement.elements.map(e => this.substitutePatternBindings(e, bindings)),
+        };
+      case 'Build':
+        if (replacement.template) {
+          return {
+            ...replacement,
+            template: this.substitutePatternBindings(replacement.template, bindings),
+          };
+        }
+        if (replacement.args) {
+          return {
+            ...replacement,
+            args: replacement.args.map(a => this.substitutePatternBindings(a, bindings)),
+          };
+        }
+        return replacement;
     }
     return replacement;
   }
@@ -3403,20 +3954,24 @@ export class Evaluator {
     for (const rule of rules) {
       const match = this.matchPattern(rule.pattern, node);
       if (match.matched) {
-        const reqStr = rule.requires ? ` (requires: ${formatAST(rule.requires)})` : '';
-        return {
-          type: 'described',
-          kind: { name: 'Function' } as any,
-          operation: `user rule: ${formatAST(rule.pattern)} => ${formatAST(rule.replacement)}`,
-          namedOperation: `User rule rewrite`,
-          meaning: `computed via unverified user rule${reqStr}`,
-          meaningInWords: `computed via unverified user rule${reqStr}`,
-          provenance: 'user-rule',
-          rulesFired: [rule.name || formatAST(rule.pattern)],
-          requires: rule.requires ? formatAST(rule.requires) : 'Verification of user rule axioms/derivation',
-          canDo: ['Symbolic pattern derivation', 'Substitution'],
-          obstruction: 'requires-proof',
-        };
+        if (rule.requires) {
+          const reqStr = ` (requires: ${formatAST(rule.requires)})`;
+          return {
+            type: 'described',
+            kind: { name: 'Function' } as any,
+            operation: `user rule: ${formatAST(rule.pattern)} => ${formatAST(rule.replacement)}`,
+            namedOperation: `User rule rewrite`,
+            meaning: `computed via unverified user rule${reqStr}`,
+            meaningInWords: `computed via unverified user rule${reqStr}`,
+            provenance: 'user-rule',
+            rulesFired: [rule.name || formatAST(rule.pattern)],
+            requires: formatAST(rule.requires),
+            canDo: ['Symbolic pattern derivation', 'Substitution'],
+            obstruction: 'requires-proof',
+          };
+        }
+        const rewrittenAst = this.substitutePatternBindings(rule.replacement, match.bindings);
+        return this.evalNode(rewrittenAst, currentEnv);
       }
     }
     return null;

@@ -348,6 +348,78 @@ export function analyzeAST(
       case 'RuleDecl': {
         break;
       }
+      case 'Quote': {
+        const findUnquotes = (sub: ASTNode) => {
+          if (sub.type === 'Unquote') {
+            walk(sub.expr);
+          } else {
+            switch (sub.type) {
+              case 'BinaryOp': findUnquotes(sub.left); findUnquotes(sub.right); break;
+              case 'UnaryOp': case 'PostfixOp': findUnquotes(sub.operand); break;
+              case 'FunctionCall': sub.args.forEach(findUnquotes); break;
+              case 'Tuple': case 'List': sub.elements.forEach(findUnquotes); break;
+              case 'Match': walk(sub); break;
+              case 'Build': walk(sub); break;
+            }
+          }
+        };
+        findUnquotes(n.expr);
+        break;
+      }
+      case 'Unquote': {
+        walk(n.expr);
+        break;
+      }
+      case 'Build': {
+        if (n.template) {
+          walk(n.template);
+        }
+        if (n.args) {
+          for (const arg of n.args) {
+            walk(arg);
+          }
+        }
+        break;
+      }
+      case 'Match': {
+        walk(n.expr);
+        const extractPatternVars = (pat: ASTNode, out: Set<string>) => {
+          if (pat.type === 'Identifier') {
+            if (pat.name !== '_' && pat.name.length >= 1 && !CONSTANTS.has(pat.name)) {
+              out.add(pat.name);
+            }
+          } else if (pat.type === 'BinaryOp') {
+            extractPatternVars(pat.left, out);
+            extractPatternVars(pat.right, out);
+          } else if (pat.type === 'UnaryOp' || pat.type === 'PostfixOp') {
+            extractPatternVars(pat.operand, out);
+          } else if (pat.type === 'FunctionCall') {
+            for (const arg of pat.args) extractPatternVars(arg, out);
+          } else if (pat.type === 'Tuple' || pat.type === 'List') {
+            for (const el of pat.elements) extractPatternVars(el, out);
+          } else if (pat.type === 'Diff') {
+            extractPatternVars(pat.expr, out);
+          }
+        };
+        for (const c of n.cases) {
+          const caseParams = new Set(boundParams);
+          extractPatternVars(c.pattern, caseParams);
+          if (c.guard) {
+            const guardAnalysis = analyzeAST(c.guard, env, caseParams, source);
+            for (const fv of guardAnalysis.freeVariables) {
+              if (!caseParams.has(fv)) freeVars.add(fv);
+            }
+          }
+          const bodyAnalysis = analyzeAST(c.body, env, caseParams, source);
+          for (const fv of bodyAnalysis.freeVariables) {
+            if (!caseParams.has(fv)) freeVars.add(fv);
+          }
+        }
+        if (n.otherwise) {
+          walk(n.otherwise);
+        }
+        break;
+      }
       case 'Claim': {
         isDef = true;
         definedName = n.name;

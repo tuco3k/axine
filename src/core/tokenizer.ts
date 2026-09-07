@@ -228,6 +228,30 @@ export class Tokenizer {
           tokens.push(this.makeToken('REQUIRES', 'requires', startPos, startLine, startCol, leadingWhitespace));
           continue;
         }
+        if (name === 'match') {
+          tokens.push(this.makeToken('MATCH', 'match', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'case') {
+          tokens.push(this.makeToken('CASE', 'case', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'build') {
+          tokens.push(this.makeToken('BUILD', 'build', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'quote') {
+          tokens.push(this.makeToken('QUOTE', 'quote', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'unquote') {
+          tokens.push(this.makeToken('UNQUOTE', 'unquote', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
+        if (name === 'otherwise') {
+          tokens.push(this.makeToken('OTHERWISE', 'otherwise', startPos, startLine, startCol, leadingWhitespace));
+          continue;
+        }
         if (name === 'module') {
           tokens.push(this.makeToken('MODULE', 'module', startPos, startLine, startCol, leadingWhitespace));
           continue;

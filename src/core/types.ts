@@ -129,6 +129,12 @@ export type TokenType =
   | 'AXIS'
   | 'UNIMPORT'
   | 'WHERE'
+  | 'MATCH'
+  | 'CASE'
+  | 'BUILD'
+  | 'QUOTE'
+  | 'UNQUOTE'
+  | 'OTHERWISE'
   | 'EOF';
 
 export interface Token {
@@ -188,7 +194,11 @@ export type ASTNode =
   | UnimportNode
   | AxisDeclNode
   | IntervalNode
-  | WhereNode;
+  | WhereNode
+  | MatchNode
+  | BuildNode
+  | QuoteNode
+  | UnquoteNode;
 
 export interface WhereNode {
   type: 'Where';
@@ -275,6 +285,41 @@ export interface RuleDeclNode {
   pattern: ASTNode;
   replacement: ASTNode;
   requires?: ASTNode;
+  span: Span;
+}
+
+export interface MatchCase {
+  pattern: ASTNode;
+  body: ASTNode;
+  guard?: ASTNode;
+  span: Span;
+}
+
+export interface MatchNode {
+  type: 'Match';
+  expr: ASTNode;
+  cases: MatchCase[];
+  otherwise?: ASTNode;
+  span: Span;
+}
+
+export interface BuildNode {
+  type: 'Build';
+  nodeType: string;
+  args: ASTNode[];
+  template?: ASTNode;
+  span: Span;
+}
+
+export interface QuoteNode {
+  type: 'Quote';
+  expr: ASTNode;
+  span: Span;
+}
+
+export interface UnquoteNode {
+  type: 'Unquote';
+  expr: ASTNode;
   span: Span;
 }
 

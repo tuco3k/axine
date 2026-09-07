@@ -301,6 +301,10 @@ function compileNode(
     case 'List':
     case 'SetBuilder':
     case 'SetOp':
+    case 'Quote':
+    case 'Unquote':
+    case 'Build':
+    case 'Match':
     default: {
       return {
         success: false,

@@ -66,6 +66,11 @@ function getNodePrecedence(node: ASTNode): number {
     case 'Claim':
     case 'StringLiteral':
     case 'FunctionDef':
+    case 'Quote':
+    case 'Unquote':
+    case 'Build':
+    case 'Match':
+    case 'RuleDecl':
     case 'Range':
     case 'AxisDecl':
     case 'Interval':
@@ -371,6 +376,26 @@ function formatNode(node: ASTNode, parentPrec: number): string {
     }
     case 'Where': {
       return `${formatNode(node.expr, PREC_NONE)} \\where ${formatNode(node.condition, PREC_NONE)}`;
+    }
+    case 'Quote': {
+      return `\\quote(${formatNode(node.expr, PREC_NONE)})`;
+    }
+    case 'Unquote': {
+      return `\\unquote(${formatNode(node.expr, PREC_NONE)})`;
+    }
+    case 'Build': {
+      if (node.nodeType === 'Template' && node.template) {
+        return `\\build { ${formatNode(node.template, PREC_NONE)} }`;
+      }
+      if (node.args) {
+        return `\\build :${node.nodeType}(${node.args.map(a => formatNode(a, PREC_NONE)).join(', ')})`;
+      }
+      return `\\build :${node.nodeType}`;
+    }
+    case 'Match': {
+      const casesStr = node.cases.map(c => `  \\case ${formatNode(c.pattern, PREC_NONE)}${c.guard ? ` \\if ${formatNode(c.guard, PREC_NONE)}` : ''}: ${formatNode(c.body, PREC_NONE)}`).join(',\n');
+      const otherwiseStr = node.otherwise ? `,\n  \\otherwise: ${formatNode(node.otherwise, PREC_NONE)}` : '';
+      return `\\match ${formatNode(node.expr, PREC_NONE)} {\n${casesStr}${otherwiseStr}\n}`;
     }
     case 'BinaryOp': {
       return formatBinaryOp(node, parentPrec);
