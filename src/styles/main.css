@@ -3148,6 +3148,16 @@ html, body {
   color: var(--color-text-primary);
 }
 
+.spatial-inspector-grid-tag {
+  font-family: var(--font-family-doc);
+  font-size: var(--font-size-2xs);
+  color: var(--color-text-tertiary);
+  background: var(--color-bg-base);
+  padding: 1px 5px;
+  border-radius: var(--border-radius-xs);
+  border: var(--border-width-default) solid var(--color-border-subtle);
+}
+
 .spatial-inspector-close-btn {
   background: transparent;
   border: none;
@@ -3184,7 +3194,7 @@ html, body {
 }
 
 .spatial-inspector-card.holds {
-  border-left: 2px solid var(--color-semantic-verified);
+  border-left: 2px solid var(--color-accent);
 }
 
 .spatial-inspector-card.residual {
@@ -3244,6 +3254,24 @@ html, body {
   font-family: var(--font-family-math);
   font-size: var(--font-size-sm);
   color: var(--color-text-primary);
+}
+
+.spatial-residual-tag {
+  font-family: var(--font-family-doc);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  background: var(--color-bg-base);
+  padding: 1px 6px;
+  border-radius: var(--border-radius-xs);
+  border: var(--border-width-default) solid var(--color-border-subtle);
+}
+
+.spatial-tolerance-note {
+  font-size: var(--font-size-2xs);
+  color: var(--color-text-secondary);
+  font-style: italic;
+  margin-top: 1px;
 }
 
 .spatial-status-badge {

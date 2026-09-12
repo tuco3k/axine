@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { DocumentEditor } from '../document/editor';
-import { CORPUS_DOCUMENTS } from '../document/corpus_data';
 
 class MockClassList {
   public classes: Set<string> = new Set();

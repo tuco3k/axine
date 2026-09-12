@@ -6,8 +6,8 @@
  * Layer 3: How it got that value (point-wise algebraic reduction trace & Newton-Raphson library iterations)
  */
 
-import { SpaceValue, SpatialEntity, ASTNode, Span } from '../core/types';
-import { Bounds2D, Bounds3D, Point2D, Point3D, TriangleMesh3D } from '../core/sampler';
+import { SpaceValue, SpatialEntity } from '../core/types';
+import { Bounds2D, Bounds3D, Point3D, TriangleMesh3D } from '../core/sampler';
 import { formatAST } from '../core/formatter';
 import { typesetMath, escapeHtml } from '../core/math_typeset';
 
@@ -32,6 +32,9 @@ export interface InspectedEntityRecord {
     iterations: { iteration: number; estimate: number; formula: string }[];
     convergedValue: number;
   };
+  gridResolution?: string;
+  gridStep?: number;
+  toleranceDescription?: string;
 }
 
 export interface SpatialInspectionResult {
@@ -40,6 +43,8 @@ export interface SpatialInspectionResult {
   screenPos: { x: number; y: number };
   isExactGeometryHit: boolean;
   hitEntities: InspectedEntityRecord[];
+  gridResolution?: string;
+  gridStep?: number;
 }
 
 /**
@@ -279,7 +284,13 @@ export class SpatialInspector {
     ent: SpatialEntity,
     x0: number,
     y0?: number,
-    z0?: number
+    z0?: number,
+    context?: {
+      isSnapped?: boolean;
+      gridResolution?: string;
+      gridStep?: number;
+      dimension?: 1 | 2 | 3;
+    }
   ): { steps: ReductionStep[]; libraryTrace?: InspectedEntityRecord['libraryTrace'] } {
     const steps: ReductionStep[] = [];
     const varX = ent.coordinates[0] || 'x';
@@ -306,10 +317,14 @@ export class SpatialInspector {
       instantiatedExpr = instantiatedExpr.replace(regexZ, fmt(z0));
     }
 
+    const coordArgs = [fmt(x0), y0 !== undefined ? fmt(y0) : null, z0 !== undefined ? fmt(z0) : null]
+      .filter(Boolean)
+      .join(', ');
+
     steps.push({
       label: 'Coordinate Substitution',
       equation: instantiatedExpr,
-      detail: `Instantiate spatial coordinates at (${[fmt(x0), y0 !== undefined ? fmt(y0) : null, z0 !== undefined ? fmt(z0) : null].filter(Boolean).join(', ')})`,
+      detail: `Instantiate spatial coordinates at (${coordArgs})`,
     });
 
     // Check for library function (e.g. sqrt / newton_sqrt)
@@ -357,19 +372,29 @@ export class SpatialInspector {
       const val = typeof y0 === 'number'
         ? (typeof z0 === 'number' ? ent.compiledFn(x0, y0, z0) : ent.compiledFn(x0, y0))
         : ent.compiledFn(x0);
-      const isZero = Math.abs(val) < 1e-4;
+      const isZero = Math.abs(val) < 1e-6;
 
       if (isZero) {
         steps.push({
           label: 'Exact Relation Reduction',
-          equation: `f(${fmt(x0)}${y0 !== undefined ? `, ${fmt(y0)}` : ''}) = 0`,
-          detail: 'Algebraic equality confirmed: point lies exactly on geometric locus (residual \u2248 0).',
+          equation: `f(${coordArgs}) = 0`,
+          detail: 'Algebraic equality confirmed: point lies exactly on continuous geometric locus (residual = 0).',
+        });
+      } else if (context?.isSnapped) {
+        const stepStr = context.gridStep !== undefined ? ` (grid step ${fmt(context.gridStep)})` : '';
+        const stepLabel = context.dimension === 3
+          ? 'Mesh Discretization Residual'
+          : (context.dimension === 2 ? 'Sampled Curve Discretization Residual' : 'Discretization Residual');
+        steps.push({
+          label: stepLabel,
+          equation: `f(${coordArgs}) = ${fmt(val)}`,
+          detail: `Discretization residual is ${fmt(val)}${stepStr}. The continuous geometric locus passes within cell tolerance of this interpolated vertex.`,
         });
       } else {
         steps.push({
-          label: 'Residual Evaluation',
-          equation: `f(${fmt(x0)}${y0 !== undefined ? `, ${fmt(y0)}` : ''}) = ${fmt(val)} \\neq 0`,
-          detail: `Residual deviation is ${fmt(val)}, confirming no geometric locus exists at this coordinate point.`,
+          label: 'Off-Surface Evaluation',
+          equation: `f(${coordArgs}) = ${fmt(val)} \\neq 0`,
+          detail: `Evaluated residual is ${fmt(val)}: point lies outside the geometric locus tolerance.`,
         });
       }
     } catch {
@@ -428,7 +453,14 @@ export class SpatialInspector {
       }
 
       const holds = entHit || Math.abs(val) < 1e-4;
-      const trace = SpatialInspector.generateReductionTrace(ent, inspectedX);
+      const trace = SpatialInspector.generateReductionTrace(ent, inspectedX, undefined, undefined, {
+        isSnapped: entHit,
+        dimension: 1,
+      });
+
+      const toleranceDesc = entHit
+        ? (Math.abs(val) < 1e-6 ? 'exact algebraic zero (residual = 0)' : 'within root solver tolerance')
+        : 'evaluated off-root coordinate';
 
       hitEntities.push({
         entityIndex: idx,
@@ -438,9 +470,10 @@ export class SpatialInspector {
         valueAtPoint: val,
         residual: val,
         holds,
-        isSnapped: isExact,
+        isSnapped: entHit,
         reductionSteps: trace.steps,
         libraryTrace: trace.libraryTrace,
+        toleranceDescription: toleranceDesc,
       });
     });
 
@@ -538,6 +571,15 @@ export class SpatialInspector {
     const evalX = isSnapped ? snappedX : rawWorldX;
     const evalY = isSnapped ? snappedY : rawWorldY;
 
+    let primaryGridResolution: string | undefined = undefined;
+    let primaryGridStep: number | undefined = undefined;
+
+    const fmtStep = (n: number) => {
+      if (Math.abs(n) < 1e-10) return '0';
+      if (Number.isInteger(n)) return n.toString();
+      return n.toFixed(4).replace(/\.?0+$/, '');
+    };
+
     space.entities.forEach((ent, idx) => {
       const snapForThis = entitySnapInfo.find(s => s.index === idx);
       const ptX = snapForThis ? snapForThis.snapPt[0] : evalX;
@@ -551,7 +593,32 @@ export class SpatialInspector {
       }
 
       const holds = Math.abs(val) < 1e-3 || !!snapForThis;
-      const trace = SpatialInspector.generateReductionTrace(ent, ptX, ptY);
+      const res2D = ent.cachedContours?.resolution;
+      const gridResStr = res2D ? `${res2D[0]}×${res2D[1]}` : undefined;
+      const step2D = ent.cachedContours?.gridStep ? ent.cachedContours.gridStep[0] : undefined;
+
+      if (!primaryGridResolution && gridResStr) {
+        primaryGridResolution = gridResStr;
+        primaryGridStep = step2D;
+      }
+
+      const trace = SpatialInspector.generateReductionTrace(ent, ptX, ptY, undefined, {
+        isSnapped: !!snapForThis,
+        gridResolution: gridResStr,
+        gridStep: step2D,
+        dimension: 2,
+      });
+
+      let toleranceDesc = 'evaluated off-curve coordinate';
+      if (snapForThis) {
+        if (Math.abs(val) < 1e-6) {
+          toleranceDesc = 'exact algebraic zero (residual = 0)';
+        } else if (step2D !== undefined) {
+          toleranceDesc = `within sampled contour tolerance (grid step ${fmtStep(step2D)})`;
+        } else {
+          toleranceDesc = 'within sampled contour tolerance';
+        }
+      }
 
       inspectedEntities.push({
         entityIndex: idx,
@@ -564,6 +631,9 @@ export class SpatialInspector {
         isSnapped: !!snapForThis,
         reductionSteps: trace.steps,
         libraryTrace: trace.libraryTrace,
+        gridResolution: gridResStr,
+        gridStep: step2D,
+        toleranceDescription: toleranceDesc,
       });
     });
 
@@ -573,6 +643,8 @@ export class SpatialInspector {
       screenPos: { x: clickScreenX, y: clickScreenY },
       isExactGeometryHit: isSnapped,
       hitEntities: inspectedEntities,
+      gridResolution: primaryGridResolution,
+      gridStep: primaryGridStep,
     };
   }
 
@@ -581,7 +653,7 @@ export class SpatialInspector {
    */
   public static inspect3D(
     space: SpaceValue,
-    bounds3D: Bounds3D,
+    _bounds3D: Bounds3D,
     clickScreenX: number,
     clickScreenY: number,
     width: number,
@@ -596,7 +668,7 @@ export class SpatialInspector {
   ): SpatialInspectionResult {
     const centerX = width * 0.5 + camera.pan3DX;
     const centerY = height * 0.5 + camera.pan3DY;
-    const scale3D = Math.min(width, height) * 0.22 * camera.zoom3D;
+    const scale3D = (Math.min(width, height) / 3.8) * camera.zoom3D;
 
     // Camera ray direction in world space
     const cosAz = Math.cos(camera.angleZ);
@@ -633,21 +705,34 @@ export class SpatialInspector {
     let hitWorldPt: Point3D | null = null;
     let hitEntityIdx = -1;
 
-    // 1. Ray-mesh intersection test across all entity meshes
+    // 1. Ray-mesh intersection test across all entity meshes (triangles and vertex sphere colliders)
     space.entities.forEach((ent, idx) => {
       const mesh: TriangleMesh3D | undefined = ent.cachedMesh;
-      if (mesh && mesh.vertices && mesh.triangles) {
+      if (mesh && mesh.vertices) {
         const verts = mesh.vertices;
-        for (const tri of mesh.triangles) {
-          const v0 = verts[tri[0]];
-          const v1 = verts[tri[1]];
-          const v2 = verts[tri[2]];
-          if (!v0 || !v1 || !v2) continue;
+        if (mesh.triangles && mesh.triangles.length > 0) {
+          for (const tri of mesh.triangles) {
+            const v0 = verts[tri[0]];
+            const v1 = verts[tri[1]];
+            const v2 = verts[tri[2]];
+            if (!v0 || !v1 || !v2) continue;
 
-          const res = rayIntersectsTriangle(rayOrig, rayDir, v0, v1, v2);
-          if (res.hit && res.t > 0 && res.t < minT) {
-            minT = res.t;
-            hitWorldPt = res.point || null;
+            const res = rayIntersectsTriangle(rayOrig, rayDir, v0, v1, v2);
+            if (res.hit && res.t > 0 && res.t < minT) {
+              minT = res.t;
+              hitWorldPt = res.point || null;
+              hitEntityIdx = idx;
+            }
+          }
+        }
+
+        // Vertex sphere colliders
+        const rVertex = 0.12;
+        for (const v of verts) {
+          const sRes = rayIntersectsSphere(rayOrig, rayDir, v, rVertex);
+          if (sRes.hit && sRes.t > 0 && sRes.t < minT) {
+            minT = sRes.t;
+            hitWorldPt = v;
             hitEntityIdx = idx;
           }
         }
@@ -655,35 +740,76 @@ export class SpatialInspector {
     });
 
     const isHit = hitEntityIdx !== -1 && hitWorldPt !== null;
-    const evalCoord: Point3D = hitWorldPt || [ndcX, ndcY, 0];
+    // If no geometry hit, unproject ray to z=0 or closest point
+    const evalCoord: Point3D = hitWorldPt || [
+      ndcX * cosAz + ndcY * sinEl * sinAz,
+      -ndcX * sinAz + ndcY * sinEl * cosAz,
+      ndcY * cosEl,
+    ];
+
+    const fmtStep = (n: number) => {
+      if (Math.abs(n) < 1e-10) return '0';
+      if (Number.isInteger(n)) return n.toString();
+      return n.toFixed(4).replace(/\.?0+$/, '');
+    };
+
+    let primaryGridResolution: string | undefined = undefined;
+    let primaryGridStep: number | undefined = undefined;
 
     const inspectedEntities: InspectedEntityRecord[] = [];
-    if (isHit) {
-      space.entities.forEach((ent, idx) => {
-        let val = 0;
-        try {
-          val = ent.compiledFn(evalCoord[0], evalCoord[1], evalCoord[2]);
-        } catch {
-          val = Number.NaN;
-        }
+    space.entities.forEach((ent, idx) => {
+      let val = 0;
+      try {
+        val = ent.compiledFn(evalCoord[0], evalCoord[1], evalCoord[2]);
+      } catch {
+        val = Number.NaN;
+      }
 
-        const holds = idx === hitEntityIdx || Math.abs(val) < 1e-2;
-        const trace = SpatialInspector.generateReductionTrace(ent, evalCoord[0], evalCoord[1], evalCoord[2]);
+      const isSnapped = idx === hitEntityIdx && isHit;
+      const holds = isSnapped || Math.abs(val) < 1e-2;
+      const mesh = ent.cachedMesh;
+      const gridResStr = mesh?.resolution ? `${mesh.resolution[0]}×${mesh.resolution[1]}×${mesh.resolution[2]}` : undefined;
+      const step3D = mesh?.gridStep ? mesh.gridStep[0] : undefined;
 
-        inspectedEntities.push({
-          entityIndex: idx,
-          relationExpr: ent.source || (ent.ast ? formatAST(ent.ast) : `f(x, y, z) = 0`),
-          lineIdx: ent.ast?.span?.line ? ent.ast.span.line - 1 : undefined,
-          sourceText: ent.source,
-          valueAtPoint: val,
-          residual: val,
-          holds,
-          isSnapped: idx === hitEntityIdx,
-          reductionSteps: trace.steps,
-          libraryTrace: trace.libraryTrace,
-        });
+      if (!primaryGridResolution && gridResStr) {
+        primaryGridResolution = gridResStr;
+        primaryGridStep = step3D;
+      }
+
+      const trace = SpatialInspector.generateReductionTrace(ent, evalCoord[0], evalCoord[1], evalCoord[2], {
+        isSnapped,
+        gridResolution: gridResStr,
+        gridStep: step3D,
+        dimension: 3,
       });
-    }
+
+      let toleranceDesc = 'evaluated off-surface coordinate';
+      if (isSnapped) {
+        if (Math.abs(val) < 1e-6) {
+          toleranceDesc = 'exact algebraic zero (residual = 0)';
+        } else if (step3D !== undefined) {
+          toleranceDesc = `within mesh tolerance at this resolution (grid step ${fmtStep(step3D)})`;
+        } else {
+          toleranceDesc = 'within mesh tolerance at this resolution';
+        }
+      }
+
+      inspectedEntities.push({
+        entityIndex: idx,
+        relationExpr: ent.source || (ent.ast ? formatAST(ent.ast) : `f(x, y, z) = 0`),
+        lineIdx: ent.ast?.span?.line ? ent.ast.span.line - 1 : undefined,
+        sourceText: ent.source,
+        valueAtPoint: val,
+        residual: val,
+        holds,
+        isSnapped,
+        reductionSteps: trace.steps,
+        libraryTrace: trace.libraryTrace,
+        gridResolution: gridResStr,
+        gridStep: step3D,
+        toleranceDescription: toleranceDesc,
+      });
+    });
 
     return {
       dimension: 3,
@@ -691,6 +817,8 @@ export class SpatialInspector {
       screenPos: { x: clickScreenX, y: clickScreenY },
       isExactGeometryHit: isHit,
       hitEntities: inspectedEntities,
+      gridResolution: primaryGridResolution,
+      gridStep: primaryGridStep,
     };
   }
 
@@ -717,13 +845,16 @@ export class SpatialInspector {
         ? `x = ${result.worldCoord.x.toFixed(4)}, y = ${(result.worldCoord.y ?? 0).toFixed(4)}`
         : `x = ${result.worldCoord.x.toFixed(4)}, y = ${(result.worldCoord.y ?? 0).toFixed(4)}, z = ${(result.worldCoord.z ?? 0).toFixed(4)}`);
 
-    // Top Header: Coordinates & Close button
+    const gridTag = result.gridResolution ? `Grid: ${result.gridResolution}` : undefined;
+
+    // Top Header: Coordinates, Grid Resolution & Close button
     const header = document.createElement('div');
     header.className = 'spatial-inspector-header';
     header.innerHTML = `
       <div class="spatial-inspector-coords">
         <span class="spatial-inspector-tag">${result.dimension}D Point</span>
         <span class="spatial-inspector-coord-val">(${escapeHtml(coordStr)})</span>
+        ${gridTag ? `<span class="spatial-inspector-grid-tag">${escapeHtml(gridTag)}</span>` : ''}
       </div>
       <button class="spatial-inspector-close-btn" title="Close inspector (Esc)">&times;</button>
     `;
@@ -741,16 +872,22 @@ export class SpatialInspector {
     const body = document.createElement('div');
     body.className = 'spatial-inspector-body';
 
+    const fmtResidual = (val: number) => {
+      if (Math.abs(val) < 1e-12) return '0';
+      if (Number.isInteger(val)) return val.toString();
+      return val.toFixed(4).replace(/\.?0+$/, '');
+    };
+
     if (result.hitEntities.length === 0) {
       body.innerHTML = `<div class="spatial-inspector-empty">No active mathematical relations in this space.</div>`;
     } else {
       result.hitEntities.forEach((ent) => {
         const card = document.createElement('div');
-        card.className = `spatial-inspector-card ${ent.holds ? 'holds' : 'residual'}`;
+        const isNearZero = Math.abs(ent.residual) < 1e-4;
+        card.className = `spatial-inspector-card ${isNearZero || ent.isSnapped ? 'holds' : 'residual'}`;
 
-        const statusBadge = ent.holds
-          ? `<span class="spatial-status-badge verified">Holds (f = 0)</span>`
-          : `<span class="spatial-status-badge stale">Residual: ${ent.residual.toFixed(4)}</span>`;
+        const residualValStr = fmtResidual(ent.residual);
+        const residualBadge = `<span class="spatial-residual-tag">f = ${residualValStr}</span>`;
 
         const sourceLineHtml = typeof ent.lineIdx === 'number'
           ? `<button class="spatial-jump-line-btn" title="Jump to definition in document">Line ${ent.lineIdx + 1}</button>`
@@ -785,14 +922,19 @@ export class SpatialInspector {
           `;
         }
 
+        const toleranceNoteHtml = ent.toleranceDescription
+          ? `<div class="spatial-tolerance-note">${escapeHtml(ent.toleranceDescription)}</div>`
+          : '';
+
         card.innerHTML = `
           <!-- Layer 1: What is here -->
           <div class="spatial-layer-1">
             <div class="layer-title">Layer 1: Value at Point</div>
             <div class="layer-1-row">
               <div class="relation-source">${typesetMath(ent.relationExpr, { displayMode: false })}</div>
-              ${statusBadge}
+              ${residualBadge}
             </div>
+            ${toleranceNoteHtml}
           </div>
 
           <!-- Layer 2: What produced this -->

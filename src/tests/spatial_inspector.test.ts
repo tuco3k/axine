@@ -4,7 +4,6 @@ import {
   pointToSegmentDistance,
   rayIntersectsSphere,
   rayIntersectsCapsule,
-  rayIntersectsTriangle,
 } from '../plot/spatial_inspector';
 import { SpaceValue, SpatialEntity } from '../core/types';
 import { Bounds2D, Bounds3D } from '../core/sampler';
@@ -132,7 +131,7 @@ describe('Spatial Inspector & 3-Layer Graph Inspection Engine', () => {
       const emptyRes = SpatialInspector.inspect1D(space, bounds, 300, 600);
       expect(emptyRes.hitEntities[0].holds).toBe(false);
       expect(emptyRes.hitEntities[0].valueAtPoint).toBeCloseTo(-4, 4); // 0^2 - 4 = -4
-      expect(emptyRes.hitEntities[0].reductionSteps.some(s => s.label.includes('Residual Evaluation'))).toBe(true);
+      expect(emptyRes.hitEntities[0].reductionSteps.some(s => s.label.includes('Off-Surface Evaluation'))).toBe(true);
     });
   });
 
@@ -216,7 +215,74 @@ describe('Spatial Inspector & 3-Layer Graph Inspection Engine', () => {
     });
   });
 
-  describe('3D Mesh Ray Picking & Inspection', () => {
+  describe('3D Mesh Ray Picking & Honest Discretization Residuals', () => {
+    it('reports mesh discretization residuals honestly without contradictions', () => {
+      const mesh: any = {
+        vertices: [
+          [1.0, 1.0, 1.0], // x^2 + y^2 + z^2 - 3.013 = 3 - 3.013 = -0.013
+          [2, 0, 0],
+          [0, 2, 0],
+        ],
+        triangles: [[0, 1, 2]],
+        positions: new Float32Array(),
+        indices: new Uint32Array(),
+        bounds: null,
+        sampleCount: 64000,
+        resolution: [40, 40, 40],
+        gridStep: [0.1538, 0.1538, 0.1538],
+      };
+
+      const sphereEnt: SpatialEntity = {
+        coordinates: ['x', 'y', 'z'],
+        ast: null as any,
+        compiledFn: (x: number, y: number, z: number) => x * x + y * y + z * z - 3.013,
+        dimension: 3,
+        source: 'x^2 + y^2 + z^2 = 3.013',
+        cachedMesh: mesh,
+      };
+
+      const space: SpaceValue = {
+        type: 'space',
+        coordinates: ['x', 'y', 'z'],
+        dimension: 3,
+        entities: [sphereEnt],
+      };
+
+      const bounds: Bounds3D = { minX: -3, maxX: 3, minY: -3, maxY: 3, minZ: -3, maxZ: 3 };
+
+      const res = SpatialInspector.inspect3D(
+        space,
+        bounds,
+        300,
+        150,
+        600,
+        300,
+        {
+          angleX: Math.PI / 6,
+          angleZ: Math.PI / 4,
+          zoom3D: 1.0,
+          pan3DX: 0,
+          pan3DY: 0,
+        }
+      );
+
+      expect(res.gridResolution).toBe('40×40×40');
+
+      const trace = SpatialInspector.generateReductionTrace(sphereEnt, 1.0, 1.0, 1.0, {
+        isSnapped: true,
+        gridResolution: '40×40×40',
+        gridStep: 0.1538,
+        dimension: 3,
+      });
+
+      // Must be labeled Mesh Discretization Residual, not Residual Evaluation
+      const lastStep = trace.steps[trace.steps.length - 1];
+      expect(lastStep.label).toBe('Mesh Discretization Residual');
+      expect(lastStep.equation).toBe('f(1, 1, 1) = -0.013');
+      expect(lastStep.detail).toContain('within cell tolerance of this interpolated vertex');
+      expect(lastStep.detail).not.toContain('no geometric locus exists');
+    });
+
     it('picks 3D mesh surface points along camera ray', () => {
       const mesh: any = {
         vertices: [
@@ -229,12 +295,14 @@ describe('Spatial Inspector & 3-Layer Graph Inspection Engine', () => {
         indices: new Uint32Array(),
         bounds: null,
         sampleCount: 1,
+        resolution: [40, 40, 40],
+        gridStep: [0.15, 0.15, 0.15],
       };
 
       const ent3D: SpatialEntity = {
         coordinates: ['x', 'y', 'z'],
         ast: null as any,
-        compiledFn: (x: number, y: number, z: number) => z,
+        compiledFn: (_x: number, _y: number, z: number) => z,
         dimension: 3,
         source: 'z = 0',
         cachedMesh: mesh,
@@ -269,7 +337,7 @@ describe('Spatial Inspector & 3-Layer Graph Inspection Engine', () => {
       expect(res.hitEntities.length).toBe(1);
       expect(res.worldCoord.x).toBeDefined();
       expect(res.worldCoord.y).toBeDefined();
-      expect(res.worldCoord.z).toBeDefined();
+      expect(res.hitEntities[0].toleranceDescription).toBe('exact algebraic zero (residual = 0)');
     });
   });
 

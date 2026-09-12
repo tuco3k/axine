@@ -38,6 +38,8 @@ export interface Contour2DResult {
   bounds: Bounds2D | null;
   sampleCount: number;
   fallbackCount?: number;
+  resolution?: [number, number];
+  gridStep?: [number, number];
 }
 
 export interface TriangleMesh3D {
@@ -48,6 +50,8 @@ export interface TriangleMesh3D {
   bounds: Bounds3D | null;
   sampleCount: number;
   fallbackCount?: number;
+  resolution?: [number, number, number];
+  gridStep?: [number, number, number];
 }
 
 function normalizeRange(r: RangeInput): Range1D {
@@ -406,6 +410,8 @@ export function sample2D(
     polylines,
     bounds,
     sampleCount: nx * ny,
+    resolution: [nx, ny],
+    gridStep: [dx, dy],
   };
 }
 
@@ -878,6 +884,8 @@ export function sample3D(
     indices,
     bounds,
     sampleCount: totalSamples,
+    resolution: [nx, ny, nz],
+    gridStep: [dx, dy, dz],
   };
 }
 
