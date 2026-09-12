@@ -92,10 +92,10 @@ In context $\mathbb{C}$:
 Contexts are entered explicitly via block syntax or pragmas:
 ```axine
 # Default context is R
-x := sqrt(4)       # 2
+x = :sqrt(4)       # 2
 
 with context C {
-  z := sqrt(-4)    # 2*i
+  z = :sqrt(-4)    # 2*i
   e^(i * pi) + 1   # 0
 }
 

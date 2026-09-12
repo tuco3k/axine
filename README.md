@@ -1,36 +1,87 @@
 # Axine
-A programming language for mathematics.
-Files use the .ax extension.
 
-## Attribution
-Designed and directed by Noah Slayton (tuco3k).
-Implementation written by Google Gemini (via Antigravity).
-Architecture and code review with Anthropic's Claude.
+<p align="center">
+  <img src="public/logo.png" alt="Axine Logo" width="120" />
+</p>
 
----
+Axine is a programming language and execution environment for mathematics. It computes over exact rationals, continuous relations, and user-defined algebraic structures without external runtime dependencies.
 
-A mathematical Turing-complete notation language where you write math the way you'd write it on paper, and it executes numerically. The core language has **zero external runtime dependencies** (no math.js, nerdamer, decimal.js, Monaco/CodeMirror, or parser generators) and includes a handwritten tokenizer, Pratt precedence-climbing parser, exact rational tower backed by `BigInt`, AST normalizer/formatter, scope analyzer, Kleene 3-valued logic engine, 3D Canvas graphing engine, live 4-region Work Panel, and a 100-theorem witness corpus.
+Files use the `.ax` extension.
 
 ---
 
-## Honest Mathematical Framing
+## Examples
 
-This system does **NOT** prove the theorems in the witness corpus. It encodes each theorem as a formal **`claim`** whose computational shadow is finite and checkable.
-- Claims with a finite witness shadow (Kinds A–G) evaluate to `true` or `false`.
-- Theorems requiring infinite-dimensional manifolds, continuum topology, or undecidable reductions (Kind H, such as the Poincaré Conjecture, P vs NP, or MIP*=RE) strictly evaluate to **`unknown(not-finitely-checkable)`** and cite their human proof.
+### 1. Exact rational arithmetic
+```axine
+1/3 + 1/3 + 1/3
+```
+**Produces:** `1` (exact rational with `BigInt` numerator and denominator; no floating-point rounding error).
+
+### 2. Relation in a declared 2D space
+```axine
+{\axis x, y;
+  x^2 + y^2 = 4
+}
+```
+**Produces:** A 2D coordinate space rendering the circular level set of radius 2 via implicit sampling. The relation renders because it holds on that domain, not because of a plot command.
+
+### 3. Quantified function definition and application
+```axine
+\forall x, :f(x) = x * 3
+:f(2)
+```
+**Produces:** `6`. Multi-letter names use the `:` prefix; bare single letters are algebraic variables.
+
+### 4. Expressions standing unreduced
+```axine
+2*x + 3*y
+```
+**Produces:** `2*x + 3*y`. Expressions that cannot reduce to scalars stand as first-class expression values rather than failing or returning `NaN`.
+
+### 5. Intersecting relations in 3D space
+```axine
+{\axis x, y, z;
+  x^2 + y^2 = 1
+  z = x + y
+}
+```
+**Produces:** A 3D coordinate space containing a circular cylinder and an inclined plane. The elliptic intersection curve appears where both relations hold simultaneously.
 
 ---
 
-## Quick Start
+## Distinctive Characteristics
+
+- **Single Equality Operator (`=`)**: `=` is the only equality and binding form. Imperative assignment operators (`:=`) do not exist.
+- **Juxtaposition is Multiplication**: Bare adjacent letters denote multiplication ($xy = x \cdot y$). Multi-letter names require a colon prefix (`:sin`, `:theta`, `:vec`).
+- **Parentheses on Single Letters Multiply**: `f(x)` denotes $f \cdot x$. Function calls require a multi-letter or colon-prefixed identifier (`:f(x)`).
+- **Coordinate Spaces as Manifolds**: Declaring axes (`{\axis x, y; ...}`) creates a coordinate space. The renderer extracts zero level sets using uniform implicit sampling (Marching Squares in 2D, Marching Cubes in 3D).
+- **The Seven-Primitive Core Floor**: The core runtime implements seven primitives: exact rational arithmetic, relational comparison, syntactic substitution, bounded iteration, first-class expressions as values, ordered tuples, and structural equality. All higher mathematical functions, transcendentals, and calculus rules are written in pure Axine in standard libraries.
+
+---
+
+## Scope and Boundaries
+
+For a detailed breakdown of implemented domains, partial facilities, and out-of-scope capabilities, see [`COVERAGE.md`](./COVERAGE.md).
+
+In brief, Axine:
+- Does not perform heuristic type coercion or guess missing equations.
+- Does not perform infinite-depth symbolic integration or arbitrary multivariate polynomial ideal solving.
+- Is not an interactive theorem prover (such as Lean or Coq) with automated tactic search.
+- Reports `budget-exhausted` or returns unreduced expressions when computational fuel limits are reached.
+
+---
+
+## Install and Run
 
 ```bash
-# Install development dependencies (Vite, TypeScript, Vitest)
+# Install dependencies
 npm install
 
-# Run complete unit test suite (367+ tests across 12 files)
+# Run the test suite
 npm test
 
-# Start live interactive document editor
+# Start the interactive development server
 npm run dev
 
 # Build for production
@@ -39,180 +90,8 @@ npm run build
 
 ---
 
-## Architecture Overview
+## Attribution
 
-```
-Source Code (Continuous Document)
-    │
-    ▼
-Tokenizer (Lexer)     ──> Tokens with line/column Spans & Unicode Glyphs (π, τ, ϕ, √, Σ, Π, ∫, ∂, ≡)
-    │
-    ▼
-Pratt Parser          ──> Abstract Syntax Tree (AST) with Blocks & Scopes
-    │
-    ├────────────────────────┬────────────────────────┬────────────────────────┐
-    ▼                        ▼                        ▼                        ▼
-AST Formatter           Scope Analyzer         Kleene 3-Valued Logic    Numeric Tower & Evaluator
-(Canonical parse)       (Lexical closures)     (True / False / Unknown) (BigInt Rationals & Matrices)
-    │                        │                        │                        │
-    └────────────────────────┴────────────────────────┴────────────────────────┘
-                                     │
-                                     ▼
-                Dimensionality Inference & 3D Canvas Engine
-                (2D Curves, Surfaces, Heatmaps, Orbits, Pan, Dolly, Occlusion)
-                                     │
-                                     ▼
-                Live Work Panel (Results, Scope, Trace & Fuel, Frames)
-```
-
----
-
-## Two Execution Modes
-
-1. **Ambient Mode**:
-   - Live per-line evaluation as you type.
-   - Budget: 250 ms / 2,000,000 steps.
-   - Cancels immediately on keystroke. Runs in the ambient worker pool.
-2. **Invoked Mode**:
-   - Explicit execution of `{ ... }` blocks or full document via `▶ Run All`.
-   - User-chosen budget: `250ms`, `1s`, `10s`, `1min`, `10min`, `unbounded`.
-   - Runs in an independent worker thread. Ambient typing never interrupts an invoked run.
-   - Immediate worker cancellation in $<100$ ms via `worker.terminate()`.
-
----
-
-## Core Language Features
-
-- **Exact Rational Tower**: `BigFraction` with Euclidean GCD reduction. Evaluates $1/3 + 1/3 + 1/3 = 1$ without float drift.
-- **Kleene 3-Valued Logic**: Exact Kleene truth tables for `not`, `and`, and `or` with verified short-circuiting (`false and <infinite-loop> -> false`, `true or <infinite-loop> -> true`).
-- **Lexical Scopes & Blocks**: `{ x := 5; y := 10; x + y }` with private local bindings, `:≡` / `:==` global export, and mutual recursion.
-- **Turing Universality**:
-  - 3-state 2-symbol Busy Beaver $BB(3)$ producing 6 ones in finite steps.
-  - Rule 110 Cellular Automaton 1D simulation.
-  - Pure Untyped $\lambda$-Calculus with Church arithmetic ($3 \times 4 = 12$) and the $Y$-combinator.
-- **Mathematical Notation**:
-  - Stacked fractions `a // b` vs inline `a / b`.
-  - Differentials `d//dx (x^3)`, `d//dx f(x)`, and $\partial//\partial x$.
-  - First-class algebraic derivations `isolate(equation, for: x)` with branch tracking and solution-set self-verification.
-  - Multi-method root finding `solve(f, near: x0)` and inline `solve(expr, for: x, near: x0)`.
-  - Big operators $\Sigma(i \text{ in } 1..n, \text{expr})$, $\Pi(i \text{ in } 1..n, \text{expr})$, $\int(x \text{ in } a..b, \text{expr})$.
-  - Matrix linear algebra: creation `matrix([[1, 2], [3, 4]])`, determinant `det(A)`, inverse `inverse(A)`, trace, transpose, rank, and eigenvalues.
-- **3D Canvas Visualization**:
-  - Real-time Orbit (mouse drag), Pan (Shift+drag), Dolly/Zoom (mouse wheel), and Reset (double-click).
-  - Depth-sorted Painter's algorithm with recursive quad subdivision for mutual occlusion.
-  - Dimmed occluded axes and bounding box rendering.
-
----
-
-## Documentation
-
-- **[`CORPUS.md`](./CORPUS.md)**: Classification of all 100 witness theorems (Kinds A–H) and computational shadows.
-- **[`GRAMMAR.md`](./GRAMMAR.md)**: Formal EBNF grammar, precedence hierarchy, ambiguity resolution table, and Kleene truth tables.
----
-
-## Spatial Manifolds & Coordinate Blocks (`{\axis ...}`)
-
-Axine renders geometry exclusively through pure mathematical relations inside coordinate blocks:
-
-1. **Declared Coordinate Axes (`{\axis :x, :y; ...}`)**:
-   - Declaring coordinate axes forms a geometric manifold space.
-   - Relations such as `:y = :sin(:x)` or `:x^2 + :y^2 = 4` are sampled by the interval constraint solver and rendered into interactive 2D curve and contour viewports.
-2. **3D Surfaces & Manifolds (`{\axis :x, :y, :z; ...}`)**:
-   - Declaring three axes forms a 3D spatial viewport with depth-sorted polygon rasterization, orbit, pan, and zoom.
-   - Surfaces with shared coordinate axes automatically composite into a unified coordinate frame.
-3. **No Procedural Plotting Calls**:
-   - There are no `graph()` or `plot()` builtins in Axine. Relations stand directly as mathematical truths within their declared coordinate spaces.
-
----
-
-## Error Diagnostic System
-
-Every syntax, lexical, or runtime error provides:
-1. Precise source span with line, column, and `^^^^` underline in the code snippet.
-2. Description of what was expected.
-3. Actionable suggestion for correction.
-4. Guaranteed zero unhandled exceptions, `NaN`, `undefined`, or stack traces leaking to the UI.
-
-
----
-
-## Bounded Step-by-Step Algebraic Solving (`isolate`) & Convergence Trace
-
-### 1. Honest Scope & Boundaries — Not a General CAS
-This language is **NOT** a general Computer Algebra System (CAS). Algebraic solving is bounded and strictly enforced by an AST classifier before derivation begins. Unsupported forms immediately return `unknown(requires-unavailable-theory, ...)` naming the limitation and suggesting numeric `solve(f, near: x0)` rather than attempting unreliable partial derivations.
-
-```
-isolate(equation, for: x)
-```
-
-#### Supported Equation Classes ONLY:
-- **`LINEAR`**: $ax + b = c$, including forms requiring expansion/distribution ($2(x - 3) = 4x + 1 \implies x = -7/2$), term collection, identity detection ($2(x+1) = 2x+2 \implies$ all real $x$), and contradiction detection ($5x = 5x+1 \implies$ no solution).
-- **`QUADRATIC`**: $ax^2 + bx + c = 0$ via factoring into $(x - r_1)(x - r_2) = 0$ when integer roots exist ($x^2 - 5x + 6 = 0 \implies x \in \{2, 3\}$), completing the square ($x^2 - 2 = 0 \implies x = \pm\sqrt{2}$), or quadratic formula. Discriminants $D < 0$ return `unknown(requires-unavailable-theory)` naming complex numbers.
-- **`PROPORTION`**: $A/B = C/D$, cross-multiplying and recording domain non-zero side conditions ($(x+1)/3 = 4/2 \implies x = 5$ with $3 \neq 0$).
-- **`POWER`**: $x^n = k$ for integer $n$, producing all real roots (e.g. $x^2 = 9 \implies x \in \{-3, 3\}$; $x^3 = 27 \implies x = 3$).
-
-#### Explicitly Out of Scope (Rejected by Classifier):
-- Cubics and higher polynomials ($x^3 - 6x^2 + 11x - 6 = 0 \rightarrow$ `unknown`, suggests `solve()`)
-- Multi-variable systems of equations
-- Symbolic function applications ($\sin x = 1/2 \rightarrow$ `unknown`, suggests `solve()`)
-- Absolute values, inequalities, non-power radicals
-- Rational equations with variable in multiple denominators ($x/(x+1) + x/(x-1) = 2 \rightarrow$ `unknown`)
-
-### 2. Derivation Structure & Mandatory Self-Verification
-Derivation results are first-class objects containing a sequence of transformation steps:
-- **Rule Enum**: `distribute`, `collect`, `add-both-sides`, `subtract-both-sides`, `multiply-both-sides`, `divide-both-sides`, `cross-multiply`, `factor`, `complete-square`, `quadratic-formula`, `take-root`.
-- **Justification**: Clear plain-English description of the algebraic rule applied.
-- **Side Conditions**: Explicitly recorded whenever dividing or taking roots (e.g., non-zero divisor, domain restrictions).
-
-**Self-Verification**:
-Every derivation is verified before display:
-1. Claimed roots are substituted back into the original AST ($|LHS - RHS| < 10^{-12}$ or exact rational equality).
-2. Consecutive step pairs $(S_k, S_{k+1})$ are tested for algebraic equivalence across 20 sampled numeric points.
-If any check fails, the derivation is discarded and evaluates to `unknown(no-convergence, "derivation failed self-verification")`.
-
-### 3. Numeric Solve Convergence Trace
-```
-solve(f, near: x0, trace: true)
-solve(expr, x in a..b, trace: true)
-```
-Returns structured iteration telemetry including iteration index $n$, approximation $x_n$, function value $f(x_n)$, and residual error $|f(x_n)|$ or bracket width.
-
-## Document Export & Publication Engine
-
-Axine provides full standalone HTML, PDF print view, and Markdown export capabilities designed for publication and textbook-grade document output.
-
-### 1. Typesetting Rules: Mathematics vs Procedure Code
-To maintain visual clarity, the export engine and print view distinguish between mathematical statements and procedure instructions:
-- **Mathematical Formulations**: Mathematical relations (`=`), expressions, quantifiers (`\forall`, `\exists`), algebraic operations, and evaluations are mathematically typeset with italic variables, roman numbers, TeX operator spacing, raised superscripts, and clean typography.
-- **Identifiers with Underscores**: Multi-letter identifiers (e.g. `:y_pos`, `:ball_at_2`, `:spring_force`, `:traj_euler`) retain underscores as legal identifier characters and are not converted into subscripts.
-- **Inline Fractions in Print/Export**: While on-screen layout renders stacked fraction bars (`a // b`), export and print views render fractions inline as `a/b` (e.g. `52/5`) to prevent vertical layout instability and page splits.
-- **Declarative Instructions**: Module declarations and imports (`\import "..."`, `\module ...`) remain in clean code typography.
-
-### 2. Derivations and Step-by-Step Traces in Export
-Every step-by-step derivation is a first-class value. In HTML and PDF exports:
-- Derivations (`isolate`, `simplify`, `d//dx`, `check`) are expanded in full by default, including:
-  1. The original equation or formula.
-  2. Each derivation step with its rule badge in the margin, transformed expression, and plain-English justification.
-  3. Side conditions indented under the step that introduced them.
-  4. Branch forks rendered as side-by-side branch columns with branch conditions, inner steps, and branch roots.
-  5. Final roots and solution set.
-- **Collapsed Steps Configuration**: To export results only without step trees, add the following YAML frontmatter:
-  ```yaml
-  ---
-  steps: collapsed
-  ---
-  ```
-
-### 3. Standalone HTML & PDF Export Policy
-- **Primary Artifact**: Standalone, self-contained HTML (`.html`) with embedded vector SVG plots, CSS stylesheets, and zero external network dependencies.
-- **PDF Export via Browser Print**: PDF generation uses the browser's high-fidelity print engine (`@media print` rules configured with `@page { size: letter; margin: 0.75in; }`).
-  *Browser Header Note*: Chrome and Safari print dialogs inject URL, page number, and date headers by default. To produce clean, header-free PDFs, uncheck **"Headers and footers"** in your browser's print dialog.
-
----
-
-## Known Boundaries & Implementation Notes
-
-- Transcendentals on exact rationals produce high-precision IEEE 754 floating point numbers rather than arbitrary-precision algebraic numbers.
-- 3D surfaces are rendered using depth-sorted isometric/perspective polygon rasterization on HTML5 Canvas.
-
-
+Designed and directed by Noah Slayton (tuco3k).  
+Implementation written by Google Gemini (via Antigravity).  
+Architecture and code review with Anthropic's Claude.
