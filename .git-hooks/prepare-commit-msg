@@ -1,0 +1,5 @@
+#!/bin/sh
+grep -q "Co-authored-by" "$1" || cat >> "$1" << 'TRAILER'
+
+Co-authored-by: Gemini (Antigravity) <antigravity@google.com>
+TRAILER
