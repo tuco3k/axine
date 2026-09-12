@@ -127,3 +127,8 @@ is done.
 
 Rendering is last because the earlier phases change what there is to
 render. A usable tool is the goal, not the milestone.
+
+## Voice
+Read VOICE.md before writing any user-facing text: labels, errors,
+menu items, panel headers, documentation, or comments in shipped .ax
+files.
