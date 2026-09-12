@@ -1603,6 +1603,11 @@ html, body {
   width: 100% !important;
   height: 100% !important;
   display: block;
+  cursor: default;
+}
+
+.space-viewport-container.captured .space-viewport-canvas,
+.space-viewport-container.focused .space-viewport-canvas {
   cursor: crosshair;
 }
 

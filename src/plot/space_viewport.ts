@@ -63,17 +63,18 @@ export class SpaceViewport {
   private reticlePos: { x: number; y?: number; z?: number } | null = null;
   private showReticle: boolean = false;
 
-  // Interactivity & Pointer Lock State
+  // Interactivity, Capture & Pointer Lock State
+  public isCaptured: boolean = false;
   private isFocused: boolean = false;
   private isFullscreen: boolean = false;
   private isDragging: boolean = false;
   private isPanning3D: boolean = false;
   private lastMouseX: number = 0;
   private lastMouseY: number = 0;
-  private isShiftHeld: boolean = false;
+  public isShiftHeld: boolean = false;
   private discardNextMouseDelta: boolean = false;
   private isPointerLocked: boolean = false;
-  private isCameraFrozen: boolean = false;
+  public isCameraFrozen: boolean = false;
 
   // Continuous Flight & Physics State (governed by STOP_RAMP_MS)
   private pressedKeys: Set<string> = new Set();
@@ -154,7 +155,12 @@ export class SpaceViewport {
 
     this.buildUI();
 
-    this.canvas = typeof document !== 'undefined' ? document.createElement('canvas') : ({} as any);
+    this.canvas = typeof document !== 'undefined' ? document.createElement('canvas') : ({
+      classList: { add: () => {}, remove: () => {}, contains: () => false },
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 600, height: 300 }),
+    } as any);
     if (this.canvas.className !== undefined) {
       this.canvas.className = 'space-viewport-canvas doc-inline-canvas';
     }
@@ -623,13 +629,14 @@ export class SpaceViewport {
   };
 
   private setupEvents(): void {
-    // Focus management
+    // Focus & Capture management
     const hudEl = this.container.querySelector('.space-flight-hud') as HTMLElement;
     const focusHandler = () => {
-      if (!this.isFocused) {
+      if (!this.isCaptured) {
+        this.isCaptured = true;
         this.isFocused = true;
         this.container.focus?.();
-        this.container.classList?.add('focused');
+        this.container.classList?.add('focused', 'captured');
         this.updateHUD(hudEl);
         hudEl?.classList.remove('hidden');
         if (this.options.onFocusChange) this.options.onFocusChange(true);
@@ -646,15 +653,16 @@ export class SpaceViewport {
     });
 
     const blurHandler = () => {
-      if (this.isFocused) {
+      if (this.isCaptured || this.isFocused) {
+        this.isCaptured = false;
         this.isFocused = false;
         this.isShiftHeld = false;
         this.isCameraFrozen = false;
-        this.canvas.classList.remove('shift-cursor');
+        this.canvas.classList?.remove('shift-cursor');
         if (typeof document !== 'undefined' && document.pointerLockElement === this.canvas) {
           document.exitPointerLock?.();
         }
-        this.container.classList?.remove('focused');
+        this.container.classList?.remove('focused', 'captured');
         this.pressedKeys.clear();
         this.stopAnimationLoop();
         hudEl?.classList.add('hidden');
@@ -677,7 +685,7 @@ export class SpaceViewport {
     const flightKeys = ['w', 'a', 's', 'd', 'W', 'A', 'S', 'D', '+', '-', '=', '_'];
 
     const keydownHandler = (e: KeyboardEvent) => {
-      if (!this.isFocused) return;
+      if (!this.isCaptured) return;
 
       // Shift key: release pointer lock and show free cursor with frozen camera
       if (e.key === 'Shift') {
@@ -687,7 +695,7 @@ export class SpaceViewport {
           if (typeof document !== 'undefined' && document.pointerLockElement === this.canvas) {
             document.exitPointerLock?.();
           }
-          this.canvas.classList.add('shift-cursor');
+          this.canvas.classList?.add('shift-cursor');
           this.updateHUD();
         }
         return;
@@ -698,17 +706,25 @@ export class SpaceViewport {
         e.stopPropagation?.();
         if (this.inspectorPanelEl) {
           this.closeInspection();
-          return;
         }
         if (typeof document !== 'undefined' && document.pointerLockElement === this.canvas) {
           document.exitPointerLock?.();
         }
         if (this.isFullscreen) {
           this.toggleFullscreen();
-        } else {
-          this.container.blur?.();
-          blurHandler();
         }
+        this.isCaptured = false;
+        this.isFocused = false;
+        this.isShiftHeld = false;
+        this.isCameraFrozen = false;
+        this.canvas.classList?.remove('shift-cursor');
+        this.container.classList?.remove('focused', 'captured');
+        this.pressedKeys.clear();
+        this.stopAnimationLoop();
+        hudEl?.classList.add('hidden');
+        this.container.blur?.();
+        if (this.options.onFocusChange) this.options.onFocusChange(false);
+        this.render();
         return;
       }
 
@@ -806,8 +822,8 @@ export class SpaceViewport {
       if (e.key === 'Shift') {
         this.isShiftHeld = false;
         this.isCameraFrozen = false;
-        this.canvas.classList.remove('shift-cursor');
-        if (this.isFocused && this.viewMode === '3d') {
+        this.canvas.classList?.remove('shift-cursor');
+        if (this.isCaptured && this.viewMode === '3d') {
           this.discardNextMouseDelta = true; // Discard first frame mouse delta after re-lock
           try {
             this.canvas.requestPointerLock?.();
@@ -826,7 +842,7 @@ export class SpaceViewport {
     this.container.addEventListener?.('keyup', keyupHandler as any);
 
     const globalKeydown = (e: KeyboardEvent) => {
-      if (!this.isFocused) return;
+      if (!this.isCaptured) return;
       if (
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement ||
@@ -837,7 +853,7 @@ export class SpaceViewport {
       keydownHandler(e);
     };
     const globalKeyup = (e: KeyboardEvent) => {
-      if (!this.isFocused) return;
+      if (!this.isCaptured) return;
       keyupHandler(e);
     };
     if (typeof window !== 'undefined') {
@@ -849,12 +865,12 @@ export class SpaceViewport {
     let mouseDownPos = { x: 0, y: 0 };
     const mousedownHandler = (e: MouseEvent) => {
       if (e.target !== this.canvas) return;
+      focusHandler();
       this.isDragging = true;
       this.isPanning3D = e.button === 2;
       this.lastMouseX = e.clientX;
       this.lastMouseY = e.clientY;
       mouseDownPos = { x: e.clientX, y: e.clientY };
-      focusHandler();
 
       if (!this.isShiftHeld && this.viewMode === '3d' && e.button === 0) {
         try {
@@ -865,6 +881,11 @@ export class SpaceViewport {
     this.canvas.addEventListener?.('mousedown', mousedownHandler as any);
 
     const mousemoveHandler = (e: MouseEvent) => {
+      // If not captured, hovering does nothing
+      if (!this.isCaptured) {
+        return;
+      }
+
       // If Shift is held, camera is frozen (free cursor)
       if (this.isShiftHeld) {
         return;
@@ -969,7 +990,20 @@ export class SpaceViewport {
 
     // Mouse wheel zoom for 1D, 2D, 3D
     const wheelHandler = (e: WheelEvent) => {
+      // Viewport Capture Rule:
+      // A space is inert until clicked. Hovering does nothing — the page scrolls past normally.
+      // - If not captured:
+      //   - hover without Shift: do nothing, let event bubble so stream / page scrolls.
+      //   - hover + Shift + wheel: zooms that space, page does NOT scroll ("A quick look without committing").
+      // - If captured:
+      //   - wheel zooms that space, page does NOT scroll.
+      const isShift = e.shiftKey || this.isShiftHeld;
+      if (!this.isCaptured && !isShift) {
+        return;
+      }
+
       e.preventDefault?.();
+      e.stopPropagation?.();
       const factor = e.deltaY > 0 ? 1.1 : 0.9;
       if (this.viewMode === '3d') {
         this.zoom3D = Math.max(0.2, Math.min(5.0, this.zoom3D * (e.deltaY > 0 ? 0.9 : 1.1)));
@@ -1079,6 +1113,40 @@ export class SpaceViewport {
       this.inspectorPanelEl = null;
     }
     this.container.focus?.();
+    this.render();
+  }
+
+  public getIsCaptured(): boolean {
+    return this.isCaptured;
+  }
+
+  public capture(): void {
+    this.isCaptured = true;
+    this.isFocused = true;
+    this.container.focus?.();
+    this.container.classList?.add('focused', 'captured');
+    const hudEl = this.container.querySelector('.space-flight-hud') as HTMLElement;
+    this.updateHUD(hudEl);
+    hudEl?.classList.remove('hidden');
+    if (this.options.onFocusChange) this.options.onFocusChange(true);
+  }
+
+  public releaseCapture(): void {
+    this.isCaptured = false;
+    this.isFocused = false;
+    this.isShiftHeld = false;
+    this.isCameraFrozen = false;
+    this.canvas.classList?.remove('shift-cursor');
+    if (typeof document !== 'undefined' && document.pointerLockElement === this.canvas) {
+      document.exitPointerLock?.();
+    }
+    this.container.classList?.remove('focused', 'captured');
+    this.pressedKeys.clear();
+    this.stopAnimationLoop();
+    const hudEl = this.container.querySelector('.space-flight-hud') as HTMLElement;
+    hudEl?.classList.add('hidden');
+    this.container.blur?.();
+    if (this.options.onFocusChange) this.options.onFocusChange(false);
     this.render();
   }
 

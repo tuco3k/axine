@@ -325,5 +325,131 @@ describe('Spatial Inspector & 3-Layer Graph Inspection Engine', () => {
       vp.closeInspection();
       expect(vp.getInspectionResult()).not.toBeNull(); // Selection retained
     });
+
+    it('enforces viewport capture rule: inert until clicked, shift-wheel quick look, click capture, escape release', async () => {
+      const { SpaceViewport } = await import('../plot/space_viewport');
+      const containerListeners: Record<string, Function[]> = {};
+      const canvasListeners: Record<string, Function[]> = {};
+
+      const container: any = {
+        innerHTML: '',
+        className: '',
+        appendChild: () => {},
+        querySelector: () => null,
+        addEventListener: (event: string, fn: Function) => {
+          if (!containerListeners[event]) containerListeners[event] = [];
+          containerListeners[event].push(fn);
+        },
+        removeEventListener: (event: string, fn: Function) => {
+          if (containerListeners[event]) {
+            containerListeners[event] = containerListeners[event].filter(f => f !== fn);
+          }
+        },
+        classList: {
+          add: () => {},
+          remove: () => {},
+          contains: () => false,
+        },
+        focus: () => {},
+        blur: () => {},
+      };
+
+      const ent: SpatialEntity = {
+        coordinates: ['x', 'y'],
+        ast: null as any,
+        compiledFn: (x: number, y: number) => y - x,
+        dimension: 2,
+        source: 'y = x',
+      };
+
+      const space: SpaceValue = {
+        type: 'space',
+        coordinates: ['x', 'y'],
+        dimension: 2,
+        entities: [ent],
+        coordinateBounds: { x: [-5, 5], y: [-5, 5] },
+      };
+
+      const vp = new SpaceViewport(container, space);
+
+      // Track canvas listeners
+      const origCanvasAdd = (vp as any).canvas.addEventListener;
+      (vp as any).canvas.addEventListener = (event: string, fn: Function, opts?: any) => {
+        if (!canvasListeners[event]) canvasListeners[event] = [];
+        canvasListeners[event].push(fn);
+        if (origCanvasAdd) origCanvasAdd.call((vp as any).canvas, event, fn, opts);
+      };
+
+      // Re-setup events to capture listeners
+      (vp as any).setupEvents();
+
+      // 1. Initially inert
+      expect(vp.getIsCaptured()).toBe(false);
+
+      const boundsBefore = { ...vp.getCameraState().bounds2D };
+
+      // 2. Wheel event without Shift when inert -> ignored (does not prevent default, bounds untouched)
+      let unshiftedPrevented = false;
+      const unshiftedWheelEvent: any = {
+        deltaY: 100,
+        shiftKey: false,
+        preventDefault: () => { unshiftedPrevented = true; },
+        stopPropagation: () => {},
+      };
+      if (canvasListeners['wheel']) {
+        canvasListeners['wheel'].forEach(fn => fn(unshiftedWheelEvent));
+      }
+      expect(unshiftedPrevented).toBe(false);
+      expect(vp.getCameraState().bounds2D.minX).toBeCloseTo(boundsBefore.minX, 5);
+      expect(vp.getCameraState().bounds2D.maxX).toBeCloseTo(boundsBefore.maxX, 5);
+      expect(vp.getIsCaptured()).toBe(false);
+
+      // 3. Shift + Wheel when inert -> zooms that space and prevents default ("quick look without committing")
+      let shiftWheelPrevented = false;
+      const shiftWheelEvent: any = {
+        deltaY: 100,
+        shiftKey: true,
+        preventDefault: () => { shiftWheelPrevented = true; },
+        stopPropagation: () => {},
+      };
+      if (canvasListeners['wheel']) {
+        canvasListeners['wheel'].forEach(fn => fn(shiftWheelEvent));
+      }
+      expect(shiftWheelPrevented).toBe(true);
+      // Zoom factor 1.1 expands bounds
+      expect(vp.getCameraState().bounds2D.maxX - vp.getCameraState().bounds2D.minX).toBeGreaterThan(
+        boundsBefore.maxX - boundsBefore.minX
+      );
+      // Still uncaptured
+      expect(vp.getIsCaptured()).toBe(false);
+
+      // 4. Click captures the space
+      vp.capture();
+      expect(vp.getIsCaptured()).toBe(true);
+
+      // 5. Wheel when captured -> zooms and prevents default (even without Shift)
+      let capturedWheelPrevented = false;
+      const capturedWheelEvent: any = {
+        deltaY: -100,
+        shiftKey: false,
+        preventDefault: () => { capturedWheelPrevented = true; },
+        stopPropagation: () => {},
+      };
+      if (canvasListeners['wheel']) {
+        canvasListeners['wheel'].forEach(fn => fn(capturedWheelEvent));
+      }
+      expect(capturedWheelPrevented).toBe(true);
+
+      // 6. Escape releases capture entirely
+      const escapeEvent: any = {
+        key: 'Escape',
+        preventDefault: () => {},
+        stopPropagation: () => {},
+      };
+      if (containerListeners['keydown']) {
+        containerListeners['keydown'].forEach(fn => fn(escapeEvent));
+      }
+      expect(vp.getIsCaptured()).toBe(false);
+    });
   });
 });
