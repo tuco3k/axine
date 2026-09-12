@@ -854,9 +854,13 @@ export interface SpatialEntity {
   coordinates: string[];
   ast: ASTNode;
   compiledFn: (...coords: number[]) => number;
+  compiledCode?: string;
   dimension: number;
   source?: string;
   color?: string;
+  cachedContours?: any;
+  cachedMesh?: any;
+  cachedRoots1D?: number[];
 }
 
 export interface SliceSelector {
@@ -870,12 +874,15 @@ export interface SpaceValue {
   dimension: number;
   declaredAxes?: string[];
   entities: SpatialEntity[];
+  primitives?: DrawingPrimitiveValue[];
   nestedSpaces?: SpaceValue[];
   bindings?: Record<string, Value>;
   resultVal?: Value;
   coordinateBounds?: Record<string, [number, number]>;
   timeVariable?: string;
   span?: Span;
+  extent2D?: { minX: number; maxX: number; minY: number; maxY: number };
+  extent3D?: { minX: number; maxX: number; minY: number; maxY: number; minZ: number; maxZ: number };
 }
 
 export type StepRule =

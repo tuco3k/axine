@@ -1,11 +1,33 @@
 # Mathematical IDE Design System Specification
 
-## 1. Philosophical Foundations & Principles
+## 1. Visual Identity & Brand Foundations
 
-The visual design system of this Mathematical IDE is constructed around three core tenets:
-1. **The mathematical document is the brightest object on screen**: All application chrome (toolbars, borders, tabs, gutter cards) recedes into neutral warm tones so the user's algebraic notation and visualizations command primary focus.
-2. **Color carries semantic truth, never decoration**: Color is strictly rationed to four operational states with immutable meanings (`verified`, `unknown`, `error`, `stale`). No arbitrary rainbow palette or template gradients.
-3. **Typography establishes mathematical credibility**: Mathematical notation is rendered in a dedicated serif face with proper italicization of variables, lining figures for numbers, upright function names, and TeXbook spacing around operators and relation anchors.
+The Axine visual identity is derived directly from the settled brand mark: a deep navy letterform `A` transitioning into a topological wave spiral, coupled with a dark charcoal `X` and vibrant warm particle shapes (amber, orange, coral, teal, sage green) within the vortex.
+
+### 1.1 Core Principles
+1. **The mathematical document is the brightest object on screen**: All application chrome (toolbars, borders, tabs, gutter cards) recedes into warm neutral tones so the user's algebraic notation and visualizations command primary focus.
+2. **Color carries semantic truth, never decoration**: Color in the interface chrome is strictly rationed to a single focused accent and four operational semantic states with immutable meanings (`verified`, `unknown`, `error`, `stale`). No arbitrary rainbow palette or template gradients.
+3. **Navy is Brand-Only**: The deep navy tone (`#164e87`) belongs strictly to the brand mark (the header logo and favicon). It is never used in interface chrome, panel backgrounds, borders, or accents.
+4. **Typography establishes mathematical credibility**: Mathematical notation is rendered in a dedicated serif face with proper italicization of variables, lining figures for numbers, upright function names, and TeXbook spacing around operators and relation anchors.
+
+### 1.2 Brand Assets
+- **Header Mark & Favicon**: Currently deployed as transparent, anti-aliased high-resolution raster assets (`public/logo-dark.png`, `public/logo-light.png`, `public/favicon.ico`, `public/favicon.png`).
+- **Future Vector Conversion Note**: A flat, precision SVG vector trace of the mark is planned and wanted eventually to replace raster assets.
+
+### 1.3 The Single Focused Accent: Amber
+Axine selects **Amber** (`#f59e0b` in dark mode, `#92400e` in light mode) from the mark's warm particle spectrum as its sole interface accent:
+- **Natural Warm Neutral Harmony**: Harmonizes natively with the warm dark neutral (`#181716`) and warm paper (`#faf9f5`) ground foundations.
+- **Superior Legibility & Luminance Balance**: Amber achieves high WCAG contrast (**8.34 : 1** dark, **6.73 : 1** light) while avoiding excessive luminance that would compete with primary mathematical notation (`#f5f4f0`).
+- **Chromatic State Separation**: Choosing Amber avoids visual collision with Semantic Verified green (`#4ade80`), keeping state indicators unambiguous.
+
+### 1.4 Reserved Library Origin Hues
+The remaining particle hues from the logo mark are explicitly held in reserve for per-module AST provenance tracking in future multi-library expressions:
+- **Orange** (`#ea580c`)
+- **Coral** (`#e11d48`)
+- **Teal** (`#0d9488`)
+- **Sage Green** (`#16a34a`)
+
+When an expression aggregates terms from disparate imported libraries or domain models, these reserved hues serve as subtle origin indicators without invading interface chrome.
 
 ---
 
@@ -15,7 +37,7 @@ All colors, typographic scales, spacing units, border radii, and animation durat
 
 ### 2.1 Color Palettes & Themes
 
-#### Dark Theme (Warm Neutral Foundation)
+#### Dark Theme (Warm Neutral Foundation — Default)
 - **Base Background**: `#181716` (Warm dark neutral)
 - **Surface / Panel Background**: `#22201e`
 - **Surface Elevated / Hover**: `#2c2927` / `#35322f`
@@ -23,17 +45,19 @@ All colors, typographic scales, spacing units, border radii, and animation durat
 - **Document Text (Primary)**: `#f5f4f0`
 - **Secondary / Chrome Text**: `#a8a39d`
 - **Tertiary / Guides / Line Numbers**: `#8c867e`
-- **Focused Accent**: `#2dd4bf` (Teal-400)
+- **Focused Accent**: `#f59e0b` (Warm Amber-500)
+- **Accent Subtle / Border**: `rgba(245, 158, 11, 0.12)` / `rgba(245, 158, 11, 0.35)`
 
-#### Light Theme (Warm Paper Foundation)
+#### Light Theme (Designed Warm Paper Foundation)
 - **Base Background**: `#faf9f5` (Warm cream/paper)
 - **Surface / Panel Background**: `#f0eee6`
 - **Surface Elevated / Hover**: `#e6e3d8` / `#dedad0`
 - **Borders & Dividers**: `#d4cfc1` (subtle: `#e5e2d6`, strong: `#aba494`)
 - **Document Text (Primary)**: `#1c1917`
 - **Secondary / Chrome Text**: `#57534e`
-- **Tertiary / Guides / Line Numbers**: `#78716c`
-- **Focused Accent**: `#0f766e` (Teal-700)
+- **Tertiary / Guides / Line Numbers**: `#706a64`
+- **Focused Accent**: `#92400e` (Deep Amber-800)
+- **Accent Subtle / Border**: `rgba(146, 64, 14, 0.08)` / `rgba(146, 64, 14, 0.3)`
 
 ---
 
@@ -53,28 +77,32 @@ All colors, typographic scales, spacing units, border radii, and animation durat
 All foreground/background pairings have been rigorously tested against WCAG 2.1 standards:
 
 ### Dark Theme Ratios
-- **Primary Text (`#f5f4f0`) on Base (`#181716`)**: **16.4 : 1** (Passes AAA)
-- **Primary Text (`#f5f4f0`) on Surface (`#22201e`)**: **14.8 : 1** (Passes AAA)
-- **Secondary Text (`#a8a39d`) on Base (`#181716`)**: **7.2 : 1** (Passes AAA)
-- **Secondary Text (`#a8a39d`) on Surface (`#22201e`)**: **6.5 : 1** (Passes AA)
-- **Tertiary Text (`#8c867e`) on Base (`#181716`)**: **5.1 : 1** (Passes AA)
-- **Accent Focus (`#2dd4bf`) on Base (`#181716`)**: **10.2 : 1** (Passes AAA)
-- **Semantic Verified (`#4ade80`) on Base (`#181716`)**: **11.4 : 1** (Passes AAA)
-- **Semantic Unknown (`#fbbf24`) on Base (`#181716`)**: **11.0 : 1** (Passes AAA)
-- **Semantic Error (`#f87171`) on Base (`#181716`)**: **6.55 : 1** (Passes AA)
-- **Semantic Stale (`#9ca3af`) on Base (`#181716`)**: **7.2 : 1** (Passes AAA)
+- **Primary Text (`#f5f4f0`) on Base (`#181716`)**: **16.27 : 1** (Passes AAA)
+- **Primary Text (`#f5f4f0`) on Surface (`#22201e`)**: **14.75 : 1** (Passes AAA)
+- **Secondary Text (`#a8a39d`) on Base (`#181716`)**: **7.15 : 1** (Passes AAA)
+- **Secondary Text (`#a8a39d`) on Surface (`#22201e`)**: **6.49 : 1** (Passes AA)
+- **Tertiary Text (`#8c867e`) on Base (`#181716`)**: **4.97 : 1** (Passes AA)
+- **Tertiary Text (`#8c867e`) on Surface (`#22201e`)**: **4.50 : 1** (Passes AA)
+- **Accent Focus (`#f59e0b`) on Base (`#181716`)**: **8.34 : 1** (Passes AAA)
+- **Accent Focus (`#f59e0b`) on Surface (`#22201e`)**: **7.56 : 1** (Passes AAA)
+- **Semantic Verified (`#4ade80`) on Base (`#181716`)**: **10.27 : 1** (Passes AAA)
+- **Semantic Unknown (`#fbbf24`) on Base (`#181716`)**: **10.72 : 1** (Passes AAA)
+- **Semantic Error (`#f87171`) on Base (`#181716`)**: **6.47 : 1** (Passes AA)
+- **Semantic Stale (`#9ca3af`) on Base (`#181716`)**: **7.05 : 1** (Passes AAA)
 
 ### Light Theme Ratios
-- **Primary Text (`#1c1917`) on Base (`#faf9f5`)**: **17.0 : 1** (Passes AAA)
-- **Primary Text (`#1c1917`) on Surface (`#f0eee6`)**: **15.4 : 1** (Passes AAA)
-- **Secondary Text (`#57534e`) on Base (`#faf9f5`)**: **7.2 : 1** (Passes AAA)
-- **Secondary Text (`#57534e`) on Surface (`#f0eee6`)**: **6.5 : 1** (Passes AA)
-- **Tertiary Text (`#78716c`) on Base (`#faf9f5`)**: **5.1 : 1** (Passes AA)
-- **Accent Focus (`#0f766e`) on Base (`#faf9f5`)**: **5.14 : 1** (Passes AA)
-- **Semantic Verified (`#15803d`) on Base (`#faf9f5`)**: **4.55 : 1** (Passes AA)
-- **Semantic Unknown (`#b45309`) on Base (`#faf9f5`)**: **4.88 : 1** (Passes AA)
-- **Semantic Error (`#b91c1c`) on Base (`#faf9f5`)**: **6.77 : 1** (Passes AA)
-- **Semantic Stale (`#57534e`) on Base (`#faf9f5`)**: **7.2 : 1** (Passes AAA)
+- **Primary Text (`#1c1917`) on Base (`#faf9f5`)**: **16.60 : 1** (Passes AAA)
+- **Primary Text (`#1c1917`) on Surface (`#f0eee6`)**: **15.05 : 1** (Passes AAA)
+- **Secondary Text (`#57534e`) on Base (`#faf9f5`)**: **7.24 : 1** (Passes AAA)
+- **Secondary Text (`#57534e`) on Surface (`#f0eee6`)**: **6.57 : 1** (Passes AA)
+- **Tertiary Text (`#706a64`) on Base (`#faf9f5`)**: **5.07 : 1** (Passes AA)
+- **Tertiary Text (`#706a64`) on Surface (`#f0eee6`)**: **4.59 : 1** (Passes AA)
+- **Accent Focus (`#92400e`) on Base (`#faf9f5`)**: **6.73 : 1** (Passes AA)
+- **Accent Focus (`#92400e`) on Surface (`#f0eee6`)**: **6.10 : 1** (Passes AA)
+- **Semantic Verified (`#15803d`) on Base (`#faf9f5`)**: **4.76 : 1** (Passes AA)
+- **Semantic Unknown (`#b45309`) on Base (`#faf9f5`)**: **4.77 : 1** (Passes AA)
+- **Semantic Error (`#b91c1c`) on Base (`#faf9f5`)**: **6.14 : 1** (Passes AA)
+- **Semantic Stale (`#57534e`) on Base (`#faf9f5`)**: **7.24 : 1** (Passes AAA)
 
 ---
 
@@ -92,13 +120,13 @@ All foreground/background pairings have been rigorously tested against WCAG 2.1 
 
 ### Mathematical Spacing & Glyph Rules
 - **Font Stack**: `var(--font-family-math)` (`"KaTeX_Main", "Cambria Math", "TeX Gyre Termes", "Times New Roman", serif`).
-- **Variable Styling**: Italicized ($x, y, \theta$).
+- **Variable Styling**: Italicized (, y, \theta$).
 - **Functions & Operators**: Upright Roman ($\sin, \cos, \ln, \exp$).
 - **Figures**: Lining numerals (`font-variant-numeric: lining-nums;`).
 - **TeXbook Spacing**:
-  - `\thickmuskip` ($5/18\text{em} \approx 0.2778\text{em}$) around relation symbols ($=, <, >, \le, \ge$).
-  - `\medmuskip` ($4/18\text{em} \approx 0.2222\text{em}$) around binary additive operators ($+, -$).
-  - `\thinmuskip` ($3/18\text{em} \approx 0.1667\text{em}$) around implicit multiplication and differential differentials ($d//dx$).
+  - `\thickmuskip` (/18\text{em} \approx 0.2778\text{em}$) around relation symbols (, <, >, \le, \ge$).
+  - `\medmuskip` (/18\text{em} \approx 0.2222\text{em}$) around binary additive operators ($+, -$).
+  - `\thinmuskip` (/18\text{em} \approx 0.1667\text{em}$) around implicit multiplication and differential differentials (//dx$).
 
 ---
 

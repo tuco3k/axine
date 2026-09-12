@@ -477,14 +477,20 @@ export class Parser {
       if (this.peek().type === 'FOR') {
         this.advance();
       }
+      let targetName = '';
+      if (this.peek().type === 'COLON') {
+        this.advance();
+        targetName += ':';
+      }
       const targetTypeToken = this.expect('IDENTIFIER', 'view target type name');
+      targetName += targetTypeToken.value;
       if (this.peek().type === 'EQ' || this.peek().type === 'ASSIGN' || this.peek().type === 'GLOBAL_ASSIGN') {
         this.advance();
       }
       const viewFunction = this.parseExpression(PREC_NONE);
       return {
         type: 'ViewDecl',
-        targetType: targetTypeToken.value,
+        targetType: targetName,
         viewFunction,
         span: {
           start: viewToken.span.start,

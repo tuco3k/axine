@@ -1,14 +1,19 @@
-import { SpaceValue } from '../core/types';
-import { sample2D, sample3D, sampleSlice, findBounds2D, TriangleMesh3D, Bounds2D, Bounds3D, Contour2DResult } from '../core/sampler';
-import { compileAST } from '../core/compiler';
+import { SpaceValue, SpatialEntity, DrawingPrimitiveValue } from '../core/types';
+import { sample2D, sample3D, sampleSlice, populateSpaceGeometry, TriangleMesh3D, Bounds2D, Bounds3D, Contour2DResult } from '../core/sampler';
+import { compileAST, rehydrateCompiledFunction } from '../core/compiler';
+import { CameraState } from '../notebook/pane_tree';
+import { SpatialInspector, SpatialInspectionResult } from './spatial_inspector';
 
 export interface SpaceViewportOptions {
   width?: number;
   height?: number;
   initialSliceAxes?: [string, string];
   fixedCoords?: Record<string, number>;
+  initialCameraState?: CameraState;
   onSliceChange?: (fixedCoords: Record<string, number>, durationMs: number) => void;
   onFocusChange?: (focused: boolean) => void;
+  onCameraChange?: (camera: CameraState) => void;
+  onJumpToSource?: (lineIdx: number) => void;
 }
 
 const ENTITY_PALETTE = [
@@ -47,6 +52,12 @@ export class SpaceViewport {
   private pan3DX: number = 0;
   private pan3DY: number = 0;
 
+  // Spatial Inspection State
+  private inspectionResult: SpatialInspectionResult | null = null;
+  private inspectorPanelEl: HTMLElement | null = null;
+  private reticlePos: { x: number; y?: number; z?: number } | null = null;
+  private showReticle: boolean = false;
+
   // Interactivity State
   private isFocused: boolean = false;
   private isFullscreen: boolean = false;
@@ -54,6 +65,16 @@ export class SpaceViewport {
   private isPanning3D: boolean = false;
   private lastMouseX: number = 0;
   private lastMouseY: number = 0;
+
+  // Continuous Flight & Physics State
+  private pressedKeys: Set<string> = new Set();
+  private velX: number = 0;
+  private velY: number = 0;
+  private velZoom: number = 0;
+  private velAngleX: number = 0;
+  private velAngleZ: number = 0;
+  private animFrameId: any = null;
+  private lastAnimTime: number = 0;
 
   // Cleanup listeners
   private cleanups: (() => void)[] = [];
@@ -64,18 +85,19 @@ export class SpaceViewport {
     this.options = options;
 
     // Determine initial coordinates and view mode
-    const coords = space.coordinates.length > 0 ? space.coordinates : ['x', 'y'];
-    if (coords.length === 1) {
-      this.displayAxes = [coords[0], 'y'];
+    const dim = space.dimension;
+    const coords = space.coordinates.length > 0 ? space.coordinates : (dim === 1 ? ['x'] : ['x', 'y']);
+    if (dim === 1 || coords.length === 1) {
+      this.displayAxes = [coords[0] || 'x', 'y'];
       this.viewMode = '1d'; // 1D number line default for single variable space (n = 1)
-    } else if (coords.length === 2) {
-      this.displayAxes = [coords[0], coords[1]];
+    } else if (dim === 2 || coords.length === 2) {
+      this.displayAxes = [coords[0] || 'x', coords[1] || 'y'];
       this.viewMode = '2d';
-    } else if (coords.length === 3) {
-      this.displayAxes = [coords[0], coords[1]];
+    } else if (dim === 3 || coords.length === 3) {
+      this.displayAxes = [coords[0] || 'x', coords[1] || 'y'];
       this.viewMode = '3d';
     } else {
-      this.displayAxes = [coords[0], coords[1]];
+      this.displayAxes = [coords[0] || 'x', coords[1] || 'y'];
       this.viewMode = '2d'; // Slicing 2D view for n >= 4
     }
 
@@ -107,14 +129,13 @@ export class SpaceViewport {
       }
     }
 
+    if (this.space.primitives && this.space.primitives.length > 0) {
+      this.updateBoundsFromPrimitives();
+    }
+
     // Ensure compiledFn is present for every entity
     for (const ent of this.space.entities) {
-      if (!ent.compiledFn && ent.ast) {
-        const comp = compileAST(ent.ast, ent.coordinates);
-        if (comp.success) {
-          ent.compiledFn = comp.fn;
-        }
-      }
+      this.ensureEntityCompiled(ent);
     }
 
     // Setup DOM Structure
@@ -155,28 +176,91 @@ export class SpaceViewport {
       const canvasWrapper = document.createElement('div');
       canvasWrapper.className = 'space-canvas-wrapper';
       canvasWrapper.appendChild(this.canvas);
+
+      const hud = document.createElement('div');
+      hud.className = 'space-flight-hud hidden';
+      canvasWrapper.appendChild(hud);
+      this.updateHUD(hud);
+
       this.container.appendChild?.(canvasWrapper);
     }
 
     this.initDefaultBounds();
+    if (options.initialCameraState) {
+      this.setCameraState(options.initialCameraState);
+    }
     this.setupEvents();
     this.render();
   }
 
+  public updateHUD(targetEl?: HTMLElement): void {
+    const hudEl = targetEl || (this.container.querySelector('.space-flight-hud') as HTMLElement);
+    if (!hudEl) return;
+    if (this.viewMode === '1d') {
+      hudEl.textContent = 'Pan A/D / Drag • Zoom +/- / Wheel • Esc Exit';
+    } else if (this.viewMode === '2d') {
+      hudEl.textContent = 'Pan WASD / Drag • Zoom +/- / Wheel • Esc Exit';
+    } else {
+      hudEl.textContent = 'WASD Fly • Mouse Look • Shift-Drag Orbit • Zoom +/- / Wheel • Esc Exit';
+    }
+  }
+
   private initDefaultBounds(): void {
+    if (this.space.coordinateBounds) {
+      const b0 = this.space.coordinateBounds[this.displayAxes[0]];
+      const b1 = this.space.coordinateBounds[this.displayAxes[1]];
+      if (b0 && b1) {
+        this.bounds2D = { minX: b0[0], maxX: b0[1], minY: b1[0], maxY: b1[1] };
+        this.defaultBounds2D = { ...this.bounds2D };
+        return;
+      }
+    }
+    if (this.space.extent2D && (this.viewMode === '2d' || this.viewMode === '1d')) {
+      this.bounds2D = { ...this.space.extent2D };
+      this.defaultBounds2D = { ...this.space.extent2D };
+      return;
+    }
+    if (this.space.extent3D && this.viewMode === '3d') {
+      this.bounds3D = { ...this.space.extent3D };
+      return;
+    }
     if (this.space.entities.length > 0) {
       const primary = this.space.entities[0];
-      if (this.space.dimension === 2 && primary.coordinates.length === 2) {
-        try {
-          const autoBounds = findBounds2D(primary.compiledFn, [-15, 15], [-15, 15]);
-          if (autoBounds) {
-            this.bounds2D = { ...autoBounds };
-            this.defaultBounds2D = { ...autoBounds };
-            return;
-          }
-        } catch {
-          // Fallback to default
+      if (this.ensureEntityCompiled(primary)) {
+        populateSpaceGeometry(this.space);
+        if (this.space.extent2D) {
+          this.bounds2D = { ...this.space.extent2D };
+          this.defaultBounds2D = { ...this.space.extent2D };
+          return;
         }
+      }
+    }
+    if (this.space.primitives && this.space.primitives.length > 0) {
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const prim of this.space.primitives) {
+        const checkPt = (pt: [number, number] | null) => {
+          if (pt) {
+            minX = Math.min(minX, pt[0]);
+            maxX = Math.max(maxX, pt[0]);
+            minY = Math.min(minY, pt[1]);
+            maxY = Math.max(maxY, pt[1]);
+          }
+        };
+        const p1 = this.toCoord(prim.params?.position || prim.params?.pos || prim.params?.center || prim.params?.from || prim.params?.start);
+        checkPt(p1);
+        const p2 = this.toCoord(prim.params?.to || prim.params?.end);
+        checkPt(p2);
+        const vec = this.toCoord(prim.params?.vel || prim.params?.velocity || prim.params?.vector);
+        if (p1 && vec) {
+          checkPt([p1[0] + vec[0], p1[1] + vec[1]]);
+        }
+      }
+      if (Number.isFinite(minX) && Number.isFinite(maxX) && Number.isFinite(minY) && Number.isFinite(maxY)) {
+        const padX = Math.max(1, (maxX - minX) * 0.4);
+        const padY = Math.max(1, (maxY - minY) * 0.4);
+        this.bounds2D = { minX: minX - padX, maxX: maxX + padX, minY: minY - padY, maxY: maxY + padY };
+        this.defaultBounds2D = { ...this.bounds2D };
+        return;
       }
     }
     this.bounds2D = { minX: -5, maxX: 5, minY: -5, maxY: 5 };
@@ -208,6 +292,7 @@ export class SpaceViewport {
         e.stopPropagation();
         this.viewMode = this.viewMode === '3d' ? '2d' : '3d';
         modeBtn.textContent = this.viewMode === '3d' ? '3D Mesh' : '2D Slice';
+        this.updateHUD();
         this.updateSlidersUI();
         this.render();
       };
@@ -221,6 +306,7 @@ export class SpaceViewport {
         e.stopPropagation();
         this.viewMode = this.viewMode === '2d' ? '1d' : '2d';
         modeBtn.textContent = this.viewMode === '2d' ? '2D Plane' : '1D Line';
+        this.updateHUD();
         this.render();
       };
       leftGroup.appendChild(modeBtn);
@@ -235,7 +321,7 @@ export class SpaceViewport {
     // Reset Zoom Button
     const resetBtn = document.createElement('button');
     resetBtn.className = 'space-btn space-reset-btn';
-    resetBtn.innerHTML = '&#8634; Reset';
+    resetBtn.textContent = 'Reset';
     resetBtn.title = 'Reset to default zoom-to-fit bounds (R)';
     resetBtn.onclick = (e) => {
       e.stopPropagation();
@@ -246,7 +332,7 @@ export class SpaceViewport {
     // Fullscreen Button
     const fsBtn = document.createElement('button');
     fsBtn.className = 'space-btn space-fullscreen-btn';
-    fsBtn.innerHTML = '&#x26F6; Full';
+    fsBtn.textContent = 'Full';
     fsBtn.title = 'Toggle Fullscreen (F / Esc)';
     fsBtn.onclick = (e) => {
       e.stopPropagation();
@@ -384,12 +470,125 @@ export class SpaceViewport {
     this.controlsEl.appendChild(slidersBox);
   }
 
+  private startAnimationLoop(): void {
+    if (this.animFrameId !== null) return;
+    this.lastAnimTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    this.animFrameId = typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(this.animationStep) : null;
+  }
+
+  private stopAnimationLoop(): void {
+    if (this.animFrameId !== null && typeof cancelAnimationFrame !== 'undefined') {
+      cancelAnimationFrame(this.animFrameId);
+      this.animFrameId = null;
+    }
+  }
+
+  private animationStep = (timestamp: number): void => {
+    if (!this.isFocused && this.pressedKeys.size === 0 && Math.abs(this.velX) < 1e-4 && Math.abs(this.velY) < 1e-4 && Math.abs(this.velZoom) < 1e-4 && Math.abs(this.velAngleX) < 1e-4 && Math.abs(this.velAngleZ) < 1e-4) {
+      this.animFrameId = null;
+      return;
+    }
+
+    const dt = Math.min(0.05, Math.max(0.001, (timestamp - this.lastAnimTime) / 1000));
+    this.lastAnimTime = timestamp;
+
+    const spanX = this.bounds2D.maxX - this.bounds2D.minX;
+    const spanY = this.bounds2D.maxY - this.bounds2D.minY;
+    const accel2DX = spanX * 2.5;
+    const accel2DY = spanY * 2.5;
+
+    // Accumulate acceleration from held keys
+    if (this.pressedKeys.has('a') || this.pressedKeys.has('A') || this.pressedKeys.has('ArrowLeft')) {
+      if (this.viewMode === '3d') {
+        this.velAngleZ -= 2.0 * dt;
+        this.velX -= 150 * dt;
+      } else {
+        this.velX -= accel2DX * dt;
+      }
+    }
+    if (this.pressedKeys.has('d') || this.pressedKeys.has('D') || this.pressedKeys.has('ArrowRight')) {
+      if (this.viewMode === '3d') {
+        this.velAngleZ += 2.0 * dt;
+        this.velX += 150 * dt;
+      } else {
+        this.velX += accel2DX * dt;
+      }
+    }
+    if (this.pressedKeys.has('w') || this.pressedKeys.has('W') || this.pressedKeys.has('ArrowUp')) {
+      if (this.viewMode === '3d') {
+        this.velZoom += 1.5 * dt;
+        this.velY -= 80 * dt;
+      } else if (this.viewMode === '2d') {
+        this.velY += accel2DY * dt;
+      }
+    }
+    if (this.pressedKeys.has('s') || this.pressedKeys.has('S') || this.pressedKeys.has('ArrowDown')) {
+      if (this.viewMode === '3d') {
+        this.velZoom -= 1.5 * dt;
+        this.velY += 80 * dt;
+      } else if (this.viewMode === '2d') {
+        this.velY -= accel2DY * dt;
+      }
+    }
+    if (this.pressedKeys.has('+') || this.pressedKeys.has('=')) {
+      this.velZoom += 1.5 * dt;
+    }
+    if (this.pressedKeys.has('-') || this.pressedKeys.has('_')) {
+      this.velZoom -= 1.5 * dt;
+    }
+
+    // Integrate velocities into camera
+    let changed = false;
+    if (Math.abs(this.velX) > 1e-5 || Math.abs(this.velY) > 1e-5) {
+      if (this.viewMode === '3d') {
+        this.pan3DX += this.velX * dt;
+        this.pan3DY += this.velY * dt;
+      } else {
+        this.pan2D(this.velX * dt, this.viewMode === '1d' ? 0 : this.velY * dt);
+      }
+      changed = true;
+    }
+
+    if (Math.abs(this.velZoom) > 1e-5) {
+      if (this.viewMode === '3d') {
+        this.zoom3D = Math.max(0.2, Math.min(5.0, this.zoom3D * Math.exp(this.velZoom * dt)));
+      } else {
+        this.zoom2D(Math.exp(-this.velZoom * dt));
+      }
+      changed = true;
+    }
+
+    if (Math.abs(this.velAngleZ) > 1e-5 || Math.abs(this.velAngleX) > 1e-5) {
+      this.angleZ += this.velAngleZ * dt;
+      this.angleX = Math.max(0.05, Math.min(Math.PI / 2 - 0.05, this.angleX + this.velAngleX * dt));
+      changed = true;
+    }
+
+    // Apply damping friction
+    const damping = Math.pow(0.05, dt);
+    this.velX *= damping;
+    this.velY *= damping;
+    this.velZoom *= damping;
+    this.velAngleX *= damping;
+    this.velAngleZ *= damping;
+
+    if (changed) {
+      this.notifyCameraChange();
+      this.render();
+    }
+
+    this.animFrameId = typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(this.animationStep) : null;
+  };
+
   private setupEvents(): void {
     // Focus management
+    const hudEl = this.container.querySelector('.space-flight-hud') as HTMLElement;
     const focusHandler = () => {
       if (!this.isFocused) {
         this.isFocused = true;
         this.container.classList?.add('focused');
+        this.updateHUD(hudEl);
+        hudEl?.classList.remove('hidden');
         if (this.options.onFocusChange) this.options.onFocusChange(true);
       }
     };
@@ -400,91 +599,126 @@ export class SpaceViewport {
       if (this.isFocused) {
         this.isFocused = false;
         this.container.classList?.remove('focused');
+        this.pressedKeys.clear();
+        this.stopAnimationLoop();
+        hudEl?.classList.add('hidden');
         if (this.options.onFocusChange) this.options.onFocusChange(false);
       }
     };
     this.container.addEventListener?.('blur', blurHandler);
 
-    // Keyboard navigation
+    // Continuous Keyboard Navigation with Event Capture
+    const flightKeys = ['w', 'a', 's', 'd', 'W', 'A', 'S', 'D', '+', '-', '=', '_'];
+
     const keydownHandler = (e: KeyboardEvent) => {
       if (!this.isFocused) return;
 
-      const panDeltaX = (this.bounds2D.maxX - this.bounds2D.minX) * 0.05;
-      const panDeltaY = (this.bounds2D.maxY - this.bounds2D.minY) * 0.05;
-
-      switch (e.key) {
-        case 'ArrowLeft':
-        case 'a':
-        case 'A':
-          e.preventDefault?.();
-          this.pan2D(-panDeltaX, 0);
-          this.render();
-          break;
-        case 'ArrowRight':
-        case 'd':
-        case 'D':
-          e.preventDefault?.();
-          this.pan2D(panDeltaX, 0);
-          this.render();
-          break;
-        case 'ArrowUp':
-        case 'w':
-        case 'W':
-          e.preventDefault?.();
-          this.pan2D(0, panDeltaY);
-          this.render();
-          break;
-        case 'ArrowDown':
-        case 's':
-        case 'S':
-          e.preventDefault?.();
-          this.pan2D(0, -panDeltaY);
-          this.render();
-          break;
-        case '+':
-        case '=':
-          e.preventDefault?.();
-          this.zoom2D(0.9);
-          this.render();
-          break;
-        case '-':
-        case '_':
-          e.preventDefault?.();
-          this.zoom2D(1.1);
-          this.render();
-          break;
-        case 'f':
-        case 'F':
-          e.preventDefault?.();
+      if (e.key === 'Escape') {
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        if (this.inspectorPanelEl) {
+          this.closeInspection();
+          return;
+        }
+        if (this.isFullscreen) {
           this.toggleFullscreen();
-          break;
-        case 'r':
-        case 'R':
-          e.preventDefault?.();
-          this.resetView();
-          break;
-        case 'Escape':
-        case 'q':
-        case 'Q':
-          e.preventDefault?.();
-          if (this.isFullscreen) {
-            this.toggleFullscreen();
-          } else {
-            this.container.blur?.();
-            blurHandler();
-          }
-          break;
+        } else {
+          this.container.blur?.();
+          blurHandler();
+        }
+        return;
+      }
+
+      if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        this.toggleFullscreen();
+        return;
+      }
+
+      if (e.key === 'r' || e.key === 'R') {
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        this.resetView();
+        return;
+      }
+
+      // Keyboard space cursor / reticle navigation
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown' ||
+          e.key === 'PageUp' || e.key === 'PageDown' || e.key === 'e' || e.key === 'E' || e.key === 'q' || e.key === 'Q') {
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        if (!this.reticlePos) {
+          const midX = (this.bounds2D.minX + this.bounds2D.maxX) * 0.5;
+          const midY = (this.bounds2D.minY + this.bounds2D.maxY) * 0.5;
+          this.reticlePos = { x: midX, y: midY, z: 0 };
+        }
+        const mult = e.shiftKey ? 10 : 1;
+        const stepX = (this.bounds2D.maxX - this.bounds2D.minX) * 0.02 * mult;
+        const stepY = (this.bounds2D.maxY - this.bounds2D.minY) * 0.02 * mult;
+        const stepZ = (this.bounds3D.maxZ - this.bounds3D.minZ) * 0.02 * mult;
+
+        if (e.key === 'ArrowLeft') this.reticlePos.x -= stepX;
+        if (e.key === 'ArrowRight') this.reticlePos.x += stepX;
+        if (e.key === 'ArrowUp') {
+          if (this.viewMode !== '1d') this.reticlePos.y = (this.reticlePos.y ?? 0) + stepY;
+        }
+        if (e.key === 'ArrowDown') {
+          if (this.viewMode !== '1d') this.reticlePos.y = (this.reticlePos.y ?? 0) - stepY;
+        }
+        if (e.key === 'PageUp' || e.key === 'e' || e.key === 'E') {
+          if (this.viewMode === '3d') this.reticlePos.z = (this.reticlePos.z ?? 0) + stepZ;
+        }
+        if (e.key === 'PageDown' || e.key === 'q' || e.key === 'Q') {
+          if (this.viewMode === '3d') this.reticlePos.z = (this.reticlePos.z ?? 0) - stepZ;
+        }
+
+        this.showReticle = true;
+        if (this.inspectorPanelEl) {
+          this.inspectAtCoordinate(this.reticlePos.x, this.reticlePos.y, this.reticlePos.z);
+        } else {
+          this.render();
+        }
+        return;
+      }
+
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        if (!this.reticlePos) {
+          const midX = (this.bounds2D.minX + this.bounds2D.maxX) * 0.5;
+          const midY = (this.bounds2D.minY + this.bounds2D.maxY) * 0.5;
+          this.reticlePos = { x: midX, y: midY, z: 0 };
+        }
+        this.inspectAtCoordinate(this.reticlePos.x, this.reticlePos.y, this.reticlePos.z);
+        return;
+      }
+
+      if (flightKeys.includes(e.key)) {
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        this.pressedKeys.add(e.key);
+        this.startAnimationLoop();
       }
     };
     this.container.addEventListener?.('keydown', keydownHandler as any);
 
-    // Mouse drag for 2D pan and 3D orbit
+    const keyupHandler = (e: KeyboardEvent) => {
+      if (flightKeys.includes(e.key)) {
+        this.pressedKeys.delete(e.key);
+      }
+    };
+    this.container.addEventListener?.('keyup', keyupHandler as any);
+
+    // Mouse drag for 1D/2D pan and 3D orbit/look
+    let mouseDownPos = { x: 0, y: 0 };
     const mousedownHandler = (e: MouseEvent) => {
       if (e.target !== this.canvas) return;
       this.isDragging = true;
       this.isPanning3D = e.shiftKey || e.button === 2;
       this.lastMouseX = e.clientX;
       this.lastMouseY = e.clientY;
+      mouseDownPos = { x: e.clientX, y: e.clientY };
       focusHandler();
     };
     this.canvas.addEventListener?.('mousedown', mousedownHandler as any);
@@ -504,6 +738,11 @@ export class SpaceViewport {
           this.angleZ += dx * 0.01;
           this.angleX = Math.max(0.05, Math.min(Math.PI / 2 - 0.05, this.angleX - dy * 0.01));
         }
+      } else if (this.viewMode === '1d') {
+        const spanX = this.bounds2D.maxX - this.bounds2D.minX;
+        const width = this.canvas.clientWidth || 600;
+        const worldDx = -(dx / width) * spanX;
+        this.pan2D(worldDx, 0);
       } else {
         const spanX = this.bounds2D.maxX - this.bounds2D.minX;
         const spanY = this.bounds2D.maxY - this.bounds2D.minY;
@@ -515,17 +754,45 @@ export class SpaceViewport {
         this.pan2D(worldDx, worldDy);
       }
 
+      this.notifyCameraChange();
       this.render();
     };
     if (typeof window !== 'undefined') window.addEventListener?.('mousemove', mousemoveHandler);
 
-    const mouseupHandler = () => {
+    const mouseupHandler = (e: MouseEvent) => {
+      const dist = Math.hypot(e.clientX - mouseDownPos.x, e.clientY - mouseDownPos.y);
       this.isDragging = false;
       this.isPanning3D = false;
+
+      // Click (not drag) -> trigger spatial inspection
+      if (dist < 6 && e.target === this.canvas) {
+        const rect = this.canvas.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const clickY = e.clientY - rect.top;
+        const width = this.canvas.clientWidth || rect.width || 600;
+        const height = this.canvas.clientHeight || rect.height || 300;
+
+        let res: SpatialInspectionResult;
+        if (this.viewMode === '1d') {
+          res = SpatialInspector.inspect1D(this.space, this.bounds2D, clickX, width);
+        } else if (this.viewMode === '3d') {
+          res = SpatialInspector.inspect3D(this.space, this.bounds3D, clickX, clickY, width, height, {
+            angleX: this.angleX,
+            angleZ: this.angleZ,
+            zoom3D: this.zoom3D,
+            pan3DX: this.pan3DX,
+            pan3DY: this.pan3DY,
+          });
+        } else {
+          res = SpatialInspector.inspect2D(this.space, this.bounds2D, clickX, clickY, width, height);
+        }
+
+        this.showInspection(res);
+      }
     };
     if (typeof window !== 'undefined') window.addEventListener?.('mouseup', mouseupHandler);
 
-    // Mouse wheel zoom
+    // Mouse wheel zoom for 1D, 2D, 3D
     const wheelHandler = (e: WheelEvent) => {
       e.preventDefault?.();
       const factor = e.deltaY > 0 ? 1.1 : 0.9;
@@ -534,6 +801,7 @@ export class SpaceViewport {
       } else {
         this.zoom2D(factor);
       }
+      this.notifyCameraChange();
       this.render();
     };
     this.canvas.addEventListener?.('wheel', wheelHandler as any, { passive: false });
@@ -546,10 +814,12 @@ export class SpaceViewport {
 
     // Save cleanup hooks
     this.cleanups.push(() => {
+      this.stopAnimationLoop();
       this.container.removeEventListener?.('click', focusHandler);
       this.canvas.removeEventListener?.('click', focusHandler);
       this.container.removeEventListener?.('blur', blurHandler);
       this.container.removeEventListener?.('keydown', keydownHandler as any);
+      this.container.removeEventListener?.('keyup', keyupHandler as any);
       this.canvas.removeEventListener?.('mousedown', mousedownHandler as any);
       if (typeof window !== 'undefined') {
         window.removeEventListener?.('mousemove', mousemoveHandler);
@@ -558,6 +828,174 @@ export class SpaceViewport {
       this.canvas.removeEventListener?.('wheel', wheelHandler as any);
       this.canvas.removeEventListener?.('dblclick', dblclickHandler);
     });
+  }
+
+  public notifyCameraChange(): void {
+    if (this.options.onCameraChange) {
+      this.options.onCameraChange(this.getCameraState());
+    }
+  }
+
+  public project3D(x: number, y: number, z: number, width: number, height: number): { x: number; y: number; depth: number } {
+    const cx = width * 0.5 + this.pan3DX;
+    const cy = height * 0.5 + this.pan3DY;
+    const scale = (Math.min(width, height) / 3.8) * this.zoom3D;
+    const cosX = Math.cos(this.angleX);
+    const sinX = Math.sin(this.angleX);
+    const cosZ = Math.cos(this.angleZ);
+    const sinZ = Math.sin(this.angleZ);
+
+    const x1 = x * cosZ - y * sinZ;
+    const y1 = x * sinZ + y * cosZ;
+    const z1 = z;
+
+    const x2 = x1;
+    const y2 = y1 * cosX - z1 * sinX;
+    const z2 = y1 * sinX + z1 * cosX;
+
+    const screenX = cx + x2 * scale;
+    const screenY = cy - z2 * scale;
+    return { x: screenX, y: screenY, depth: y2 };
+  }
+
+  public showInspection(result: SpatialInspectionResult): void {
+    this.inspectionResult = result;
+    this.reticlePos = { ...result.worldCoord };
+    this.showReticle = true;
+
+    if (this.inspectorPanelEl) {
+      this.inspectorPanelEl.remove();
+      this.inspectorPanelEl = null;
+    }
+
+    this.inspectorPanelEl = SpatialInspector.renderInspectionPanel(result, {
+      onJumpToSource: (lineIdx) => {
+        this.options.onJumpToSource?.(lineIdx);
+      },
+      onClose: () => {
+        this.closeInspection();
+      },
+    });
+
+    this.container.appendChild(this.inspectorPanelEl);
+    this.render();
+  }
+
+  public closeInspection(): void {
+    if (this.inspectorPanelEl) {
+      this.inspectorPanelEl.remove();
+      this.inspectorPanelEl = null;
+    }
+    this.inspectionResult = null;
+    this.showReticle = false;
+    this.render();
+  }
+
+  public inspectAtCoordinate(x: number, y?: number, z?: number): void {
+    const rect = this.canvas?.getBoundingClientRect?.() || { width: 600, height: 300 };
+    const width = Math.floor(rect.width) || this.canvas.clientWidth || 600;
+    const height = Math.floor(rect.height) || this.canvas.clientHeight || 300;
+
+    let result: SpatialInspectionResult;
+    if (this.viewMode === '1d') {
+      const minX = this.bounds2D.minX;
+      const maxX = this.bounds2D.maxX;
+      const clickPx = 30 + ((x - minX) / (maxX - minX)) * (width - 60);
+      result = SpatialInspector.inspect1D(this.space, this.bounds2D, clickPx, width);
+    } else if (this.viewMode === '3d') {
+      const pt2D = this.project3D(x, y ?? 0, z ?? 0, width, height);
+      result = SpatialInspector.inspect3D(this.space, this.bounds3D, pt2D.x, pt2D.y, width, height, {
+        angleX: this.angleX,
+        angleZ: this.angleZ,
+        zoom3D: this.zoom3D,
+        pan3DX: this.pan3DX,
+        pan3DY: this.pan3DY,
+      });
+    } else {
+      const minX = this.bounds2D.minX;
+      const maxX = this.bounds2D.maxX;
+      const minY = this.bounds2D.minY;
+      const maxY = this.bounds2D.maxY;
+      const sx = ((x - minX) / (maxX - minX)) * width;
+      const sy = height - (((y ?? 0) - minY) / (maxY - minY)) * height;
+      result = SpatialInspector.inspect2D(this.space, this.bounds2D, sx, sy, width, height);
+    }
+
+    this.showInspection(result);
+  }
+
+  public getInspectionResult(): SpatialInspectionResult | null {
+    return this.inspectionResult;
+  }
+
+  public getReticlePos(): { x: number; y?: number; z?: number } | null {
+    return this.reticlePos;
+  }
+
+  public getCameraState(): CameraState {
+    return {
+      viewMode: this.viewMode,
+      displayAxes: [this.displayAxes[0], this.displayAxes[1]],
+      fixedCoords: { ...this.fixedCoords },
+      bounds2D: { ...this.bounds2D },
+      bounds3D: { ...this.bounds3D },
+      angleX: this.angleX,
+      angleZ: this.angleZ,
+      zoom3D: this.zoom3D,
+      pan3DX: this.pan3DX,
+      pan3DY: this.pan3DY,
+    };
+  }
+
+  public setCameraState(state: Partial<CameraState>): void {
+    if (state.viewMode) this.viewMode = state.viewMode;
+    if (state.displayAxes && state.displayAxes.length === 2) this.displayAxes = [state.displayAxes[0], state.displayAxes[1]];
+    if (state.fixedCoords) this.fixedCoords = { ...state.fixedCoords };
+    if (state.bounds2D) this.bounds2D = { ...state.bounds2D };
+    if (state.bounds3D) this.bounds3D = { ...state.bounds3D };
+    if (typeof state.angleX === 'number') this.angleX = state.angleX;
+    if (typeof state.angleZ === 'number') this.angleZ = state.angleZ;
+    if (typeof state.zoom3D === 'number') this.zoom3D = state.zoom3D;
+    if (typeof state.pan3DX === 'number') this.pan3DX = state.pan3DX;
+    if (typeof state.pan3DY === 'number') this.pan3DY = state.pan3DY;
+    this.updateSlidersUI();
+    this.render();
+  }
+
+  public ensureEntityCompiled(ent: SpatialEntity): boolean {
+    if (typeof ent.compiledFn === 'function') return true;
+    if (ent.compiledCode) {
+      try {
+        ent.compiledFn = rehydrateCompiledFunction(ent.coordinates, ent.compiledCode);
+        return true;
+      } catch {
+        // Fallback to AST compile
+      }
+    }
+    if (ent.ast) {
+      try {
+        const comp = compileAST(ent.ast, ent.coordinates);
+        if (comp.success && typeof comp.fn === 'function') {
+          ent.compiledFn = comp.fn;
+          return true;
+        }
+      } catch {
+        // Ignore compilation errors
+      }
+    }
+    return false;
+  }
+
+  public updateSpace(newSpace: SpaceValue): void {
+    this.space = newSpace;
+    if (this.space.primitives && this.space.primitives.length > 0) {
+      this.updateBoundsFromPrimitives();
+    }
+    for (const ent of this.space.entities) {
+      this.ensureEntityCompiled(ent);
+    }
+    this.updateSlidersUI();
+    this.render();
   }
 
   public pan2D(dx: number, dy: number): void {
@@ -621,7 +1059,49 @@ export class SpaceViewport {
     this.render();
   }
 
+  private getThemeColors() {
+    if (typeof window === 'undefined' || typeof window.getComputedStyle !== 'function') {
+      return {
+        bg: '#181716',
+        axis: '#8c867e',
+        grid: '#2e2b28',
+        text: '#a8a39d',
+        textBright: '#f5f4f0',
+      };
+    }
+    try {
+      const target = this.container || (typeof document !== 'undefined' ? document.documentElement : null);
+      if (!target) {
+        return {
+          bg: '#181716',
+          axis: '#8c867e',
+          grid: '#2e2b28',
+          text: '#a8a39d',
+          textBright: '#f5f4f0',
+        };
+      }
+      const style = window.getComputedStyle(target);
+      return {
+        bg: style.getPropertyValue('--color-plot-bg')?.trim() || '#181716',
+        axis: style.getPropertyValue('--color-plot-axis')?.trim() || '#8c867e',
+        grid: style.getPropertyValue('--color-plot-grid')?.trim() || '#2e2b28',
+        text: style.getPropertyValue('--color-plot-text')?.trim() || '#a8a39d',
+        textBright: style.getPropertyValue('--color-text-primary')?.trim() || '#f5f4f0',
+      };
+    } catch {
+      return {
+        bg: '#181716',
+        axis: '#8c867e',
+        grid: '#2e2b28',
+        text: '#a8a39d',
+        textBright: '#f5f4f0',
+      };
+    }
+  }
+
   public render(): void {
+    if (!this.ctx || !this.canvas) return;
+
     const rect = this.canvas?.getBoundingClientRect?.() || { width: 600, height: 300 };
     const width = Math.floor(rect.width) || this.canvas.clientWidth || 600;
     const height = Math.floor(rect.height) || this.canvas.clientHeight || 300;
@@ -633,8 +1113,10 @@ export class SpaceViewport {
     this.ctx.save();
     this.ctx.scale(dpr, dpr);
 
-    // Clear Dark Background
-    this.ctx.fillStyle = '#0a0f1d';
+    const colors = this.getThemeColors();
+
+    // Clear Background with theme token
+    this.ctx.fillStyle = colors.bg;
     this.ctx.fillRect(0, 0, width, height);
 
     if (this.viewMode === '1d') {
@@ -649,13 +1131,14 @@ export class SpaceViewport {
   }
 
   private render1D(width: number, height: number): void {
+    const colors = this.getThemeColors();
     const axisVar = this.space.coordinates[0] || 'x';
     const minX = this.bounds2D.minX;
     const maxX = this.bounds2D.maxX;
     const centerY = height * 0.5;
 
     // Draw main horizontal axis
-    this.ctx.strokeStyle = '#64748b';
+    this.ctx.strokeStyle = colors.axis;
     this.ctx.lineWidth = 2;
     this.ctx.beginPath();
     this.ctx.moveTo(30, centerY);
@@ -663,7 +1146,7 @@ export class SpaceViewport {
     this.ctx.stroke();
 
     // Axis label
-    this.ctx.fillStyle = '#94a3b8';
+    this.ctx.fillStyle = colors.text;
     this.ctx.font = '12px var(--font-math, sans-serif)';
     this.ctx.textAlign = 'right';
     this.ctx.fillText(axisVar, width - 10, centerY + 4);
@@ -686,34 +1169,33 @@ export class SpaceViewport {
     }
 
     // Sample roots along 1D domain
-    if (!this.space.declaredAxes || this.space.declaredAxes.length === 0) {
-      return;
-    }
-    const N = 400;
-    const stepSample = (maxX - minX) / N;
-
     for (let eIdx = 0; eIdx < this.space.entities.length; eIdx++) {
       const entity = this.space.entities[eIdx];
+      if (!this.ensureEntityCompiled(entity)) continue;
       const color = entity.color || ENTITY_PALETTE[eIdx % ENTITY_PALETTE.length];
-      const roots: number[] = [];
 
-      let prevVal: number | null = null;
-      for (let i = 0; i <= N; i++) {
-        const xVal = minX + i * stepSample;
-        let v: number;
-        try {
-          v = entity.compiledFn(xVal);
-        } catch {
-          continue;
+      let roots: number[] = entity.cachedRoots1D || [];
+      if (!entity.cachedRoots1D) {
+        const N = 400;
+        const stepSample = (maxX - minX) / N;
+        let prevVal: number | null = null;
+        for (let i = 0; i <= N; i++) {
+          const xVal = minX + i * stepSample;
+          let v: number;
+          try {
+            v = entity.compiledFn(xVal);
+          } catch {
+            continue;
+          }
+          if (prevVal !== null && ((prevVal <= 0 && v >= 0) || (prevVal >= 0 && v <= 0))) {
+            const denom = v - prevVal;
+            const t = Math.abs(denom) > 1e-15 ? -prevVal / denom : 0.5;
+            const rootX = (xVal - stepSample) + t * stepSample;
+            roots.push(rootX);
+          }
+          prevVal = v;
         }
-
-        if (prevVal !== null && ((prevVal <= 0 && v >= 0) || (prevVal >= 0 && v <= 0))) {
-          const denom = v - prevVal;
-          const t = Math.abs(denom) > 1e-15 ? -prevVal / denom : 0.5;
-          const rootX = (xVal - stepSample) + t * stepSample;
-          roots.push(rootX);
-        }
-        prevVal = v;
+        entity.cachedRoots1D = roots;
       }
 
       // Draw found roots
@@ -729,15 +1211,35 @@ export class SpaceViewport {
         this.ctx.lineWidth = 2;
         this.ctx.stroke();
 
-        this.ctx.fillStyle = '#f8fafc';
+        this.ctx.fillStyle = colors.textBright;
         this.ctx.font = 'bold 11px sans-serif';
         this.ctx.textAlign = 'center';
         this.ctx.fillText(`${axisVar} = ${rx.toFixed(2)}`, px, centerY - 16);
       }
     }
+
+    // Draw inspection reticle
+    if (this.showReticle && this.reticlePos) {
+      const rx = this.reticlePos.x;
+      const px = 30 + ((rx - minX) / (maxX - minX)) * (width - 60);
+      this.ctx.strokeStyle = '#f59e0b';
+      this.ctx.setLineDash([4, 4]);
+      this.ctx.lineWidth = 1.5;
+      this.ctx.beginPath();
+      this.ctx.moveTo(px, 10);
+      this.ctx.lineTo(px, height - 10);
+      this.ctx.stroke();
+      this.ctx.setLineDash([]);
+
+      this.ctx.fillStyle = '#f59e0b';
+      this.ctx.beginPath();
+      this.ctx.arc(px, centerY, 5, 0, 2 * Math.PI);
+      this.ctx.fill();
+    }
   }
 
   private render2D(width: number, height: number): void {
+    const colors = this.getThemeColors();
     const minX = this.bounds2D.minX;
     const maxX = this.bounds2D.maxX;
     const minY = this.bounds2D.minY;
@@ -747,7 +1249,7 @@ export class SpaceViewport {
     const mapY = (y: number) => height - ((y - minY) / (maxY - minY)) * height;
 
     // Draw Grid Lines
-    this.ctx.strokeStyle = '#1e293b';
+    this.ctx.strokeStyle = colors.grid;
     this.ctx.lineWidth = 1;
 
     const stepX = this.computeNiceStep(maxX - minX);
@@ -772,7 +1274,7 @@ export class SpaceViewport {
     }
 
     // Draw Major Coordinate Axes
-    this.ctx.strokeStyle = '#475569';
+    this.ctx.strokeStyle = colors.axis;
     this.ctx.lineWidth = 1.5;
 
     const originX = mapX(0);
@@ -795,7 +1297,7 @@ export class SpaceViewport {
     }
 
     // Tick Numbers & Axis Labels
-    this.ctx.fillStyle = '#94a3b8';
+    this.ctx.fillStyle = colors.text;
     this.ctx.font = '11px sans-serif';
     this.ctx.textAlign = 'center';
     this.ctx.textBaseline = 'top';
@@ -817,43 +1319,44 @@ export class SpaceViewport {
     }
 
     // Axis Variable Names
-    this.ctx.fillStyle = '#cbd5e1';
+    this.ctx.fillStyle = colors.textBright;
     this.ctx.font = 'bold 12px var(--font-math, sans-serif)';
     this.ctx.textAlign = 'right';
     this.ctx.fillText(this.displayAxes[0], width - 10, axisYPos - 12);
     this.ctx.textAlign = 'left';
     this.ctx.fillText(this.displayAxes[1], axisXPos + 8, 14);
 
-    // Extract and Render Contours via Marching Squares
-    if (!this.space.declaredAxes || this.space.declaredAxes.length === 0) {
-      return;
-    }
+    // Render Contours from pre-sampled space geometry
     const resolution = 160;
 
     for (let eIdx = 0; eIdx < this.space.entities.length; eIdx++) {
       const entity = this.space.entities[eIdx];
+      if (!this.ensureEntityCompiled(entity)) continue;
       const color = entity.color || ENTITY_PALETTE[eIdx % ENTITY_PALETTE.length];
 
-      let contourResult: Contour2DResult;
-      if (this.space.dimension >= 4 || (this.space.dimension === 3 && this.viewMode === '2d')) {
-        contourResult = sampleSlice(
-          entity.compiledFn,
-          this.space.coordinates,
-          this.displayAxes,
-          this.fixedCoords,
-          [[minX, maxX], [minY, maxY]],
-          resolution
-        ) as Contour2DResult;
-      } else if (entity.coordinates.length === 1) {
-        // 1D relation (e.g. x = 0) evaluated in 2D Cartesian plane
-        const var0 = entity.coordinates[0];
-        const isAxisX = var0 === this.displayAxes[0];
-        const sliceFn = isAxisX
-          ? (x: number, _y: number) => entity.compiledFn(x)
-          : (_x: number, y: number) => entity.compiledFn(y);
-        contourResult = sample2D(sliceFn, [minX, maxX], [minY, maxY], resolution);
-      } else {
-        contourResult = sample2D(entity.compiledFn, [minX, maxX], [minY, maxY], resolution);
+      let contourResult: Contour2DResult = entity.cachedContours;
+      if (!contourResult) {
+        if (this.space.dimension >= 4 || (this.space.dimension === 3 && this.viewMode === '2d')) {
+          contourResult = sampleSlice(
+            entity.compiledFn,
+            this.space.coordinates,
+            this.displayAxes,
+            this.fixedCoords,
+            [[minX, maxX], [minY, maxY]],
+            resolution
+          ) as Contour2DResult;
+        } else if (entity.coordinates.length === 1) {
+          const var0 = entity.coordinates[0];
+          const isAxisX = var0 === this.displayAxes[0];
+          const sliceFn = isAxisX
+            ? (x: number, _y: number) => entity.compiledFn(x)
+            : (_x: number, y: number) => entity.compiledFn(y);
+          contourResult = sample2D(sliceFn, [minX, maxX], [minY, maxY], resolution);
+        } else {
+          const ext = this.space.extent2D || this.bounds2D;
+          contourResult = sample2D(entity.compiledFn, [ext.minX, ext.maxX], [ext.minY, ext.maxY], 200);
+        }
+        entity.cachedContours = contourResult;
       }
 
       this.ctx.strokeStyle = color;
@@ -877,6 +1380,62 @@ export class SpaceViewport {
         }
         this.ctx.stroke();
       }
+    }
+
+    // Draw Primitives (Points, Circles, Arrows, Segments, Polygons, Paths, Labels)
+    if (this.space.primitives && this.space.primitives.length > 0) {
+      for (let pIdx = 0; pIdx < this.space.primitives.length; pIdx++) {
+        const prim = this.space.primitives[pIdx];
+        const primColor = prim.params?.color || ENTITY_PALETTE[pIdx % ENTITY_PALETTE.length];
+        this.renderPrimitive2D(prim, primColor, mapX, mapY, colors);
+      }
+    }
+
+    // Draw inspection reticle in 2D
+    if (this.showReticle && this.reticlePos) {
+      const rx = this.reticlePos.x;
+      const ry = this.reticlePos.y ?? 0;
+      const px = mapX(rx);
+      const py = mapY(ry);
+
+      this.ctx.strokeStyle = 'rgba(245, 158, 11, 0.6)';
+      this.ctx.setLineDash([4, 4]);
+      this.ctx.lineWidth = 1;
+
+      // Crosshair lines
+      this.ctx.beginPath();
+      this.ctx.moveTo(px, 0);
+      this.ctx.lineTo(px, height);
+      this.ctx.moveTo(0, py);
+      this.ctx.lineTo(width, py);
+      this.ctx.stroke();
+      this.ctx.setLineDash([]);
+
+      // Target circle
+      this.ctx.strokeStyle = '#f59e0b';
+      this.ctx.lineWidth = 2;
+      this.ctx.beginPath();
+      this.ctx.arc(px, py, 7, 0, 2 * Math.PI);
+      this.ctx.stroke();
+
+      // Center dot
+      this.ctx.fillStyle = '#f59e0b';
+      this.ctx.beginPath();
+      this.ctx.arc(px, py, 2.5, 0, 2 * Math.PI);
+      this.ctx.fill();
+
+      // Coordinate tag
+      this.ctx.fillStyle = 'rgba(24, 23, 22, 0.85)';
+      this.ctx.fillRect(px + 10, py - 22, 110, 18);
+      this.ctx.strokeStyle = '#3d3936';
+      this.ctx.lineWidth = 1;
+      this.ctx.strokeRect(px + 10, py - 22, 110, 18);
+
+      this.ctx.fillStyle = '#f5f4f0';
+      this.ctx.font = '11px var(--font-family-doc, monospace)';
+      this.ctx.textAlign = 'left';
+      this.ctx.textBaseline = 'middle';
+      this.ctx.fillText(`(${rx.toFixed(2)}, ${ry.toFixed(2)})`, px + 14, py - 13);
     }
   }
 
@@ -974,21 +1533,20 @@ export class SpaceViewport {
     this.ctx.fillText(this.space.coordinates[1] || 'y', yAxisEnd[0] + 4, yAxisEnd[1]);
     this.ctx.fillText(this.space.coordinates[2] || 'z', zAxisEnd[0] + 4, zAxisEnd[1]);
 
-    // Sample 3D Marching Cubes Mesh
-    if (!this.space.declaredAxes || this.space.declaredAxes.length === 0) {
-      return;
-    }
+    // Sample/Render 3D Marching Cubes Mesh
     const resolution3D = 36;
 
     for (let eIdx = 0; eIdx < this.space.entities.length; eIdx++) {
       const entity = this.space.entities[eIdx];
-      const mesh: TriangleMesh3D = sample3D(
+      if (!this.ensureEntityCompiled(entity)) continue;
+      const mesh: TriangleMesh3D = entity.cachedMesh || sample3D(
         entity.compiledFn,
         [minX, maxX],
         [minY, maxY],
         [minZ, maxZ],
         resolution3D
       );
+      entity.cachedMesh = mesh;
 
       // Transform all vertices and depth-sort triangles
       const projected = mesh.vertices.map(v => project3D(v[0], v[1], v[2]));
@@ -1046,6 +1604,283 @@ export class SpaceViewport {
         this.ctx.closePath();
         this.ctx.fill();
         this.ctx.stroke();
+      }
+    }
+
+    // Draw inspection reticle in 3D
+    if (this.showReticle && this.reticlePos) {
+      const rx = this.reticlePos.x;
+      const ry = this.reticlePos.y ?? 0;
+      const rz = this.reticlePos.z ?? 0;
+      const pt2D = this.project3D(rx, ry, rz, width, height);
+      if (pt2D) {
+        this.ctx.strokeStyle = '#f59e0b';
+        this.ctx.lineWidth = 2;
+        this.ctx.beginPath();
+        this.ctx.arc(pt2D.x, pt2D.y, 8, 0, 2 * Math.PI);
+        this.ctx.stroke();
+
+        this.ctx.fillStyle = '#f59e0b';
+        this.ctx.beginPath();
+        this.ctx.arc(pt2D.x, pt2D.y, 3, 0, 2 * Math.PI);
+        this.ctx.fill();
+
+        // Coordinate tag
+        this.ctx.fillStyle = 'rgba(24, 23, 22, 0.85)';
+        this.ctx.fillRect(pt2D.x + 12, pt2D.y - 22, 140, 18);
+        this.ctx.strokeStyle = '#3d3936';
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeRect(pt2D.x + 12, pt2D.y - 22, 140, 18);
+
+        this.ctx.fillStyle = '#f5f4f0';
+        this.ctx.font = '11px var(--font-family-doc, monospace)';
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(`(${rx.toFixed(2)}, ${ry.toFixed(2)}, ${rz.toFixed(2)})`, pt2D.x + 16, pt2D.y - 13);
+      }
+    }
+  }
+
+  private updateBoundsFromPrimitives(): void {
+    if (!this.space.primitives || this.space.primitives.length === 0) return;
+    if (this.space.entities.length > 0 && this.space.coordinateBounds) return;
+
+    const allX: number[] = [];
+    const allY: number[] = [];
+    for (const prim of this.space.primitives) {
+      if (prim.primitive === 'point' && Array.isArray(prim.params?.position)) {
+        allX.push(prim.params.position[0]);
+        allY.push(prim.params.position[1]);
+      } else if (prim.primitive === 'circle' && Array.isArray(prim.params?.center)) {
+        const r = Number(prim.params.radius) || 1;
+        allX.push(prim.params.center[0] - r, prim.params.center[0] + r);
+        allY.push(prim.params.center[1] - r, prim.params.center[1] + r);
+      } else if (prim.primitive === 'arrow' || prim.primitive === 'segment') {
+        if (Array.isArray(prim.params?.start)) {
+          allX.push(prim.params.start[0]);
+          allY.push(prim.params.start[1]);
+        }
+        if (Array.isArray(prim.params?.end)) {
+          allX.push(prim.params.end[0]);
+          allY.push(prim.params.end[1]);
+        }
+        if (Array.isArray(prim.params?.vector) && Array.isArray(prim.params?.start)) {
+          allX.push(prim.params.start[0] + prim.params.vector[0]);
+          allY.push(prim.params.start[1] + prim.params.vector[1]);
+        }
+      } else if ((prim.primitive === 'polygon' || prim.primitive === 'path') && Array.isArray(prim.params?.points)) {
+        for (const pt of prim.params.points) {
+          if (Array.isArray(pt)) {
+            allX.push(pt[0]);
+            allY.push(pt[1]);
+          }
+        }
+      } else if (prim.primitive === 'label' && Array.isArray(prim.params?.position)) {
+        allX.push(prim.params.position[0]);
+        allY.push(prim.params.position[1]);
+      }
+    }
+
+    if (allX.length > 0 && allY.length > 0) {
+      const minX = Math.min(...allX);
+      const maxX = Math.max(...allX);
+      const minY = Math.min(...allY);
+      const maxY = Math.max(...allY);
+      const spanX = Math.max(0.1, maxX - minX);
+      const spanY = Math.max(0.1, maxY - minY);
+      const padX = Math.max(1, spanX * 0.25);
+      const padY = Math.max(1, spanY * 0.25);
+      this.bounds2D.minX = minX - padX;
+      this.bounds2D.maxX = maxX + padX;
+      this.bounds2D.minY = minY - padY;
+      this.bounds2D.maxY = maxY + padY;
+      this.defaultBounds2D = { ...this.bounds2D };
+    }
+  }
+
+  private toScalar(v: any): number | null {
+    if (v === undefined || v === null) return null;
+    if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+    if (v.type === 'float') return v.value;
+    if (v.type === 'rational') return Number(v.n) / Number(v.d);
+    if (v.type === 'quantity') return this.toScalar(v.magnitude);
+    return null;
+  }
+
+  private toCoord(v: any): [number, number] | null {
+    if (v === undefined || v === null) return null;
+    if (Array.isArray(v)) {
+      const x = this.toScalar(v[0]);
+      const y = this.toScalar(v[1]);
+      return (x !== null && y !== null) ? [x, y] : null;
+    }
+    if (v.type === 'tuple' || v.type === 'list') {
+      if (v.elements.length >= 2) {
+        const x = this.toScalar(v.elements[0]);
+        const y = this.toScalar(v.elements[1]);
+        return (x !== null && y !== null) ? [x, y] : null;
+      }
+    }
+    if (v.type === 'record' && v.fields) {
+      const xVal = v.fields.x || v.fields[':x'] || v.fields.re || v.fields[':re'] || v.fields.pos || v.fields[':pos'];
+      const yVal = v.fields.y || v.fields[':y'] || v.fields.im || v.fields[':im'] || v.fields.vel || v.fields[':vel'];
+      if (xVal && yVal) {
+        const x = this.toScalar(xVal);
+        const y = this.toScalar(yVal);
+        if (x !== null && y !== null) return [x, y];
+      }
+    }
+    return null;
+  }
+
+  private renderPrimitive2D(
+    prim: DrawingPrimitiveValue,
+    color: string,
+    mapX: (x: number) => number,
+    mapY: (y: number) => number,
+    colors: any
+  ): void {
+    switch (prim.primitive) {
+      case 'point': {
+        const pos = this.toCoord(prim.params?.position || prim.params?.pos || prim.params?.center);
+        if (pos) {
+          const px = mapX(pos[0]);
+          const py = mapY(pos[1]);
+          const r = this.toScalar(prim.params?.radius || prim.params?.r) || 5;
+
+          // Glow / stroke ring
+          this.ctx.fillStyle = color;
+          this.ctx.beginPath();
+          this.ctx.arc(px, py, r, 0, 2 * Math.PI);
+          this.ctx.fill();
+
+          this.ctx.strokeStyle = colors.bg;
+          this.ctx.lineWidth = 1.5;
+          this.ctx.stroke();
+
+          // Coordinate readout above point
+          this.ctx.fillStyle = colors.text;
+          this.ctx.font = '10px monospace';
+          this.ctx.textAlign = 'center';
+          this.ctx.fillText(`(${pos[0].toFixed(1)}, ${pos[1].toFixed(1)})`, px, py - r - 4);
+        }
+        break;
+      }
+      case 'circle': {
+        const center = this.toCoord(prim.params?.center || prim.params?.pos || prim.params?.position);
+        const radius = this.toScalar(prim.params?.radius || prim.params?.r) || 1;
+        if (center) {
+          const px = mapX(center[0]);
+          const py = mapY(center[1]);
+          const rPx = Math.abs(mapX(center[0] + radius) - mapX(center[0]));
+
+          this.ctx.strokeStyle = color;
+          this.ctx.lineWidth = 2;
+          this.ctx.beginPath();
+          this.ctx.arc(px, py, Math.abs(rPx), 0, 2 * Math.PI);
+          this.ctx.stroke();
+
+          // Subtle transparent fill
+          this.ctx.fillStyle = color + '18';
+          this.ctx.fill();
+        }
+        break;
+      }
+      case 'arrow': {
+        const start = this.toCoord(prim.params?.start || prim.params?.from || prim.params?.pos || prim.params?.position) || [0, 0];
+        let end = this.toCoord(prim.params?.end || prim.params?.to);
+        if (!end) {
+          const vec = this.toCoord(prim.params?.vector || prim.params?.vel || prim.params?.velocity || prim.params?.direction);
+          if (vec) {
+            end = [start[0] + vec[0], start[1] + vec[1]];
+          }
+        }
+        if (start && end) {
+          const x0 = mapX(start[0]);
+          const y0 = mapY(start[1]);
+          const x1 = mapX(end[0]);
+          const y1 = mapY(end[1]);
+
+          this.ctx.strokeStyle = color;
+          this.ctx.fillStyle = color;
+          this.ctx.lineWidth = 2.2;
+          this.ctx.beginPath();
+          this.ctx.moveTo(x0, y0);
+          this.ctx.lineTo(x1, y1);
+          this.ctx.stroke();
+
+          // Arrowhead
+          const angle = Math.atan2(y1 - y0, x1 - x0);
+          const headLen = 9;
+          this.ctx.beginPath();
+          this.ctx.moveTo(x1, y1);
+          this.ctx.lineTo(x1 - headLen * Math.cos(angle - Math.PI / 6), y1 - headLen * Math.sin(angle - Math.PI / 6));
+          this.ctx.lineTo(x1 - headLen * Math.cos(angle + Math.PI / 6), y1 - headLen * Math.sin(angle + Math.PI / 6));
+          this.ctx.closePath();
+          this.ctx.fill();
+        }
+        break;
+      }
+      case 'segment': {
+        const start = this.toCoord(prim.params?.start || prim.params?.from);
+        const end = this.toCoord(prim.params?.end || prim.params?.to);
+        if (start && end) {
+          this.ctx.strokeStyle = color;
+          this.ctx.lineWidth = 2;
+          this.ctx.beginPath();
+          this.ctx.moveTo(mapX(start[0]), mapY(start[1]));
+          this.ctx.lineTo(mapX(end[0]), mapY(end[1]));
+          this.ctx.stroke();
+        }
+        break;
+      }
+      case 'polygon': {
+        const rawPts = prim.params?.points;
+        if (Array.isArray(rawPts) && rawPts.length >= 3) {
+          const pts = rawPts.map(p => this.toCoord(p)).filter((p): p is [number, number] => p !== null);
+          if (pts.length >= 3) {
+            this.ctx.strokeStyle = color;
+            this.ctx.fillStyle = color + '22';
+            this.ctx.lineWidth = 2;
+            this.ctx.beginPath();
+            this.ctx.moveTo(mapX(pts[0][0]), mapY(pts[0][1]));
+            for (let i = 1; i < pts.length; i++) {
+              this.ctx.lineTo(mapX(pts[i][0]), mapY(pts[i][1]));
+            }
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.stroke();
+          }
+        }
+        break;
+      }
+      case 'path': {
+        const rawPts = prim.params?.points;
+        if (Array.isArray(rawPts) && rawPts.length >= 2) {
+          const pts = rawPts.map(p => this.toCoord(p)).filter((p): p is [number, number] => p !== null);
+          if (pts.length >= 2) {
+            this.ctx.strokeStyle = color;
+            this.ctx.lineWidth = 2;
+            this.ctx.beginPath();
+            this.ctx.moveTo(mapX(pts[0][0]), mapY(pts[0][1]));
+            for (let i = 1; i < pts.length; i++) {
+              this.ctx.lineTo(mapX(pts[i][0]), mapY(pts[i][1]));
+            }
+            this.ctx.stroke();
+          }
+        }
+        break;
+      }
+      case 'label': {
+        const pos = this.toCoord(prim.params?.position || prim.params?.pos);
+        const text = prim.params?.text || '';
+        if (pos) {
+          this.ctx.fillStyle = color;
+          this.ctx.font = 'bold 12px sans-serif';
+          this.ctx.textAlign = 'center';
+          this.ctx.fillText(text, mapX(pos[0]), mapY(pos[1]) - 8);
+        }
+        break;
       }
     }
   }

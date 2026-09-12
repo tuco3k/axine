@@ -36,6 +36,96 @@ function sanitizeIdentifier(name: string, index: number): string {
 
 type NodeGenResult = { success: true; code: string } | { success: false; uncompilableNode: string; reason: string };
 
+function substituteInlinedAST(ast: ASTNode, substMap: Record<string, ASTNode>): ASTNode {
+  if (!ast || Object.keys(substMap).length === 0) return ast;
+  switch (ast.type) {
+    case 'Identifier': {
+      const clean = ast.name.replace(/^:/, '');
+      if (substMap[ast.name]) return substMap[ast.name];
+      if (substMap[clean]) return substMap[clean];
+      if (substMap[':' + clean]) return substMap[':' + clean];
+      return ast;
+    }
+    case 'MemberAccess':
+      return {
+        ...ast,
+        target: substituteInlinedAST(ast.target, substMap),
+      };
+    case 'Index':
+      return {
+        ...ast,
+        target: substituteInlinedAST(ast.target, substMap),
+        index: substituteInlinedAST(ast.index, substMap),
+      };
+    case 'BracketOp':
+      return {
+        ...ast,
+        operands: ast.operands.map(o => substituteInlinedAST(o, substMap)),
+      };
+    case 'If':
+      return {
+        ...ast,
+        condition: substituteInlinedAST(ast.condition, substMap),
+        thenBranch: substituteInlinedAST(ast.thenBranch, substMap),
+        elseBranch: substituteInlinedAST(ast.elseBranch, substMap),
+      };
+    case 'Tuple':
+      return {
+        ...ast,
+        elements: ast.elements.map(e => substituteInlinedAST(e, substMap)),
+      };
+    case 'List':
+      return {
+        ...ast,
+        elements: ast.elements.map(e => substituteInlinedAST(e, substMap)),
+      };
+    case 'NamedArg':
+      return {
+        ...ast,
+        value: substituteInlinedAST(ast.value, substMap),
+      };
+    case 'Assignment':
+      return {
+        ...ast,
+        value: substituteInlinedAST(ast.value, substMap),
+      };
+    case 'BinaryOp':
+      return {
+        ...ast,
+        left: substituteInlinedAST(ast.left, substMap),
+        right: substituteInlinedAST(ast.right, substMap),
+      };
+    case 'UnaryOp':
+      return {
+        ...ast,
+        operand: substituteInlinedAST(ast.operand, substMap),
+      };
+    case 'PostfixOp':
+      return {
+        ...ast,
+        operand: substituteInlinedAST(ast.operand, substMap),
+      };
+    case 'FunctionCall':
+      return {
+        ...ast,
+        args: ast.args.map(a => substituteInlinedAST(a, substMap)),
+      };
+    case 'TensorOp':
+      return {
+        ...ast,
+        left: substituteInlinedAST(ast.left, substMap),
+        right: substituteInlinedAST(ast.right, substMap),
+      };
+    case 'DifferentialFormOp':
+      return {
+        ...ast,
+        operands: ast.operands.map(o => substituteInlinedAST(o, substMap)),
+      };
+    default:
+      return ast;
+  }
+}
+
 function compileNode(
   node: ASTNode,
   ctx: CompilerContext,
@@ -133,6 +223,21 @@ function compileNode(
       if (node.op === '\u221a' || node.op === 'sqrt') {
         return compileFunctionCall(':sqrt', [node.operand], ctx);
       }
+
+      // Check user-defined prefix operator
+      if (ctx.env && (ctx.env as any).__operators__ && (ctx.env as any).__operators__.has(node.op)) {
+        const opDef = (ctx.env as any).__operators__.get(node.op);
+        if (opDef && opDef.params && opDef.params.length === 1 && opDef.body) {
+          const innerCtx: CompilerContext = {
+            ...ctx,
+            depth: ctx.depth + 1,
+            varMap: new Map(ctx.varMap),
+          };
+          innerCtx.varMap.set(opDef.params[0], `(${operandRes.code})`);
+          return compileNode(opDef.body, innerCtx);
+        }
+      }
+
       return {
         success: false,
         uncompilableNode: 'UnaryOp',
@@ -146,6 +251,21 @@ function compileNode(
       if (node.op in OPERATIONS && OPERATIONS[node.op].kind === 'postfix') {
         return { success: true, code: OPERATIONS[node.op].compileJS([operandRes.code]) };
       }
+
+      // Check user-defined postfix operator
+      if (ctx.env && (ctx.env as any).__operators__ && (ctx.env as any).__operators__.has(node.op)) {
+        const opDef = (ctx.env as any).__operators__.get(node.op);
+        if (opDef && opDef.params && opDef.params.length === 1 && opDef.body) {
+          const innerCtx: CompilerContext = {
+            ...ctx,
+            depth: ctx.depth + 1,
+            varMap: new Map(ctx.varMap),
+          };
+          innerCtx.varMap.set(opDef.params[0], `(${operandRes.code})`);
+          return compileNode(opDef.body, innerCtx);
+        }
+      }
+
       return {
         success: false,
         uncompilableNode: 'PostfixOp',
@@ -179,17 +299,33 @@ function compileNode(
         }
       }
 
-      const leftRes = compileNode(node.left, { ...ctx, depth: ctx.depth + 1 });
-      if (!leftRes.success) return leftRes;
-      const rightRes = compileNode(node.right, { ...ctx, depth: ctx.depth + 1 });
-      if (!rightRes.success) return rightRes;
-
       const op = node.op;
 
       // Top-level relation equation L = R compiles to difference (L - R) for zero level-set finding
       if (isTopLevel && op === '=') {
+        const leftRes = compileNode(node.left, { ...ctx, depth: ctx.depth + 1 });
+        if (!leftRes.success) return leftRes;
+        const rightRes = compileNode(node.right, { ...ctx, depth: ctx.depth + 1 });
+        if (!rightRes.success) return rightRes;
         return { success: true, code: `((${leftRes.code}) - (${rightRes.code}))` };
       }
+
+      // Check user-defined binary operator
+      if (ctx.env && (ctx.env as any).__operators__ && (ctx.env as any).__operators__.has(op)) {
+        const opDef = (ctx.env as any).__operators__.get(op);
+        if (opDef && opDef.params && opDef.params.length === 2 && opDef.body) {
+          const inlined = substituteInlinedAST(opDef.body, {
+            [opDef.params[0]]: node.left,
+            [opDef.params[1]]: node.right,
+          });
+          return compileNode(inlined, { ...ctx, depth: ctx.depth + 1 }, isTopLevel);
+        }
+      }
+
+      const leftRes = compileNode(node.left, { ...ctx, depth: ctx.depth + 1 });
+      if (!leftRes.success) return leftRes;
+      const rightRes = compileNode(node.right, { ...ctx, depth: ctx.depth + 1 });
+      if (!rightRes.success) return rightRes;
 
       // Canonicalize symbols if needed
       const canonicalOp = op === '\u2260' ? '!=' : op === '\u2264' ? '<=' : op === '\u2265' ? '>=' : op;
@@ -221,6 +357,144 @@ function compileNode(
 
     case 'FunctionCall': {
       return compileFunctionCall(node.callee, node.args, ctx);
+    }
+
+    case 'MemberAccess': {
+      const prop = node.property.replace(/^:/, '');
+      let target = node.target;
+
+      // Expand user operators if target is TensorOp, DifferentialFormOp, or BinaryOp
+      if (target.type === 'TensorOp') {
+        const opSym = target.op === 'tensor' ? '\u2297' : target.op === 'direct_sum' ? '\u2295' : target.op;
+        if (ctx.env && (ctx.env as any).__operators__) {
+          const opDef = (ctx.env as any).__operators__.get(opSym) || (ctx.env as any).__operators__.get(target.op);
+          if (opDef && opDef.params && opDef.params.length === 2 && opDef.body) {
+            target = substituteInlinedAST(opDef.body, {
+              [opDef.params[0]]: target.left,
+              [opDef.params[1]]: target.right,
+            });
+          }
+        }
+      } else if (target.type === 'DifferentialFormOp') {
+        const opSym = target.op === 'wedge' ? '\u2227' : target.op;
+        if (ctx.env && (ctx.env as any).__operators__) {
+          const opDef = (ctx.env as any).__operators__.get(opSym) || (ctx.env as any).__operators__.get(target.op);
+          if (opDef && opDef.params && opDef.params.length === 2 && opDef.body && target.operands.length === 2) {
+            target = substituteInlinedAST(opDef.body, {
+              [opDef.params[0]]: target.operands[0],
+              [opDef.params[1]]: target.operands[1],
+            });
+          }
+        }
+      } else if (target.type === 'BinaryOp') {
+        if (ctx.env && (ctx.env as any).__operators__) {
+          const opDef = (ctx.env as any).__operators__.get(target.op);
+          if (opDef && opDef.params && opDef.params.length === 2 && opDef.body) {
+            target = substituteInlinedAST(opDef.body, {
+              [opDef.params[0]]: target.left,
+              [opDef.params[1]]: target.right,
+            });
+          }
+        }
+      }
+
+      if (target.type === 'FunctionCall') {
+        const fnCall = target;
+        for (const arg of fnCall.args) {
+          if (arg.type === 'NamedArg' && arg.name.replace(/^:/, '') === prop) {
+            return compileNode(arg.value, { ...ctx, depth: ctx.depth + 1 });
+          }
+        }
+        // Positional lookup if record schema known in env
+        const recordType = fnCall.callee.replace(/^:/, '');
+        if (ctx.env && (recordType in ctx.env || (':' + recordType) in ctx.env)) {
+          const schema = ctx.env[recordType] || ctx.env[':' + recordType];
+          if (schema && (schema as any).type === 'record_constructor') {
+            const fieldsList = (schema as any).fieldNames || (schema as any).fields;
+            if (Array.isArray(fieldsList)) {
+              const idx = fieldsList.indexOf(prop);
+              if (idx >= 0 && idx < fnCall.args.length) {
+                const arg = fnCall.args[idx];
+                const argVal = arg.type === 'NamedArg' ? arg.value : arg;
+                return compileNode(argVal, { ...ctx, depth: ctx.depth + 1 });
+              }
+            }
+          }
+        }
+      }
+      return {
+        success: false,
+        uncompilableNode: 'MemberAccess',
+        reason: `Member access '${node.property}' could not be statically inlined`,
+      };
+    }
+
+    case 'Index': {
+      if (node.target.type === 'Tuple' || node.target.type === 'List') {
+        if (node.index.type === 'NumberLiteral') {
+          const idx = Number((node.index as NumberLiteralNode).raw);
+          if (Number.isInteger(idx) && idx >= 0 && idx < node.target.elements.length) {
+            return compileNode(node.target.elements[idx], { ...ctx, depth: ctx.depth + 1 });
+          }
+        }
+      }
+      return {
+        success: false,
+        uncompilableNode: 'Index',
+        reason: `Index access could not be statically inlined`,
+      };
+    }
+
+    case 'BracketOp': {
+      if (node.op === 'abs') {
+        const opRes = compileNode(node.operands[0], { ...ctx, depth: ctx.depth + 1 });
+        if (!opRes.success) return opRes;
+        return { success: true, code: `Math.abs(${opRes.code})` };
+      }
+      if (node.op === 'floor') {
+        const opRes = compileNode(node.operands[0], { ...ctx, depth: ctx.depth + 1 });
+        if (!opRes.success) return opRes;
+        return { success: true, code: `Math.floor(${opRes.code})` };
+      }
+      if (node.op === 'ceil') {
+        const opRes = compileNode(node.operands[0], { ...ctx, depth: ctx.depth + 1 });
+        if (!opRes.success) return opRes;
+        return { success: true, code: `Math.ceil(${opRes.code})` };
+      }
+      if (node.op === 'norm') {
+        const operand = node.operands[0];
+        if (operand.type === 'Tuple' || operand.type === 'List') {
+          const elemCodes: string[] = [];
+          for (const el of operand.elements) {
+            const elRes = compileNode(el, { ...ctx, depth: ctx.depth + 1 });
+            if (!elRes.success) return elRes;
+            elemCodes.push(elRes.code);
+          }
+          return { success: true, code: `Math.hypot(${elemCodes.join(', ')})` };
+        }
+        if (operand.type === 'FunctionCall') {
+          const elemCodes: string[] = [];
+          for (const arg of operand.args) {
+            const argVal = arg.type === 'NamedArg' ? arg.value : arg;
+            const argRes = compileNode(argVal, { ...ctx, depth: ctx.depth + 1 });
+            if (!argRes.success) return argRes;
+            elemCodes.push(argRes.code);
+          }
+          return { success: true, code: `Math.hypot(${elemCodes.join(', ')})` };
+        }
+        const opRes = compileNode(operand, { ...ctx, depth: ctx.depth + 1 });
+        if (!opRes.success) return opRes;
+        return { success: true, code: `Math.abs(${opRes.code})` };
+      }
+      return {
+        success: false,
+        uncompilableNode: 'BracketOp',
+        reason: `Bracket operation '${node.op}' could not be compiled`,
+      };
+    }
+
+    case 'NamedArg': {
+      return compileNode(node.value, { ...ctx, depth: ctx.depth + 1 });
     }
 
     case 'Block': {
@@ -276,14 +550,50 @@ function compileNode(
       };
     }
 
+    case 'DifferentialFormOp': {
+      const opSym = node.op === 'wedge' ? '\u2227' : node.op;
+      if (ctx.env && (ctx.env as any).__operators__) {
+        const opDef = (ctx.env as any).__operators__.get(opSym) || (ctx.env as any).__operators__.get(node.op);
+        if (opDef && opDef.params && opDef.params.length === 2 && opDef.body && node.operands.length === 2) {
+          const inlined = substituteInlinedAST(opDef.body, {
+            [opDef.params[0]]: node.operands[0],
+            [opDef.params[1]]: node.operands[1],
+          });
+          return compileNode(inlined, { ...ctx, depth: ctx.depth + 1 }, isTopLevel);
+        }
+      }
+      return {
+        success: false,
+        uncompilableNode: 'DifferentialFormOp',
+        reason: `Unsupported differential form operator '${node.op}'`,
+      };
+    }
+
+    case 'TensorOp': {
+      const opSym = node.op === 'tensor' ? '\u2297' : node.op === 'direct_sum' ? '\u2295' : node.op;
+      if (ctx.env && (ctx.env as any).__operators__) {
+        const opDef = (ctx.env as any).__operators__.get(opSym) || (ctx.env as any).__operators__.get(node.op);
+        if (opDef && opDef.params && opDef.params.length === 2 && opDef.body) {
+          const inlined = substituteInlinedAST(opDef.body, {
+            [opDef.params[0]]: node.left,
+            [opDef.params[1]]: node.right,
+          });
+          return compileNode(inlined, { ...ctx, depth: ctx.depth + 1 }, isTopLevel);
+        }
+      }
+      return {
+        success: false,
+        uncompilableNode: 'TensorOp',
+        reason: `Unsupported tensor operator '${node.op}'`,
+      };
+    }
+
     // Explicitly uncompilable nodes:
     case 'Diff':
     case 'BigOp':
     case 'Limit':
     case 'RegionIntegral':
     case 'NablaOp':
-    case 'DifferentialFormOp':
-    case 'TensorOp':
     case 'MatrixPostfix':
     case 'RecordDef':
     case 'RecordWith':
@@ -562,3 +872,14 @@ export function compileRelation(
 }
 
 export const compileAST = compileRelation;
+
+export function rehydrateCompiledFunction(vars: string[], code: string): NumericCompiledFn {
+  const sanitizedParams: string[] = [];
+  for (let i = 0; i < vars.length; i++) {
+    const varName = vars[i];
+    const paramId = sanitizeIdentifier(varName, i);
+    sanitizedParams.push(paramId);
+  }
+  const fullCode = code.includes(REAL_HELPERS_CODE) ? code : `${REAL_HELPERS_CODE}\n${code}`;
+  return new Function(...sanitizedParams, fullCode) as NumericCompiledFn;
+}

@@ -13,6 +13,8 @@ import { MathPopover } from './popover';
 import { ICONS } from '../styles/icons';
 import { FileManager, OpenFileResult, SaveFileResult } from './file_manager';
 import { exportToHtml, exportToMarkdown, parseFrontMatter, renderSVGSpaceToString } from './exporter';
+import { PaneContainer } from '../notebook/pane_container';
+import { TabData, updateDocumentTabTitles } from '../notebook/pane_tree';
 
 function escapeHtml(str: string): string {
   return str
@@ -130,7 +132,6 @@ export class DocumentEditor {
   private gutterEl!: HTMLElement;
   private scopePanelEl!: HTMLElement;
   private framesPanelEl!: HTMLElement;
-  private statusBadge!: HTMLElement;
   private statsBadge!: HTMLElement;
   private workspaceEl!: HTMLElement;
   private panelEl!: HTMLElement;
@@ -166,12 +167,15 @@ export class DocumentEditor {
   private nextFrameId: number = 0;
   private pinnedLines: Set<number> = new Set();
   private collapsedLines: Set<number> = new Set();
+  private isSurfaceDragging: boolean = false;
+  private surfaceDragStartOffset: number = 0;
   private expandedPlots: Set<number> = new Set();
   private lineViewports: Map<number, SpaceViewport> = new Map();
   private pinnedViewports: Map<number, SpaceViewport> = new Map();
   private animationPlayers: Map<number, AnimationPlayer> = new Map();
   private pinnedAnimationPlayers: Map<number, AnimationPlayer> = new Map();
   public mathPopover: MathPopover;
+  public paneContainer?: PaneContainer;
 
   constructor(container: HTMLElement, initialText?: string) {
     this.container = container;
@@ -205,11 +209,14 @@ export class DocumentEditor {
 
     this.buildUI(docText);
     this.applyDockLayout();
-    this.bindEvents();
+    this.bindTopBarAndGlobalEvents();
+    this.bindEditorSurfaceEvents();
+    this.initPaneContainer();
     this.state.subscribe((records, isEvaluating) => {
       if (this.activeSessionId === initialSessionId) {
         this.renderWorkPanel(records, isEvaluating);
       }
+      this.paneContainer?.updateSpaces(records);
     });
     this.updateSessionTabs();
     this.state.setText(docText);
@@ -558,6 +565,12 @@ export class DocumentEditor {
     }
     this.updateFileInfo();
     this.updateSessionTabs();
+    if (this.paneContainer) {
+      const layout = this.paneContainer.getLayout();
+      updateDocumentTabTitles(layout.root, this.activeSessionId, name);
+      this.paneContainer.saveLayout();
+      this.paneContainer.render();
+    }
   }
 
   public getIsDirty(): boolean {
@@ -819,7 +832,7 @@ export class DocumentEditor {
       this.dirtyBadgeEl.classList.toggle('hidden', !this.isDirty);
     }
     if (typeof document !== 'undefined') {
-      document.title = `${this.isDirty ? '* ' : ''}${this.currentFileName} - Axine`;
+      document.title = `${this.isDirty ? '* ' : ''}${this.currentFileName}`;
     }
   }
 
@@ -828,6 +841,12 @@ export class DocumentEditor {
       this.fileNameEl.textContent = this.currentFileName;
     }
     this.updateDirtyIndicator();
+    if (this.paneContainer) {
+      const layout = this.paneContainer.getLayout();
+      updateDocumentTabTitles(layout.root, this.activeSessionId, this.currentFileName);
+      this.paneContainer.saveLayout();
+      this.paneContainer.render();
+    }
   }
 
   private scheduleAutosave(): void {
@@ -879,14 +898,20 @@ export class DocumentEditor {
     });
   }
 
+  private closeAllDropdowns(): void {
+    this.container.querySelectorAll('.doc-file-dropdown, .doc-dock-dropdown').forEach(el => {
+      el.classList.add('hidden');
+    });
+  }
+
   private buildUI(initialText?: string) {
     const rawText = initialText ?? (CORPUS_DOCUMENTS[0]?.content || '');
     this.container.innerHTML = `
       <div class="doc-app-shell">
         <header class="doc-header">
-          <div class="doc-brand">
-            <span class="doc-logo">&int;dx</span>
-            <span class="doc-app-title">Axine</span>
+          <div class="doc-brand" title="Axine">
+            <img class="doc-logo-img doc-logo-dark" src="/logo-dark.png" alt="Axine" />
+            <img class="doc-logo-img doc-logo-light" src="/logo-light.png" alt="Axine" />
           </div>
 
           <div class="doc-file-menu-wrapper">
@@ -911,6 +936,10 @@ export class DocumentEditor {
                 <span class="doc-file-menu-shortcut">Shift+Cmd+S</span>
               </button>
               <div class="doc-file-menu-divider"></div>
+              <button id="doc-clear-file-btn" class="doc-file-menu-item">
+                <span>Clear Document</span>
+              </button>
+              <div class="doc-file-menu-divider"></div>
               <div class="doc-file-menu-section-title">Export</div>
               <button id="doc-export-html-btn" class="doc-file-menu-item">
                 <span>Export HTML...</span>
@@ -926,18 +955,15 @@ export class DocumentEditor {
               <div class="doc-file-menu-section-title">Recent Files</div>
               <div id="doc-recent-files-list"></div>
             </div>
+            <span id="doc-dirty-badge" class="doc-dirty-badge ${this.isDirty ? '' : 'hidden'}" style="display:none"></span>
           </div>
 
-          <div class="doc-file-info" title="Current document">
-            <span id="doc-file-name" class="doc-file-name">${escapeHtml(this.currentFileName)}</span>
-            <span id="doc-dirty-badge" class="doc-dirty-badge ${this.isDirty ? '' : 'hidden'}" title="Unsaved changes"><span class="doc-dirty-dot"></span></span>
-          </div>
-
-          <div class="doc-corpus-select-wrapper">
-            <label for="corpus-select">Corpus:</label>
-            <select id="corpus-select" class="doc-corpus-select">
-              ${CORPUS_DOCUMENTS.map(doc => `<option value="${doc.id}">[${doc.category}] ${doc.title}</option>`).join('')}
-            </select>
+          <div class="doc-file-menu-wrapper doc-view-menu-wrapper">
+            <button id="doc-view-menu-btn" class="doc-btn" title="Open View (+ Document, Results, Space, Inspector)">
+              + View
+              <svg width="8" height="8" viewBox="0 0 12 12" fill="currentColor"><path d="M2 4L6 8L10 4Z" /></svg>
+            </button>
+            <div id="doc-view-dropdown" class="doc-file-dropdown hidden"></div>
           </div>
 
           <div class="doc-header-actions">
@@ -952,27 +978,17 @@ export class DocumentEditor {
                 <option value="unbounded">Unbounded</option>
               </select>
             </div>
-            <button id="doc-run-btn" class="doc-btn doc-btn-primary" title="Execute current document (Cmd+Enter / Ctrl+Enter)">
+            <button id="doc-run-btn" class="doc-btn doc-btn-runnable" title="Execute current document (Cmd+Enter / Ctrl+Enter)">
               ${ICONS.run} Run
             </button>
-            <button id="doc-stop-btn" class="doc-btn doc-btn-danger hidden" title="Cancel background execution">
-              ${ICONS.stop} Stop
-            </button>
-            <button id="doc-clear-btn" class="doc-btn" title="Clear document text">Clear</button>
           </div>
           <div class="doc-toolbar-right">
             <span id="doc-stats-badge" class="doc-stats-badge">Ready</span>
-            <span id="doc-status-badge" class="doc-status-badge ambient">Ambient Reactive</span>
             <button id="doc-theme-btn" class="doc-btn doc-btn-icon" title="Toggle dark/light theme">
               ${ICONS.sun}
             </button>
           </div>
         </header>
-
-        <div class="doc-session-tab-bar" id="doc-session-tab-bar">
-          <div class="doc-session-tabs" id="doc-session-tabs"></div>
-          <button id="doc-session-new-tab-btn" class="doc-session-new-tab-btn" title="New Document Tab (Cmd+T)">+</button>
-        </div>
 
         <main id="doc-workspace" class="doc-workspace" data-dock="right">
           <div class="doc-pane-left">
@@ -1083,7 +1099,6 @@ export class DocumentEditor {
     this.caretEl = this.container.querySelector('#doc-caret') as HTMLElement;
     this.lineNumbersEl = this.container.querySelector('#doc-line-numbers') as HTMLElement;
     this.gutterEl = this.container.querySelector('#doc-gutter') as HTMLElement;
-    this.statusBadge = this.container.querySelector('#doc-status-badge') as HTMLElement;
     this.statsBadge = this.container.querySelector('#doc-stats-badge') as HTMLElement;
     this.scopePanelEl = this.container.querySelector('#doc-scope-list') as HTMLElement;
     this.framesPanelEl = this.container.querySelector('#doc-frames-list') as HTMLElement;
@@ -1109,7 +1124,363 @@ export class DocumentEditor {
     this.state.setText(this.textarea.value);
   }
 
-  private bindEvents() {
+  private bindTopBarAndGlobalEvents() {
+    // New Tab Button
+    const newTabBtn = this.container.querySelector('#doc-session-new-tab-btn');
+    newTabBtn?.addEventListener('click', () => {
+      this.newDocument();
+    });
+
+    // File Menu dropdown toggle
+    const fileMenuBtn = this.container.querySelector('#doc-file-menu-btn');
+    const fileDropdown = this.container.querySelector('#doc-file-dropdown');
+    const viewMenuBtn = this.container.querySelector('#doc-view-menu-btn');
+    const viewDropdown = this.container.querySelector('#doc-view-dropdown') as HTMLElement;
+
+    if (fileMenuBtn && fileDropdown) {
+      fileMenuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        viewDropdown?.classList.add('hidden');
+        this.updateRecentFilesMenu();
+        fileDropdown.classList.toggle('hidden');
+      });
+      document.addEventListener('click', (e) => {
+        if (!fileDropdown.contains(e.target as Node) && !fileMenuBtn.contains(e.target as Node)) {
+          fileDropdown.classList.add('hidden');
+        }
+      });
+    }
+
+    if (viewMenuBtn && viewDropdown) {
+      viewMenuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        fileDropdown?.classList.add('hidden');
+        if (this.paneContainer) {
+          this.paneContainer.populateNewTabMenu(viewDropdown);
+        }
+        viewDropdown.classList.toggle('hidden');
+      });
+      document.addEventListener('click', (e) => {
+        if (!viewDropdown.contains(e.target as Node) && !viewMenuBtn.contains(e.target as Node)) {
+          viewDropdown.classList.add('hidden');
+        }
+      });
+    }
+
+    const newBtn = this.container.querySelector('#doc-new-file-btn');
+    newBtn?.addEventListener('click', () => {
+      fileDropdown?.classList.add('hidden');
+      this.newDocument();
+    });
+
+    const openBtn = this.container.querySelector('#doc-open-file-btn');
+    openBtn?.addEventListener('click', () => {
+      fileDropdown?.classList.add('hidden');
+      this.openDocument();
+    });
+
+    const saveBtn = this.container.querySelector('#doc-save-file-btn');
+    saveBtn?.addEventListener('click', () => {
+      fileDropdown?.classList.add('hidden');
+      this.saveDocument();
+    });
+
+    const saveAsBtn = this.container.querySelector('#doc-save-as-file-btn');
+    saveAsBtn?.addEventListener('click', () => {
+      fileDropdown?.classList.add('hidden');
+      this.saveDocumentAs();
+    });
+
+    const exportHtmlBtn = this.container.querySelector('#doc-export-html-btn');
+    exportHtmlBtn?.addEventListener('click', () => {
+      fileDropdown?.classList.add('hidden');
+      this.exportHtml();
+    });
+
+    const exportPdfBtn = this.container.querySelector('#doc-export-pdf-btn');
+    exportPdfBtn?.addEventListener('click', () => {
+      fileDropdown?.classList.add('hidden');
+      this.printPdf();
+    });
+
+    const exportMdBtn = this.container.querySelector('#doc-export-md-btn');
+    exportMdBtn?.addEventListener('click', () => {
+      fileDropdown?.classList.add('hidden');
+      this.exportMarkdown();
+    });
+
+    // Work Panel Tabs Switcher
+    const tabButtons = this.container.querySelectorAll('.doc-tab-btn');
+    tabButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        tabButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const tab = (btn as HTMLElement).getAttribute('data-tab') as any;
+        this.activeTab = tab;
+        const curr = this.sessions.get(this.activeSessionId);
+        if (curr) {
+          curr.activeTab = tab;
+        }
+        this.container.querySelectorAll('.doc-tab-content').forEach(p => p.classList.remove('active'));
+        const panel = this.container.querySelector(`#tab-${tab}-panel`);
+        if (panel) panel.classList.add('active');
+      });
+    });
+
+    // Dock Menu dropdown toggle
+    const dockMenuBtn = this.container.querySelector('#doc-dock-menu-btn');
+    const dockDropdown = this.container.querySelector('#doc-dock-dropdown');
+    if (dockMenuBtn && dockDropdown) {
+      dockMenuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dockDropdown.classList.toggle('hidden');
+      });
+      document.addEventListener('click', (e) => {
+        if (!dockDropdown.contains(e.target as Node) && !dockMenuBtn.contains(e.target as Node)) {
+          dockDropdown.classList.add('hidden');
+        }
+      });
+    }
+
+    // Dock Buttons in panel header dropdown
+    const dockBtns = this.container.querySelectorAll('.doc-dock-btn');
+    dockBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const edge = (btn as HTMLElement).getAttribute('data-edge') as DockEdge;
+        if (edge) {
+          this.setDockEdge(edge);
+          dockDropdown?.classList.add('hidden');
+        }
+      });
+    });
+
+    // Collapse button in panel header dropdown
+    const collapseBtn = this.container.querySelector('.doc-dock-collapse-btn');
+    if (collapseBtn) {
+      collapseBtn.addEventListener('click', () => {
+        this.togglePanelCollapse();
+        dockDropdown?.classList.add('hidden');
+      });
+    }
+
+    // Edge affordance click to restore
+    if (this.edgeAffordanceEl) {
+      this.edgeAffordanceEl.addEventListener('click', () => {
+        this.togglePanelCollapse();
+      });
+    }
+
+    // Global keyboard shortcuts
+    window.addEventListener('keydown', (e: KeyboardEvent) => {
+      // Cmd+W / Ctrl+W : Close Tab
+      if ((e.key === 'w' || e.key === 'W') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        e.preventDefault();
+        this.closeSession(this.activeSessionId);
+      }
+      // Cmd+T / Ctrl+T or Cmd+N / Ctrl+N : New Document Tab
+      if (((e.key === 't' || e.key === 'T') || (e.key === 'n' || e.key === 'N')) && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        e.preventDefault();
+        this.newDocument();
+      }
+      // Ctrl+Tab / Ctrl+Shift+Tab : Cycle Document Tabs
+      if (e.key === 'Tab' && e.ctrlKey) {
+        e.preventDefault();
+        if (this.sessionOrder.length > 1) {
+          const currentIdx = this.sessionOrder.indexOf(this.activeSessionId);
+          const delta = e.shiftKey ? -1 : 1;
+          const nextIdx = (currentIdx + delta + this.sessionOrder.length) % this.sessionOrder.length;
+          this.switchToSession(this.sessionOrder[nextIdx]);
+        }
+      }
+      // Cmd+O / Ctrl+O : Open File
+      if ((e.key === 'o' || e.key === 'O') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        e.preventDefault();
+        this.openDocument();
+      }
+      // Cmd+S / Ctrl+S : Save File
+      if ((e.key === 's' || e.key === 'S') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        e.preventDefault();
+        this.saveDocument();
+      }
+      // Cmd+Shift+S / Ctrl+Shift+S : Save As File
+      if ((e.key === 's' || e.key === 'S') && ((e.metaKey && e.shiftKey) || (e.ctrlKey && e.shiftKey))) {
+        e.preventDefault();
+        this.saveDocumentAs();
+      }
+      // Cmd+P / Ctrl+P : Print / PDF Export
+      if ((e.key === 'p' || e.key === 'P') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        e.preventDefault();
+        this.printPdf();
+      }
+      // Cmd+B / Ctrl+B / Cmd+\ / Ctrl+\ : Toggle collapse
+      if ((e.key === 'b' || e.key === 'B' || e.key === '\\') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        e.preventDefault();
+        this.togglePanelCollapse();
+      }
+      // Cmd+Shift+D / Ctrl+Shift+D / Alt+D : Cycle dock edge
+      if ((e.key === 'd' || e.key === 'D') && ((e.metaKey && e.shiftKey) || (e.ctrlKey && e.shiftKey) || e.altKey)) {
+        e.preventDefault();
+        this.cycleDockEdge();
+      }
+      // Cmd+Enter / Ctrl+Enter : Run / Stop
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        const runBtn = this.container.querySelector('#doc-run-btn') as HTMLButtonElement;
+        runBtn?.click();
+      }
+    });
+
+    window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
+      if (this.isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    });
+
+    // Run / Stop (merged into #doc-run-btn)
+    const runBtn = this.container.querySelector('#doc-run-btn') as HTMLButtonElement;
+    const budgetSelect = this.container.querySelector('#budget-select') as HTMLSelectElement;
+    runBtn?.addEventListener('click', () => {
+      if (this.state.getIsInvokedRunning()) {
+        this.state.stop();
+        this.renderWorkPanel(this.state.getRecords(), false);
+        return;
+      }
+      const val = budgetSelect?.value ?? '10000';
+      const timeoutMs = val === 'unbounded' ? 3600000 : parseInt(val, 10);
+      const maxSteps = val === 'unbounded' ? 1000000000 : (timeoutMs <= 1000 ? 5000000 : 100000000);
+      const limits = {
+        timeoutMs,
+        maxSteps,
+        maxDepth: 5000,
+        maxBigIntDigits: 100000,
+        maxMemoryElements: 1000000,
+      };
+      this.state.runInvoked(limits);
+    });
+
+    // Clear button (in File menu)
+    const clearFileBtn = this.container.querySelector('#doc-clear-file-btn') as HTMLButtonElement;
+    clearFileBtn?.addEventListener('click', () => {
+      this.closeAllDropdowns();
+      if (this.textarea) {
+        this.textarea.value = '';
+        this.updateTypesetOverlay();
+        this.updateCaret();
+        this.state.setText('');
+      }
+    });
+
+    // Theme Toggle Button
+    const themeBtn = this.container.querySelector('#doc-theme-btn') as HTMLButtonElement;
+    themeBtn?.addEventListener('click', () => {
+      const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+      const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', nextTheme);
+      if (themeBtn) {
+        themeBtn.innerHTML = nextTheme === 'light' ? ICONS.moon : ICONS.sun;
+      }
+      localStorage.setItem('math_notebook_theme', nextTheme);
+      this.lineViewports.forEach(p => p.render());
+      this.pinnedViewports.forEach(p => p.render());
+      this.paneContainer?.getAllSpaceViewports().forEach(p => p.render());
+    });
+
+    // Multi-edge Draggable Splitter
+    const splitter = this.container.querySelector('#doc-splitter') as HTMLElement;
+    let isDragging = false;
+
+    splitter?.addEventListener('mousedown', () => {
+      isDragging = true;
+      const isHorizontal = this.dockLayout.edge === 'bottom' || this.dockLayout.edge === 'top';
+      document.body.style.cursor = isHorizontal ? 'row-resize' : 'col-resize';
+      document.body.style.userSelect = 'none';
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (this.isSurfaceDragging && this.textarea && this.overlayEl) {
+        const currOffset = this.getOffsetFromMouseEvent(e);
+        const start = Math.min(this.surfaceDragStartOffset, currOffset);
+        const end = Math.max(this.surfaceDragStartOffset, currOffset);
+        const dir = currOffset < this.surfaceDragStartOffset ? 'backward' : 'forward';
+        this.textarea.setSelectionRange(start, end, dir);
+        this.updateCaret();
+      }
+
+      if (!isDragging || !this.workspaceEl) return;
+      const containerRect = this.workspaceEl.getBoundingClientRect();
+      const edge = this.dockLayout.edge;
+
+      if (edge === 'right') {
+        const newWidth = containerRect.right - e.clientX;
+        if (newWidth < 40) {
+          this.dockLayout.collapsed = true;
+          this.applyDockLayout();
+          return;
+        }
+        this.dockLayout.collapsed = false;
+        const clampedWidth = Math.max(200, Math.min(containerRect.width * 0.7, newWidth));
+        this.dockLayout.edgeSizes.right = clampedWidth;
+        this.panelEl.style.width = `${clampedWidth}px`;
+      } else if (edge === 'left') {
+        const newWidth = e.clientX - containerRect.left;
+        if (newWidth < 40) {
+          this.dockLayout.collapsed = true;
+          this.applyDockLayout();
+          return;
+        }
+        this.dockLayout.collapsed = false;
+        const clampedWidth = Math.max(200, Math.min(containerRect.width * 0.7, newWidth));
+        this.dockLayout.edgeSizes.left = clampedWidth;
+        this.panelEl.style.width = `${clampedWidth}px`;
+      } else if (edge === 'bottom') {
+        const newHeight = containerRect.bottom - e.clientY;
+        if (newHeight < 40) {
+          this.dockLayout.collapsed = true;
+          this.applyDockLayout();
+          return;
+        }
+        this.dockLayout.collapsed = false;
+        const clampedHeight = Math.max(150, Math.min(containerRect.height * 0.7, newHeight));
+        this.dockLayout.edgeSizes.bottom = clampedHeight;
+        this.panelEl.style.height = `${clampedHeight}px`;
+      } else if (edge === 'top') {
+        const newHeight = e.clientY - containerRect.top;
+        if (newHeight < 40) {
+          this.dockLayout.collapsed = true;
+          this.applyDockLayout();
+          return;
+        }
+        this.dockLayout.collapsed = false;
+        const clampedHeight = Math.max(150, Math.min(containerRect.height * 0.7, newHeight));
+        this.dockLayout.edgeSizes.top = clampedHeight;
+        this.panelEl.style.height = `${clampedHeight}px`;
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (this.isSurfaceDragging) {
+        this.isSurfaceDragging = false;
+      }
+      if (isDragging) {
+        isDragging = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        this.saveDockLayout();
+        this.applyDockLayout();
+      }
+    });
+
+    document.addEventListener('selectionchange', () => {
+      if (document.activeElement === this.textarea) {
+        this.updateCaret();
+      }
+    });
+  }
+
+  private bindEditorSurfaceEvents() {
+    if (!this.textarea) return;
+
     this.textarea.addEventListener('beforeinput', (e: InputEvent) => {
       const data = (e as any).data;
       if (data && typeof data === 'string') {
@@ -1216,568 +1587,228 @@ export class DocumentEditor {
     this.textarea.addEventListener('scroll', () => {
       const scrollTop = this.textarea.scrollTop;
       const scrollLeft = this.textarea.scrollLeft;
-      this.lineNumbersEl.scrollTop = scrollTop;
-      this.gutterEl.scrollTop = scrollTop;
-      this.overlayEl.scrollTop = scrollTop;
-      this.overlayEl.scrollLeft = scrollLeft;
+      if (this.lineNumbersEl) this.lineNumbersEl.scrollTop = scrollTop;
+      if (this.gutterEl) this.gutterEl.scrollTop = scrollTop;
+      if (this.overlayEl) {
+        this.overlayEl.scrollTop = scrollTop;
+        this.overlayEl.scrollLeft = scrollLeft;
+      }
+      const session = this.sessions.get(this.activeSessionId);
+      if (session) {
+        session.scrollPosition = { scrollTop, scrollLeft };
+      }
       this.updateCaret();
     });
 
     this.textarea.addEventListener('focus', () => this.updateCaret());
     this.textarea.addEventListener('blur', () => this.updateCaret());
     this.textarea.addEventListener('select', () => this.updateCaret());
-
-    // New Tab Button
-    const newTabBtn = this.container.querySelector('#doc-session-new-tab-btn');
-    newTabBtn?.addEventListener('click', () => {
-      this.newDocument();
-    });
-
-    // File Menu dropdown toggle
-    const fileMenuBtn = this.container.querySelector('#doc-file-menu-btn');
-    const fileDropdown = this.container.querySelector('#doc-file-dropdown');
-    if (fileMenuBtn && fileDropdown) {
-      fileMenuBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.updateRecentFilesMenu();
-        fileDropdown.classList.toggle('hidden');
-      });
-      document.addEventListener('click', (e) => {
-        if (!fileDropdown.contains(e.target as Node) && e.target !== fileMenuBtn) {
-          fileDropdown.classList.add('hidden');
-        }
-      });
-    }
-
-    const newBtn = this.container.querySelector('#doc-new-file-btn');
-    newBtn?.addEventListener('click', () => {
-      fileDropdown?.classList.add('hidden');
-      this.newDocument();
-    });
-
-    const openBtn = this.container.querySelector('#doc-open-file-btn');
-    openBtn?.addEventListener('click', () => {
-      fileDropdown?.classList.add('hidden');
-      this.openDocument();
-    });
-
-    const saveBtn = this.container.querySelector('#doc-save-file-btn');
-    saveBtn?.addEventListener('click', () => {
-      fileDropdown?.classList.add('hidden');
-      this.saveDocument();
-    });
-
-    const saveAsBtn = this.container.querySelector('#doc-save-as-file-btn');
-    saveAsBtn?.addEventListener('click', () => {
-      fileDropdown?.classList.add('hidden');
-      this.saveDocumentAs();
-    });
-
-    const exportHtmlBtn = this.container.querySelector('#doc-export-html-btn');
-    exportHtmlBtn?.addEventListener('click', () => {
-      fileDropdown?.classList.add('hidden');
-      this.exportHtml();
-    });
-
-    const exportPdfBtn = this.container.querySelector('#doc-export-pdf-btn');
-    exportPdfBtn?.addEventListener('click', () => {
-      fileDropdown?.classList.add('hidden');
-      this.printPdf();
-    });
-
-    const exportMdBtn = this.container.querySelector('#doc-export-md-btn');
-    exportMdBtn?.addEventListener('click', () => {
-      fileDropdown?.classList.add('hidden');
-      this.exportMarkdown();
-    });
-
-    // Work Panel Tabs Switcher
-    const tabButtons = this.container.querySelectorAll('.doc-tab-btn');
-    tabButtons.forEach(btn => {
-      btn.addEventListener('click', () => {
-        tabButtons.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        const tab = (btn as HTMLElement).getAttribute('data-tab') as any;
-        this.activeTab = tab;
-        const curr = this.sessions.get(this.activeSessionId);
-        if (curr) {
-          curr.activeTab = tab;
-        }
-        this.container.querySelectorAll('.doc-tab-content').forEach(p => p.classList.remove('active'));
-        const panel = this.container.querySelector(`#tab-${tab}-panel`);
-        if (panel) panel.classList.add('active');
-      });
-    });
-
-    // Dock Menu dropdown toggle
-    const dockMenuBtn = this.container.querySelector('#doc-dock-menu-btn');
-    const dockDropdown = this.container.querySelector('#doc-dock-dropdown');
-    if (dockMenuBtn && dockDropdown) {
-      dockMenuBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        dockDropdown.classList.toggle('hidden');
-      });
-      document.addEventListener('click', (e) => {
-        if (!dockDropdown.contains(e.target as Node) && e.target !== dockMenuBtn) {
-          dockDropdown.classList.add('hidden');
-        }
-      });
-    }
-
-    // Dock Buttons in panel header dropdown
-    const dockBtns = this.container.querySelectorAll('.doc-dock-btn');
-    dockBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        const edge = (btn as HTMLElement).getAttribute('data-edge') as DockEdge;
-        if (edge) {
-          this.setDockEdge(edge);
-          dockDropdown?.classList.add('hidden');
-        }
-      });
-    });
-
-    // Collapse button in panel header dropdown
-    const collapseBtn = this.container.querySelector('.doc-dock-collapse-btn');
-    if (collapseBtn) {
-      collapseBtn.addEventListener('click', () => {
-        this.togglePanelCollapse();
-        dockDropdown?.classList.add('hidden');
-      });
-    }
-
-    // Edge affordance click to restore
-    if (this.edgeAffordanceEl) {
-      this.edgeAffordanceEl.addEventListener('click', () => {
-        this.togglePanelCollapse();
-      });
-    }
-
-    // Global keyboard shortcuts
-    window.addEventListener('keydown', (e: KeyboardEvent) => {
-      // Cmd+W / Ctrl+W : Close Tab
-      if ((e.key === 'w' || e.key === 'W') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
-        e.preventDefault();
-        this.closeSession(this.activeSessionId);
-      }
-      // Cmd+T / Ctrl+T or Cmd+N / Ctrl+N : New Document Tab
-      if (((e.key === 't' || e.key === 'T') || (e.key === 'n' || e.key === 'N')) && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
-        e.preventDefault();
-        this.newDocument();
-      }
-      // Ctrl+Tab / Ctrl+Shift+Tab : Cycle Document Tabs
-      if (e.key === 'Tab' && e.ctrlKey) {
-        e.preventDefault();
-        if (this.sessionOrder.length > 1) {
-          const currentIdx = this.sessionOrder.indexOf(this.activeSessionId);
-          const delta = e.shiftKey ? -1 : 1;
-          const nextIdx = (currentIdx + delta + this.sessionOrder.length) % this.sessionOrder.length;
-          this.switchToSession(this.sessionOrder[nextIdx]);
-        }
-      }
-      // Cmd+O / Ctrl+O : Open File
-      if ((e.key === 'o' || e.key === 'O') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
-        e.preventDefault();
-        this.openDocument();
-      }
-      // Cmd+S / Ctrl+S : Save File
-      if ((e.key === 's' || e.key === 'S') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
-        e.preventDefault();
-        this.saveDocument();
-      }
-      // Cmd+Shift+S / Ctrl+Shift+S : Save As File
-      if ((e.key === 's' || e.key === 'S') && ((e.metaKey && e.shiftKey) || (e.ctrlKey && e.shiftKey))) {
-        e.preventDefault();
-        this.saveDocumentAs();
-      }
-      // Cmd+P / Ctrl+P : Print / PDF Export
-      if ((e.key === 'p' || e.key === 'P') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
-        e.preventDefault();
-        this.printPdf();
-      }
-      // Cmd+B / Ctrl+B / Cmd+\ / Ctrl+\ : Toggle collapse
-      if ((e.key === 'b' || e.key === 'B' || e.key === '\\') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
-        e.preventDefault();
-        this.togglePanelCollapse();
-      }
-      // Cmd+Shift+D / Ctrl+Shift+D / Alt+D : Cycle dock edge
-      if ((e.key === 'd' || e.key === 'D') && ((e.metaKey && e.shiftKey) || (e.ctrlKey && e.shiftKey) || e.altKey)) {
-        e.preventDefault();
-        this.cycleDockEdge();
-      }
-    });
-
-    window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
-      if (this.isDirty) {
-        e.preventDefault();
-        e.returnValue = '';
-      }
-    });
-
-    // Corpus selector
-    const selectEl = this.container.querySelector('#corpus-select') as HTMLSelectElement;
-    selectEl?.addEventListener('change', () => {
-      const doc = CORPUS_DOCUMENTS.find(d => d.id === selectEl.value);
-      if (doc) {
-        if (!this.confirmDiscardChanges()) {
-          // Restore previous select value
-          const prevDoc = CORPUS_DOCUMENTS.find(d => `${d.id}.ax` === this.currentFileName || d.id === this.currentFileName);
-          if (prevDoc) selectEl.value = prevDoc.id;
-          return;
-        }
-        this.currentFileName = `${doc.id}.ax`;
-        this.currentFileHandle = undefined;
-        this.savedContent = doc.content;
-        this.isDirty = false;
-        this.setText(doc.content);
-        this.updateFileInfo();
-      }
-    });
-
-    // Run All (Invoked) with chosen budget
-    const runBtn = this.container.querySelector('#doc-run-btn') as HTMLButtonElement;
-    const budgetSelect = this.container.querySelector('#budget-select') as HTMLSelectElement;
-    runBtn.addEventListener('click', () => {
-      const val = budgetSelect?.value ?? '10000';
-      const timeoutMs = val === 'unbounded' ? 3600000 : parseInt(val, 10);
-      const maxSteps = val === 'unbounded' ? 1000000000 : (timeoutMs <= 1000 ? 5000000 : 100000000);
-      const limits = {
-        timeoutMs,
-        maxSteps,
-        maxDepth: 5000,
-        maxBigIntDigits: 100000,
-        maxMemoryElements: 1000000,
-      };
-      this.state.runInvoked(limits);
-    });
-
-    const stopBtn = this.container.querySelector('#doc-stop-btn') as HTMLButtonElement;
-    stopBtn.addEventListener('click', () => {
-      const { durationMs } = this.state.stop();
-      this.statusBadge.className = 'doc-status-badge stopped';
-      this.statusBadge.textContent = `Stopped (${durationMs.toFixed(1)} ms)`;
-    });
-
-    // Clear button
-    const clearBtn = this.container.querySelector('#doc-clear-btn') as HTMLButtonElement;
-    clearBtn.addEventListener('click', () => {
-      this.textarea.value = '';
-      this.updateTypesetOverlay();
-      this.updateCaret();
-      this.state.setText('');
-    });
-
-    // Theme Toggle Button
-    const themeBtn = this.container.querySelector('#doc-theme-btn') as HTMLButtonElement;
-    themeBtn.addEventListener('click', () => {
-      const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
-      const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
-      document.documentElement.setAttribute('data-theme', nextTheme);
-      themeBtn.innerHTML = nextTheme === 'light' ? ICONS.moon : ICONS.sun;
-      localStorage.setItem('math_notebook_theme', nextTheme);
-      this.lineViewports.forEach(p => p.render());
-      this.pinnedViewports.forEach(p => p.render());
-    });
-
-    // Multi-edge Draggable Splitter
-    const splitter = this.container.querySelector('#doc-splitter') as HTMLElement;
-    let isDragging = false;
-
-    splitter.addEventListener('mousedown', () => {
-      isDragging = true;
-      const isHorizontal = this.dockLayout.edge === 'bottom' || this.dockLayout.edge === 'top';
-      document.body.style.cursor = isHorizontal ? 'row-resize' : 'col-resize';
-      document.body.style.userSelect = 'none';
-    });
-
-    window.addEventListener('mousemove', (e) => {
-      if (!isDragging || !this.workspaceEl) return;
-      const containerRect = this.workspaceEl.getBoundingClientRect();
-      const edge = this.dockLayout.edge;
-
-      if (edge === 'right') {
-        const newWidth = containerRect.right - e.clientX;
-        if (newWidth < 40) {
-          this.dockLayout.collapsed = true;
-          this.applyDockLayout();
-          return;
-        }
-        this.dockLayout.collapsed = false;
-        const clampedWidth = Math.max(200, Math.min(containerRect.width * 0.7, newWidth));
-        this.dockLayout.edgeSizes.right = clampedWidth;
-        this.panelEl.style.width = `${clampedWidth}px`;
-      } else if (edge === 'left') {
-        const newWidth = e.clientX - containerRect.left;
-        if (newWidth < 40) {
-          this.dockLayout.collapsed = true;
-          this.applyDockLayout();
-          return;
-        }
-        this.dockLayout.collapsed = false;
-        const clampedWidth = Math.max(200, Math.min(containerRect.width * 0.7, newWidth));
-        this.dockLayout.edgeSizes.left = clampedWidth;
-        this.panelEl.style.width = `${clampedWidth}px`;
-      } else if (edge === 'bottom') {
-        const newHeight = containerRect.bottom - e.clientY;
-        if (newHeight < 40) {
-          this.dockLayout.collapsed = true;
-          this.applyDockLayout();
-          return;
-        }
-        this.dockLayout.collapsed = false;
-        const clampedHeight = Math.max(150, Math.min(containerRect.height * 0.7, newHeight));
-        this.dockLayout.edgeSizes.bottom = clampedHeight;
-        this.panelEl.style.height = `${clampedHeight}px`;
-      } else if (edge === 'top') {
-        const newHeight = e.clientY - containerRect.top;
-        if (newHeight < 40) {
-          this.dockLayout.collapsed = true;
-          this.applyDockLayout();
-          return;
-        }
-        this.dockLayout.collapsed = false;
-        const clampedHeight = Math.max(150, Math.min(containerRect.height * 0.7, newHeight));
-        this.dockLayout.edgeSizes.top = clampedHeight;
-        this.panelEl.style.height = `${clampedHeight}px`;
-      }
-    });
-
-    window.addEventListener('mouseup', () => {
-      if (isDragging) {
-        isDragging = false;
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        this.saveDockLayout();
-        this.applyDockLayout();
-      }
-    });
-
-    // Cursor synchronization
     this.textarea.addEventListener('keyup', () => this.updateCaret());
     this.textarea.addEventListener('click', () => this.updateCaret());
-    document.addEventListener('selectionchange', () => {
-      if (document.activeElement === this.textarea) {
-        this.updateCaret();
-      }
-    });
 
     // Explainable Math Click Handler on Editor Surface
-    this.overlayEl.addEventListener('click', (e) => {
-      const clickTarget = e.target as HTMLElement;
-      const lineEl = clickTarget.closest('.doc-typeset-line') as HTMLElement;
-      if (!lineEl) return;
+    if (this.overlayEl) {
+      this.overlayEl.addEventListener('click', (e) => {
+        const clickTarget = e.target as HTMLElement;
+        const lineEl = clickTarget.closest('.doc-typeset-line') as HTMLElement;
+        if (!lineEl) return;
 
-      const lines = this.textarea.value.split('\n');
-      const lineIdx = Array.from(this.overlayEl.querySelectorAll('.doc-typeset-line')).indexOf(lineEl);
-      if (lineIdx === -1) return;
+        const lines = this.textarea.value.split('\n');
+        const lineIdx = Array.from(this.overlayEl.querySelectorAll('.doc-typeset-line')).indexOf(lineEl);
+        if (lineIdx === -1) return;
 
-      const lineText = lines[lineIdx]?.trim() || '';
-      if (!lineText) return;
+        const lineText = lines[lineIdx]?.trim() || '';
+        if (!lineText) return;
 
-      const clickableEl = (clickTarget.closest('.tm-clickable') as HTMLElement) || null;
-      const constructEl = clickableEl || (clickTarget.closest('.typeset-box') as HTMLElement) || lineEl;
+        const clickableEl = (clickTarget.closest('.tm-clickable') as HTMLElement) || null;
+        const constructEl = clickableEl || (clickTarget.closest('.typeset-box') as HTMLElement) || lineEl;
 
-      let symbol = clickableEl?.dataset.symbol || 'dx';
-      let parentType = clickableEl?.dataset.parentType || '';
-      let varName = clickableEl?.dataset.var || 'x';
-      let integrand = clickableEl?.dataset.integrand || '';
-      let boundsLower: string | undefined = clickableEl?.dataset.boundsLower;
-      let boundsUpper: string | undefined = clickableEl?.dataset.boundsUpper;
-      let point: number | undefined = clickableEl?.dataset.point ? parseFloat(clickableEl.dataset.point) : undefined;
-      let targetLimit: number | undefined;
+        let symbol = clickableEl?.dataset.symbol || 'dx';
+        let parentType = clickableEl?.dataset.parentType || '';
+        let varName = clickableEl?.dataset.var || 'x';
+        let integrand = clickableEl?.dataset.integrand || '';
+        let boundsLower: string | undefined = clickableEl?.dataset.boundsLower;
+        let boundsUpper: string | undefined = clickableEl?.dataset.boundsUpper;
+        let point: number | undefined = clickableEl?.dataset.point ? parseFloat(clickableEl.dataset.point) : undefined;
+        let targetLimit: number | undefined;
 
-      try {
-        const env = createInitialEnvironment();
-        const ast = analyzeAndParse(lineText, env);
+        try {
+          const env = createInitialEnvironment();
+          const ast = analyzeAndParse(lineText, env);
 
-        // 1. BigOp integral: \u222b x^2 dx or integral(3*x + 1, x in 1..3)
-        if (ast.type === 'BigOp' && ast.op === 'integral') {
-          parentType = parentType || 'integral';
-          varName = ast.variable;
-          symbol = symbol || `d${varName}`;
-          integrand = formatAST(ast.body);
-          if (ast.start) boundsLower = formatAST(ast.start);
-          if (ast.end) boundsUpper = formatAST(ast.end);
+          // 1. BigOp integral: \u222b x^2 dx or integral(3*x + 1, x in 1..3)
+          if (ast.type === 'BigOp' && ast.op === 'integral') {
+            parentType = parentType || 'integral';
+            varName = ast.variable;
+            symbol = symbol || `d${varName}`;
+            integrand = formatAST(ast.body);
+            if (ast.start) boundsLower = formatAST(ast.start);
+            if (ast.end) boundsUpper = formatAST(ast.end);
+          }
+          // 2. LimitNode: lim(x -> 0, sin(x)/x)
+          else if (ast.type === 'Limit') {
+            parentType = parentType || 'limit';
+            symbol = 'lim';
+            varName = ast.variable;
+            integrand = formatAST(ast.expr);
+            try {
+              point = valueToNumber(evaluate(formatAST(ast.target), env).value);
+            } catch {
+              point = 0;
+            }
+          }
+          // 3. DiffNode: d//dx (x^3 - 2*x)
+          else if (ast.type === 'Diff') {
+            parentType = parentType || 'derivative';
+            varName = ast.variable;
+            symbol = symbol || `d${varName}`;
+            integrand = formatAST(ast.expr);
+            point = point ?? 1.5;
+          }
+          // 4. FunctionCall check: check(3/4 * pi * r^2, is: "sphere volume")
+          else if (ast.type === 'FunctionCall' && ((ast as any).callee === 'check' || (ast as any).name === 'check')) {
+            parentType = parentType || 'check';
+            symbol = 'check';
+            varName = 'r';
+            integrand = lineText;
+          }
+        } catch {
+          // Fallback for typeset math notation strings in editor
         }
-        // 2. LimitNode: lim(x -> 0, sin(x)/x)
-        else if (ast.type === 'Limit') {
-          parentType = parentType || 'limit';
-          symbol = 'lim';
-          varName = ast.variable;
-          integrand = formatAST(ast.expr);
-          try {
-            point = valueToNumber(evaluate(formatAST(ast.target), env).value);
-          } catch {
-            point = 0;
+
+        // Mathematical notation fallback if not standard AST node
+        if (!parentType) {
+          if (lineText.includes('d//') || lineText.startsWith('diff') || lineText.startsWith('d/dx')) {
+            parentType = 'derivative';
+            symbol = symbol || 'dx';
+            const match = lineText.match(/d\/\/d([a-zA-Z_][a-zA-Z0-9_]*)\s*([\s\S]*)/);
+            if (match) {
+              varName = match[1] || 'x';
+              integrand = match[2]?.replace(/^\(|\)$/g, '') || 'x^3 - 2*x';
+              symbol = `d${varName}`;
+            } else {
+              integrand = 'x^3 - 2*x';
+            }
+            point = point ?? 1.5;
+          } else if (lineText.startsWith('lim')) {
+            parentType = 'limit';
+            symbol = 'lim';
+            const match = lineText.match(/lim(?:\(([a-zA-Z_][a-zA-Z0-9_]*)\s*->\s*([0-9a-zA-Z\.\-]+)\))?\s*([\s\S]*)/);
+            if (match) {
+              varName = match[1] || 'x';
+              point = match[2] ? parseFloat(match[2]) : 3.0;
+              integrand = match[3]?.replace(/^\(|\)$/g, '') || '2*x + 4';
+            } else {
+              point = 3.0;
+              integrand = '2*x + 4';
+            }
+            targetLimit = 10.0;
+          } else if (lineText.includes('\u222b') || lineText.startsWith('integral')) {
+            parentType = 'integral';
+            symbol = symbol || 'dx';
+            const match = lineText.match(/(?:\u222b|integral)(?:_([0-9a-zA-Z\.\-]+))?(?:\^([0-9a-zA-Z\.\-]+))?\s+(?:from\s+([0-9a-zA-Z\.\-]+)\s+to\s+([0-9a-zA-Z\.\-]+)\s+of\s+)?([\s\S]+?)\s+(d[a-zA-Z_][a-zA-Z0-9_]*)/);
+            if (match) {
+              boundsLower = match[1] || match[3] || undefined;
+              boundsUpper = match[2] || match[4] || undefined;
+              integrand = match[5]?.replace(/^\(|\)$/g, '') || 'x^2';
+              symbol = match[6] || 'dx';
+              varName = symbol.startsWith('d') ? symbol.slice(1) : 'x';
+            } else {
+              integrand = 'x^2';
+              symbol = 'dx';
+            }
+          } else if (lineText.includes('check(') || lineText.startsWith('check')) {
+            parentType = 'check';
+            symbol = 'check';
+            varName = 'r';
+            integrand = lineText;
           }
         }
-        // 3. DiffNode: d//dx (x^3 - 2*x)
-        else if (ast.type === 'Diff') {
-          parentType = parentType || 'derivative';
-          varName = ast.variable;
-          symbol = symbol || `d${varName}`;
-          integrand = formatAST(ast.expr);
-          point = point ?? 1.5;
-        }
-        // 4. FunctionCall check: check(3/4 * pi * r^2, is: "sphere volume")
-        else if (ast.type === 'FunctionCall' && ((ast as any).callee === 'check' || (ast as any).name === 'check')) {
-          parentType = parentType || 'check';
-          symbol = 'check';
-          varName = 'r';
-          integrand = lineText;
-        }
-      } catch {
-        // Fallback for typeset math notation strings in editor
-      }
 
-      // Mathematical notation fallback if not standard AST node
-      if (!parentType) {
-        if (lineText.includes('d//') || lineText.startsWith('diff') || lineText.startsWith('d/dx')) {
-          parentType = 'derivative';
-          symbol = symbol || 'dx';
-          const match = lineText.match(/d\/\/d([a-zA-Z_][a-zA-Z0-9_]*)\s*([\s\S]*)/);
-          if (match) {
-            varName = match[1] || 'x';
-            integrand = match[2]?.replace(/^\(|\)$/g, '') || 'x^3 - 2*x';
-            symbol = `d${varName}`;
-          } else {
-            integrand = 'x^3 - 2*x';
-          }
-          point = point ?? 1.5;
-        } else if (lineText.startsWith('lim')) {
-          parentType = 'limit';
-          symbol = 'lim';
-          const match = lineText.match(/lim(?:\(([a-zA-Z_][a-zA-Z0-9_]*)\s*->\s*([0-9a-zA-Z\.\-]+)\))?\s*([\s\S]*)/);
-          if (match) {
-            varName = match[1] || 'x';
-            point = match[2] ? parseFloat(match[2]) : 3.0;
-            integrand = match[3]?.replace(/^\(|\)$/g, '') || '2*x + 4';
-          } else {
-            point = 3.0;
-            integrand = '2*x + 4';
-          }
-          targetLimit = 10.0;
-        } else if (lineText.includes('\u222b') || lineText.startsWith('integral')) {
-          parentType = 'integral';
-          symbol = symbol || 'dx';
-          const match = lineText.match(/(?:\u222b|integral)(?:_([0-9a-zA-Z\.\-]+))?(?:\^([0-9a-zA-Z\.\-]+))?\s+(?:from\s+([0-9a-zA-Z\.\-]+)\s+to\s+([0-9a-zA-Z\.\-]+)\s+of\s+)?([\s\S]+?)\s+(d[a-zA-Z_][a-zA-Z0-9_]*)/);
-          if (match) {
-            boundsLower = match[1] || match[3] || undefined;
-            boundsUpper = match[2] || match[4] || undefined;
-            integrand = match[5]?.replace(/^\(|\)$/g, '') || 'x^2';
-            symbol = match[6] || 'dx';
-            varName = symbol.startsWith('d') ? symbol.slice(1) : 'x';
-          } else {
-            integrand = 'x^2';
-            symbol = 'dx';
-          }
-        } else if (lineText.includes('check(') || lineText.startsWith('check')) {
-          parentType = 'check';
-          symbol = 'check';
-          varName = 'r';
-          integrand = lineText;
+        if (symbol) {
+          const explanation = explainSymbol(symbol, {
+            parentType,
+            integrand: integrand || lineText,
+            exprString: integrand || lineText,
+            variableName: varName,
+            bounds: boundsLower || boundsUpper ? { lower: boundsLower || '0', upper: boundsUpper || '1' } : undefined,
+            point,
+            targetLimit,
+          });
+
+          this.mathPopover.show(explanation, constructEl);
         }
-      }
-
-      if (symbol) {
-        const explanation = explainSymbol(symbol, {
-          parentType,
-          integrand: integrand || lineText,
-          exprString: integrand || lineText,
-          variableName: varName,
-          bounds: boundsLower || boundsUpper ? { lower: boundsLower || '0', upper: boundsUpper || '1' } : undefined,
-          point,
-          targetLimit,
-        });
-
-        this.mathPopover.show(explanation, constructEl);
-      }
-    });
+      });
+    }
 
     this.bindSurfaceMouseEvents();
+  }
+
+  private getOffsetFromMouseEvent(e: MouseEvent): number {
+    if (!this.overlayEl || !this.textarea) return 0;
+    const surfaceRect = this.overlayEl.getBoundingClientRect();
+    const clickX = e.clientX - surfaceRect.left + this.overlayEl.scrollLeft;
+    const clickY = e.clientY - surfaceRect.top + this.overlayEl.scrollTop;
+
+    const lines = this.textarea.value.split('\n');
+    const lineHeight = 24.5;
+    const padTop = 10.5;
+
+    let lineIdx = Math.floor((clickY - padTop) / lineHeight);
+    lineIdx = Math.max(0, Math.min(lines.length - 1, lineIdx));
+
+    const lineStr = lines[lineIdx] || '';
+    const lineEls = this.overlayEl.querySelectorAll('.doc-typeset-line');
+    const lineEl = lineEls[lineIdx] as HTMLElement;
+    if (!lineEl) return 0;
+
+    const charBoxes = this.getLineCharacterBoxes(lineEl, lineStr);
+    let colOffset = 0;
+
+    if (charBoxes.length === 0 || clickX <= charBoxes[0].left) {
+      colOffset = 0;
+    } else if (clickX >= charBoxes[charBoxes.length - 1].right) {
+      colOffset = lineStr.length;
+    } else {
+      for (let i = 0; i < charBoxes.length; i++) {
+        const box = charBoxes[i];
+        if (clickX >= box.left && clickX <= box.right) {
+          const mid = (box.left + box.right) / 2;
+          colOffset = clickX < mid ? i : i + 1;
+          break;
+        } else if (i < charBoxes.length - 1 && clickX > box.right && clickX < charBoxes[i + 1].left) {
+          colOffset = i + 1;
+          break;
+        }
+      }
+    }
+
+    let docOffset = 0;
+    for (let l = 0; l < lineIdx; l++) {
+      docOffset += lines[l].length + 1;
+    }
+    docOffset += Math.max(0, Math.min(lineStr.length, colOffset));
+    return docOffset;
   }
 
   private bindSurfaceMouseEvents() {
     const surface = this.container.querySelector('.doc-editor-surface') as HTMLElement;
     if (!surface) return;
-    let isDragging = false;
-    let dragStartOffset = 0;
-
-    const getOffsetFromMouseEvent = (e: MouseEvent): number => {
-      const surfaceRect = this.overlayEl.getBoundingClientRect();
-      const clickX = e.clientX - surfaceRect.left + this.overlayEl.scrollLeft;
-      const clickY = e.clientY - surfaceRect.top + this.overlayEl.scrollTop;
-
-      const lines = this.textarea.value.split('\n');
-      const lineHeight = 24.5;
-      const padTop = 10.5;
-
-      let lineIdx = Math.floor((clickY - padTop) / lineHeight);
-      lineIdx = Math.max(0, Math.min(lines.length - 1, lineIdx));
-
-      const lineStr = lines[lineIdx] || '';
-      const lineEls = this.overlayEl.querySelectorAll('.doc-typeset-line');
-      const lineEl = lineEls[lineIdx] as HTMLElement;
-      if (!lineEl) return 0;
-
-      const charBoxes = this.getLineCharacterBoxes(lineEl, lineStr);
-      let colOffset = 0;
-
-      if (charBoxes.length === 0 || clickX <= charBoxes[0].left) {
-        colOffset = 0;
-      } else if (clickX >= charBoxes[charBoxes.length - 1].right) {
-        colOffset = lineStr.length;
-      } else {
-        for (let i = 0; i < charBoxes.length; i++) {
-          const box = charBoxes[i];
-          if (clickX >= box.left && clickX <= box.right) {
-            const mid = (box.left + box.right) / 2;
-            colOffset = clickX < mid ? i : i + 1;
-            break;
-          } else if (i < charBoxes.length - 1 && clickX > box.right && clickX < charBoxes[i + 1].left) {
-            colOffset = i + 1;
-            break;
-          }
-        }
-      }
-
-      let docOffset = 0;
-      for (let l = 0; l < lineIdx; l++) {
-        docOffset += lines[l].length + 1;
-      }
-      docOffset += Math.max(0, Math.min(lineStr.length, colOffset));
-      return docOffset;
-    };
 
     surface.addEventListener('mousedown', (e: MouseEvent) => {
       if (e.button !== 0) return;
       e.preventDefault();
-      this.textarea.focus();
+      this.textarea?.focus();
 
-      dragStartOffset = getOffsetFromMouseEvent(e);
-      this.textarea.setSelectionRange(dragStartOffset, dragStartOffset);
+      this.surfaceDragStartOffset = this.getOffsetFromMouseEvent(e);
+      this.textarea?.setSelectionRange(this.surfaceDragStartOffset, this.surfaceDragStartOffset);
       this.updateCaret();
-      isDragging = true;
-    });
-
-    window.addEventListener('mousemove', (e: MouseEvent) => {
-      if (!isDragging) return;
-      const currOffset = getOffsetFromMouseEvent(e);
-      const start = Math.min(dragStartOffset, currOffset);
-      const end = Math.max(dragStartOffset, currOffset);
-      const dir = currOffset < dragStartOffset ? 'backward' : 'forward';
-      this.textarea.setSelectionRange(start, end, dir);
-      this.updateCaret();
-    });
-
-    window.addEventListener('mouseup', () => {
-      if (isDragging) {
-        isDragging = false;
-      }
+      this.isSurfaceDragging = true;
     });
 
     surface.addEventListener('dblclick', (e: MouseEvent) => {
       e.preventDefault();
-      const offset = getOffsetFromMouseEvent(e);
+      const offset = this.getOffsetFromMouseEvent(e);
       const text = this.textarea.value;
       let start = offset;
       let end = offset;
@@ -1794,15 +1825,24 @@ export class DocumentEditor {
   }
 
   private renderWorkPanel(records: DocumentLineRecord[], isEvaluating: boolean) {
-    if (this.state.getIsInvokedRunning()) {
-      this.statusBadge.className = 'doc-status-badge evaluating';
-      this.statusBadge.textContent = 'Invoked Running...';
-    } else if (isEvaluating) {
-      this.statusBadge.className = 'doc-status-badge evaluating';
-      this.statusBadge.textContent = 'Ambient Evaluating...';
-    } else {
-      this.statusBadge.className = 'doc-status-badge ready';
-      this.statusBadge.textContent = 'Ready';
+    const runBtn = this.container.querySelector('#doc-run-btn') as HTMLButtonElement;
+    if (runBtn) {
+      if (this.state.getIsInvokedRunning()) {
+        runBtn.className = 'doc-btn doc-btn-running';
+        runBtn.innerHTML = `${ICONS.stop} Stop`;
+        runBtn.title = 'Cancel running execution';
+      } else if (isEvaluating) {
+        runBtn.className = 'doc-btn doc-btn-running';
+        runBtn.innerHTML = `${ICONS.stop} Stop`;
+        runBtn.title = 'Cancel execution';
+      } else {
+        runBtn.className = 'doc-btn doc-btn-runnable';
+        runBtn.innerHTML = `${ICONS.run} Run`;
+        runBtn.title = 'Execute current document (Cmd+Enter / Ctrl+Enter)';
+      }
+    }
+
+    if (this.statsBadge) {
       this.statsBadge.textContent = `${this.state.getLastDurationMs()} ms (${records.length} lines)`;
     }
 
@@ -1813,11 +1853,13 @@ export class DocumentEditor {
     }
 
     // 1. Line Numbers
-    let lineNumsHtml = '';
-    for (let i = 0; i < records.length; i++) {
-      lineNumsHtml += `<div class="doc-line-num">${i + 1}</div>`;
+    if (this.lineNumbersEl) {
+      let lineNumsHtml = '';
+      for (let i = 0; i < records.length; i++) {
+        lineNumsHtml += `<div class="doc-line-num">${i + 1}</div>`;
+      }
+      this.lineNumbersEl.innerHTML = lineNumsHtml;
     }
-    this.lineNumbersEl.innerHTML = lineNumsHtml;
 
     // Clean up existing viewports and animation players
     this.lineViewports.forEach(p => p.dispose());
@@ -1870,17 +1912,10 @@ export class DocumentEditor {
     }
 
     // 3. Results Gutter with inline visuals
-    let gutterHtml = '';
     const activeSymbols: Map<string, { type: string; value: string; line: number; isShadowed?: boolean }> = new Map();
 
     for (let i = 0; i < records.length; i++) {
       const rec = records[i];
-      const isCollapsed = this.collapsedLines.has(i);
-      const isExpanded = this.expandedPlots.has(i);
-      const isPinned = this.pinnedLines.has(i);
-
-      gutterHtml += this.formatGutterRow(rec, isCollapsed, isExpanded, isPinned);
-
       if (rec.boundName && rec.result) {
         activeSymbols.set(rec.boundName, {
           type: rec.result.type,
@@ -1894,117 +1929,141 @@ export class DocumentEditor {
         this.addFrame(i + 1, rec.result);
       }
     }
-    this.gutterEl.innerHTML = gutterHtml;
 
-    // Reciprocal hover highlighting between editor lines and gutter rows
-    const gutterRows = this.gutterEl.querySelectorAll('.doc-gutter-row');
-    gutterRows.forEach(row => {
-      const lineIdxStr = (row as HTMLElement).getAttribute('data-line');
-      const lineIdx = parseInt(lineIdxStr ?? '0', 10);
-      row.addEventListener('mouseenter', () => {
-        row.classList.add('hovered');
-        const editorLine = this.overlayEl.querySelectorAll('.doc-typeset-line')[lineIdx];
-        if (editorLine) editorLine.classList.add('hovered');
-      });
-      row.addEventListener('mouseleave', () => {
-        row.classList.remove('hovered');
-        const editorLine = this.overlayEl.querySelectorAll('.doc-typeset-line')[lineIdx];
-        if (editorLine) editorLine.classList.remove('hovered');
-      });
-    });
+    if (this.gutterEl) {
+      let gutterHtml = '';
+      for (let i = 0; i < records.length; i++) {
+        const rec = records[i];
+        const isCollapsed = this.collapsedLines.has(i);
+        const isExpanded = this.expandedPlots.has(i);
+        const isPinned = this.pinnedLines.has(i);
+        gutterHtml += this.formatGutterRow(rec, isCollapsed, isExpanded, isPinned);
+      }
+      this.gutterEl.innerHTML = gutterHtml;
 
-    // Wire Pin buttons
-    this.gutterEl.querySelectorAll('.doc-gutter-pin-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const lineIdx = parseInt((btn as HTMLElement).getAttribute('data-line') ?? '0', 10);
-        if (this.pinnedLines.has(lineIdx)) {
-          this.pinnedLines.delete(lineIdx);
-        } else {
-          this.pinnedLines.add(lineIdx);
-        }
-        this.renderWorkPanel(this.state.getRecords(), false);
-      });
-    });
-
-    // Wire Collapse buttons
-    this.gutterEl.querySelectorAll('.doc-gutter-collapse-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const lineIdx = parseInt((btn as HTMLElement).getAttribute('data-line') ?? '0', 10);
-        if (this.collapsedLines.has(lineIdx)) {
-          this.collapsedLines.delete(lineIdx);
-        } else {
-          this.collapsedLines.add(lineIdx);
-        }
-        this.saveCollapsedLines();
-        this.renderWorkPanel(this.state.getRecords(), false);
-      });
-    });
-
-    // Wire Plot size Expand / Compact buttons
-    this.gutterEl.querySelectorAll('.doc-gutter-expand-plot-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const lineIdx = parseInt((btn as HTMLElement).getAttribute('data-line') ?? '0', 10);
-        if (this.expandedPlots.has(lineIdx)) {
-          this.expandedPlots.delete(lineIdx);
-        } else {
-          this.expandedPlots.add(lineIdx);
-        }
-        this.renderWorkPanel(this.state.getRecords(), false);
-      });
-    });
-
-    // Wire Exact rational toggle badges
-    this.gutterEl.querySelectorAll('.tm-exact-badge').forEach(badge => {
-      badge.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const container = badge.closest('.tm-large-rational');
-        if (!container) return;
-        const approx = container.querySelector('.tm-approx-val');
-        const expanded = container.querySelector('.tm-exact-expanded');
-        if (approx && expanded) {
-          const isExpanded = !expanded.classList.contains('hidden');
-          if (isExpanded) {
-            expanded.classList.add('hidden');
-            approx.classList.remove('hidden');
-            badge.textContent = '[exact]';
-          } else {
-            expanded.classList.remove('hidden');
-            approx.classList.add('hidden');
-            badge.textContent = '[approx]';
+      // Reciprocal hover highlighting between editor lines and gutter rows
+      const gutterRows = this.gutterEl.querySelectorAll('.doc-gutter-row');
+      gutterRows.forEach(row => {
+        const lineIdxStr = (row as HTMLElement).getAttribute('data-line');
+        const lineIdx = parseInt(lineIdxStr ?? '0', 10);
+        row.addEventListener('mouseenter', () => {
+          row.classList.add('hovered');
+          if (this.overlayEl) {
+            const editorLine = this.overlayEl.querySelectorAll('.doc-typeset-line')[lineIdx];
+            if (editorLine) editorLine.classList.add('hovered');
           }
-        }
+        });
+        row.addEventListener('mouseleave', () => {
+          row.classList.remove('hovered');
+          if (this.overlayEl) {
+            const editorLine = this.overlayEl.querySelectorAll('.doc-typeset-line')[lineIdx];
+            if (editorLine) editorLine.classList.remove('hovered');
+          }
+        });
       });
-    });
 
-    // Instantiate and render all SpaceViewports for visible space rows
-    for (let i = 0; i < records.length; i++) {
-      const rec = records[i];
-      if (rec && rec.result && rec.result.type === 'space' && !this.collapsedLines.has(i)) {
-        const spaceVal = rec.result as SpaceValue;
-        if (spaceVal.dimension > 0 || spaceVal.entities.length > 0 || (spaceVal.nestedSpaces && spaceVal.nestedSpaces.length > 0)) {
-          const container = this.gutterEl.querySelector(`.doc-space-container[data-line="${i}"]`) as HTMLElement;
-          if (container) {
-            const vp = new SpaceViewport(container, spaceVal);
-            this.lineViewports.set(i, vp);
+      // Wire Popout (Open as Tab) buttons
+      this.gutterEl.querySelectorAll('.doc-gutter-popout-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const lineIdx = parseInt((btn as HTMLElement).getAttribute('data-line') ?? '0', 10);
+          this.openSpaceAsTab(lineIdx);
+        });
+      });
+
+      // Wire Pin buttons
+      this.gutterEl.querySelectorAll('.doc-gutter-pin-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const lineIdx = parseInt((btn as HTMLElement).getAttribute('data-line') ?? '0', 10);
+          if (this.pinnedLines.has(lineIdx)) {
+            this.pinnedLines.delete(lineIdx);
+          } else {
+            this.pinnedLines.add(lineIdx);
+          }
+          this.renderWorkPanel(this.state.getRecords(), false);
+        });
+      });
+
+      // Wire Collapse buttons
+      this.gutterEl.querySelectorAll('.doc-gutter-collapse-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const lineIdx = parseInt((btn as HTMLElement).getAttribute('data-line') ?? '0', 10);
+          if (this.collapsedLines.has(lineIdx)) {
+            this.collapsedLines.delete(lineIdx);
+          } else {
+            this.collapsedLines.add(lineIdx);
+          }
+          this.saveCollapsedLines();
+          this.renderWorkPanel(this.state.getRecords(), false);
+        });
+      });
+
+      // Wire Plot size Expand / Compact buttons
+      this.gutterEl.querySelectorAll('.doc-gutter-expand-plot-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const lineIdx = parseInt((btn as HTMLElement).getAttribute('data-line') ?? '0', 10);
+          if (this.expandedPlots.has(lineIdx)) {
+            this.expandedPlots.delete(lineIdx);
+          } else {
+            this.expandedPlots.add(lineIdx);
+          }
+          this.renderWorkPanel(this.state.getRecords(), false);
+        });
+      });
+
+      // Wire Exact rational toggle badges
+      this.gutterEl.querySelectorAll('.tm-exact-badge').forEach(badge => {
+        badge.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const container = badge.closest('.tm-large-rational');
+          if (!container) return;
+          const approx = container.querySelector('.tm-approx-val');
+          const expanded = container.querySelector('.tm-exact-expanded');
+          if (approx && expanded) {
+            const isExpanded = !expanded.classList.contains('hidden');
+            if (isExpanded) {
+              expanded.classList.add('hidden');
+              approx.classList.remove('hidden');
+              badge.textContent = '[exact]';
+            } else {
+              expanded.classList.remove('hidden');
+              approx.classList.add('hidden');
+              badge.textContent = '[approx]';
+            }
+          }
+        });
+      });
+
+      // Instantiate and render all SpaceViewports for visible space rows
+      for (let i = 0; i < records.length; i++) {
+        const rec = records[i];
+        if (rec && rec.result && rec.result.type === 'space' && !this.collapsedLines.has(i)) {
+          const spaceVal = rec.result as SpaceValue;
+          if (spaceVal.dimension > 0 || spaceVal.entities.length > 0 || (spaceVal.nestedSpaces && spaceVal.nestedSpaces.length > 0)) {
+            const container = this.gutterEl.querySelector(`.doc-space-container[data-line="${i}"]`) as HTMLElement;
+            if (container) {
+              const vp = new SpaceViewport(container, spaceVal);
+              this.lineViewports.set(i, vp);
+            }
           }
         }
       }
-    }
 
-    // Instantiate and mount all animation players for visible trajectory rows
-    for (let i = 0; i < records.length; i++) {
-      const rec = records[i];
-      if (rec && rec.result && rec.result.type === 'trajectory' && !this.collapsedLines.has(i)) {
-        const container = this.gutterEl.querySelector(`.doc-inline-animation-container[data-line="${i}"]`) as HTMLElement;
-        if (container) {
-          const trajVal = rec.result as TrajectoryValue;
-          const player = new AnimationPlayer(container, trajVal, {
-            viewResolver: (state) => this.resolveViewForState(state),
-          });
-          this.animationPlayers.set(i, player);
+      // Instantiate and mount all animation players for visible trajectory rows
+      for (let i = 0; i < records.length; i++) {
+        const rec = records[i];
+        if (rec && rec.result && rec.result.type === 'trajectory' && !this.collapsedLines.has(i)) {
+          const container = this.gutterEl.querySelector(`.doc-inline-animation-container[data-line="${i}"]`) as HTMLElement;
+          if (container) {
+            const trajVal = rec.result as TrajectoryValue;
+            const player = new AnimationPlayer(container, trajVal, {
+              viewResolver: (state) => this.resolveViewForState(state),
+            });
+            this.animationPlayers.set(i, player);
+          }
         }
       }
     }
@@ -2025,25 +2084,27 @@ export class DocumentEditor {
     }
 
     // 4. Scope Tab
-    let scopeHtml = '';
-    if (activeSymbols.size === 0) {
-      scopeHtml = `<div class="doc-scope-empty">No user definitions in scope</div>`;
-    } else {
-      activeSymbols.forEach((info, name) => {
-        scopeHtml += `
-          <div class="doc-scope-item">
-            <div class="scope-item-header">
-              <span class="scope-name">${escapeHtml(name)}</span>
-              <span class="scope-type">${info.type}</span>
-              <span class="scope-line">Line ${info.line}</span>
-              ${info.isShadowed ? '<span class="doc-shadowed-badge">shadowed</span>' : ''}
+    if (this.scopePanelEl) {
+      let scopeHtml = '';
+      if (activeSymbols.size === 0) {
+        scopeHtml = `<div class="doc-scope-empty">No user definitions in scope</div>`;
+      } else {
+        activeSymbols.forEach((info, name) => {
+          scopeHtml += `
+            <div class="doc-scope-item">
+              <div class="scope-item-header">
+                <span class="scope-name">${escapeHtml(name)}</span>
+                <span class="scope-type">${info.type}</span>
+                <span class="scope-line">Line ${info.line}</span>
+                ${info.isShadowed ? '<span class="doc-shadowed-badge">shadowed</span>' : ''}
+              </div>
+              <div class="scope-val">${escapeHtml(info.value)}</div>
             </div>
-            <div class="scope-val">${escapeHtml(info.value)}</div>
-          </div>
-        `;
-      });
+          `;
+        });
+      }
+      this.scopePanelEl.innerHTML = scopeHtml;
     }
-    this.scopePanelEl.innerHTML = scopeHtml;
 
     // 5. Trace Tab
     const durationEl = this.container.querySelector('#trace-duration');
@@ -2052,7 +2113,9 @@ export class DocumentEditor {
     if (lineCountEl) lineCountEl.textContent = `${records.length}`;
 
     // 6. Frames Tab
-    this.renderFrames();
+    if (this.framesPanelEl) {
+      this.renderFrames();
+    }
   }
 
   private formatPinnedItem(rec: DocumentLineRecord): string {
@@ -2393,6 +2456,7 @@ export class DocumentEditor {
           <div class="doc-gutter-row-header">
             <span class="doc-gutter-lineno">L${lineIdx + 1} &bull; Space (${spaceVal.dimension}D)</span>
             <div class="doc-gutter-row-actions">
+              <button class="doc-gutter-action-btn doc-gutter-popout-btn" data-line="${lineIdx}" title="Open space as dedicated pane tab">Open as Tab</button>
               <button class="doc-gutter-action-btn doc-gutter-pin-btn ${isPinned ? 'pinned' : ''}" data-line="${lineIdx}" title="Pin space to top of panel">${isPinned ? 'Pinned' : 'Pin'}</button>
               ${!isCollapsed ? `<button class="doc-gutter-action-btn doc-gutter-expand-plot-btn" data-line="${lineIdx}" title="Toggle space viewport size">${isExpandedPlot ? 'Compact' : 'Expand'}</button>` : ''}
               <button class="doc-gutter-action-btn doc-gutter-collapse-btn" data-line="${lineIdx}" title="Collapse/Expand row">${collapseText}</button>
@@ -2800,7 +2864,258 @@ export class DocumentEditor {
     return null;
   }
 
+  public initPaneContainer(): void {
+    if (!this.workspaceEl) {
+      console.warn('initPaneContainer: no workspaceEl');
+      return;
+    }
+    // Only mount interactive PaneContainer in browser DOM environments
+    if (typeof (this.container as any).nodeType !== 'number') {
+      console.warn('initPaneContainer: nodeType is not number:', (this.container as any)?.nodeType);
+      return;
+    }
+
+    try {
+      this.paneContainer = new PaneContainer(this.workspaceEl, {
+        renderDocumentView: (_leafId, tab, container) => {
+          this.renderEditorOnly(container, tab.documentId);
+        },
+        renderResultsView: (_leafId, tab, container) => {
+          this.renderResultsOnly(container, tab.documentId);
+        },
+        getSpaceValueForLine: (_docId, lineIdx) => {
+          return this.getSpaceValueForLine(lineIdx);
+        },
+        getAvailableSpaces: () => {
+          return this.getAvailableSpaces();
+        },
+        getScopeData: () => {
+          return this.getActiveSymbolsMap();
+        },
+        getTraceData: () => {
+          return {
+            durationMs: this.state.getLastDurationMs(),
+            lineCount: this.state.getRecords().length,
+            status: this.state.getIsInvokedRunning() ? 'Invoked Running...' : (this.state.getIsEvaluating() ? 'Ambient Evaluating...' : 'Ready'),
+          };
+        },
+        getFramesData: () => {
+          return this.frames;
+        },
+        onNewDocumentTab: () => {
+          const sess = this.createSession('untitled.ax', '');
+          return {
+            id: sess.id,
+            type: 'document',
+            title: sess.name,
+            documentId: sess.id,
+          };
+        },
+        onOpenDocument: () => {
+          this.openDocument();
+        },
+        isDocumentDirty: (docId) => {
+          const s = docId ? this.sessions.get(docId) : this.sessions.get(this.activeSessionId);
+          return s?.isDirty ?? this.isDirty;
+        },
+        onJumpToSource: (docId, lineIdx) => {
+          if (docId && docId !== this.activeSessionId) {
+            this.switchToSession(docId);
+          }
+          this.jumpToLine(lineIdx);
+        },
+      });
+
+      // Synchronize document tab titles with loaded document name
+      const layout = this.paneContainer.getLayout();
+      updateDocumentTabTitles(layout.root, this.activeSessionId, this.currentFileName);
+      this.paneContainer.render();
+      console.log('initPaneContainer: SUCCESS created paneContainer');
+    } catch (err) {
+      console.error('initPaneContainer ERROR:', err);
+    }
+  }
+
+  public getAvailableSpaces(): { lineIdx: number; title: string; space: SpaceValue }[] {
+    const records = this.state.getRecords();
+    const list: { lineIdx: number; title: string; space: SpaceValue }[] = [];
+    records.forEach((rec, idx) => {
+      if (rec.result && rec.result.type === 'space') {
+        const spaceVal = rec.result as SpaceValue;
+        const title = rec.text.trim() || `${spaceVal.dimension}D Space`;
+        list.push({ lineIdx: idx, title, space: spaceVal });
+      }
+    });
+    return list;
+  }
+
+  public getSpaceValueForLine(lineIdx: number): SpaceValue | null {
+    if (typeof lineIdx !== 'number') return null;
+    const records = this.state.getRecords();
+    const rec = records[lineIdx];
+    if (rec && rec.result && rec.result.type === 'space') {
+      return rec.result as SpaceValue;
+    }
+    return null;
+  }
+
+  public getActiveSymbolsMap(): Map<string, { type: string; value: string; line: number; isShadowed?: boolean }> {
+    const records = this.state.getRecords();
+    const activeSymbols: Map<string, { type: string; value: string; line: number; isShadowed?: boolean }> = new Map();
+    for (let i = 0; i < records.length; i++) {
+      const rec = records[i];
+      if (rec.boundName && rec.result) {
+        activeSymbols.set(rec.boundName, {
+          type: rec.result.type,
+          value: this.formatValue(rec.result),
+          line: i + 1,
+          isShadowed: rec.isShadowed,
+        });
+      }
+    }
+    return activeSymbols;
+  }
+
+  public openSpaceAsTab(lineIdx: number): void {
+    if (!this.paneContainer) return;
+    const records = this.state.getRecords();
+    const rec = records[lineIdx];
+    const rawLine = rec?.text.trim() || `Line ${lineIdx + 1}`;
+    const cleanTitle = rawLine.length > 25 ? rawLine.substring(0, 24) + '…' : rawLine;
+    const spaceTitle = rec?.boundName ? `Space: ${rec.boundName}` : `L${lineIdx + 1}: ${cleanTitle}`;
+
+    const spaceTab: TabData = {
+      id: 'tab_space_' + Math.random().toString(36).substring(2, 9),
+      type: 'space',
+      title: spaceTitle,
+      documentId: this.activeSessionId,
+      spaceLineIdx: lineIdx,
+      spaceExprText: rec?.text.trim(),
+    };
+    this.paneContainer.openTab(spaceTab);
+  }
+
+  public renderDocumentView(container: HTMLElement): void {
+    this.renderEditorOnly(container);
+  }
+
+  public renderEditorOnly(container: HTMLElement, docId?: string): void {
+    if (docId && docId !== this.activeSessionId) {
+      this.switchToSession(docId);
+    }
+    container.innerHTML = '';
+
+    const paneLeft = document.createElement('div');
+    paneLeft.className = 'doc-pane-left';
+
+    const printView = document.createElement('div');
+    printView.id = 'doc-print-view';
+    printView.className = 'doc-print-view';
+
+    const lineNumbers = document.createElement('div');
+    lineNumbers.id = 'doc-line-numbers';
+    lineNumbers.className = 'doc-line-numbers';
+    this.lineNumbersEl = lineNumbers;
+
+    const editorSurface = document.createElement('div');
+    editorSurface.className = 'doc-editor-surface';
+
+    const overlay = document.createElement('div');
+    overlay.id = 'doc-typeset-overlay';
+    overlay.className = 'doc-typeset-overlay';
+    this.overlayEl = overlay;
+
+    const caret = document.createElement('div');
+    caret.id = 'doc-caret';
+    caret.className = 'doc-caret';
+    this.caretEl = caret;
+
+    const textarea = document.createElement('textarea');
+    textarea.id = 'doc-textarea';
+    textarea.className = 'doc-textarea';
+    textarea.placeholder = 'Write math expressions, definitions (x := 5), claims, or prose...';
+    textarea.spellcheck = false;
+    textarea.autocomplete = 'off';
+    textarea.autocapitalize = 'off';
+    textarea.value = this.state.getText();
+    this.textarea = textarea;
+
+    editorSurface.appendChild(overlay);
+    editorSurface.appendChild(caret);
+    editorSurface.appendChild(textarea);
+
+    paneLeft.appendChild(printView);
+    paneLeft.appendChild(lineNumbers);
+    paneLeft.appendChild(editorSurface);
+
+    container.appendChild(paneLeft);
+
+    const session = this.sessions.get(this.activeSessionId);
+    if (session && session.scrollPosition) {
+      textarea.scrollTop = session.scrollPosition.scrollTop;
+      textarea.scrollLeft = session.scrollPosition.scrollLeft;
+      overlay.scrollTop = session.scrollPosition.scrollTop;
+      overlay.scrollLeft = session.scrollPosition.scrollLeft;
+      lineNumbers.scrollTop = session.scrollPosition.scrollTop;
+    }
+
+    this.updateTypesetOverlay();
+    this.updateCaret();
+    this.bindEditorSurfaceEvents();
+    this.renderLineNumbers(this.state.getRecords());
+  }
+
+  public jumpToLine(lineIdx: number): void {
+    if (!this.textarea) return;
+    const lines = this.state.getText().split('\n');
+    let charOffset = 0;
+    for (let i = 0; i < lineIdx && i < lines.length; i++) {
+      charOffset += lines[i].length + 1;
+    }
+    const targetLine = lines[lineIdx] || '';
+    this.textarea.focus();
+    this.textarea.setSelectionRange(charOffset, charOffset + targetLine.length);
+    const lineHeight = 28;
+    this.textarea.scrollTop = Math.max(0, lineIdx * lineHeight - 50);
+    if (this.overlayEl) this.overlayEl.scrollTop = this.textarea.scrollTop;
+    if (this.lineNumbersEl) this.lineNumbersEl.scrollTop = this.textarea.scrollTop;
+    if (this.gutterEl) this.gutterEl.scrollTop = this.textarea.scrollTop;
+    this.updateCaret();
+  }
+
+  public renderResultsOnly(container: HTMLElement, _docId?: string): void {
+    container.innerHTML = '';
+
+    const resultsPane = document.createElement('div');
+    resultsPane.className = 'doc-results-pane';
+
+    const pinnedVisuals = document.createElement('div');
+    pinnedVisuals.id = 'doc-pinned-visuals';
+    pinnedVisuals.className = 'doc-pinned-visuals empty';
+
+    const gutter = document.createElement('div');
+    gutter.id = 'doc-gutter';
+    gutter.className = 'doc-gutter';
+    this.gutterEl = gutter;
+
+    resultsPane.appendChild(pinnedVisuals);
+    resultsPane.appendChild(gutter);
+    container.appendChild(resultsPane);
+
+    this.renderWorkPanel(this.state.getRecords(), this.state.getIsEvaluating());
+  }
+
+  private renderLineNumbers(records: DocumentLineRecord[]): void {
+    if (!this.lineNumbersEl) return;
+    let lineNumsHtml = '';
+    for (let i = 0; i < records.length; i++) {
+      lineNumsHtml += `<div class="doc-line-num">${i + 1}</div>`;
+    }
+    this.lineNumbersEl.innerHTML = lineNumsHtml;
+  }
+
   public dispose() {
+    this.paneContainer?.dispose();
     this.lineViewports.forEach(p => p.dispose());
     this.lineViewports.clear();
     this.pinnedViewports.forEach(p => p.dispose());

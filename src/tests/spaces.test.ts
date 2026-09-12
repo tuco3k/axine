@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { evaluate, createInitialEnvironment } from '../core/evaluator';
+import { processDocumentLines } from '../core/worker';
+import { BUNDLED_DOCUMENTS } from '../document/virtual_documents';
 import { SpaceValue } from '../core/types';
 import { sampleSlice } from '../core/sampler';
 import { SpaceViewport } from '../plot/space_viewport';
@@ -290,5 +292,54 @@ describe('Rewrite Phase 3: Spaces', () => {
         }
       }
     });
+
+    it('correctly auto-fits and bounds a 2D parabola from thrown_ball.ax', () => {
+      const text = BUNDLED_DOCUMENTS['thrown_ball.ax'];
+      const records: any[] = [];
+      processDocumentLines(1, text.split('\n'), res => records.push(res));
+      records.forEach((r, idx) => {
+        console.log(`L${idx+1}: [${r.line}] -> Result Type: ${r.result?.type}`);
+        if (r.result?.type === 'space') {
+          const sp = r.result as SpaceValue;
+          console.log(`   Space dim: ${sp.dimension}, coords: ${sp.coordinates.join(', ')}, entities: ${sp.entities.length}`);
+        }
+      });
+
+      const spaceRec = records.find(r => r.line && r.line.includes('\\axis') && r.result && r.result.type === 'space');
+      expect(spaceRec).toBeDefined();
+      const space = spaceRec!.result as SpaceValue;
+      expect(space.type).toBe('space');
+      expect(space.dimension).toBe(2);
+      expect(space.coordinates).toEqual(['time', 'y']);
+
+      const entity = space.entities[0];
+      expect(typeof entity.compiledFn).toBe('function');
+      expect(entity.compiledFn(0, 0)).toBeCloseTo(0, 4);
+      expect(entity.compiledFn(1.5, 11.475)).toBeCloseTo(0, 4);
+
+      const origDoc = (globalThis as any).document;
+      (globalThis as any).document = {
+        createElement: (tag: string) => new MockElement(tag),
+      };
+
+      try {
+        const container = (globalThis as any).document.createElement('div');
+        const viewport = new SpaceViewport(container as any, space);
+        const cam = viewport.getCameraState();
+        expect(cam.bounds2D.minX).toBeLessThanOrEqual(0);
+        expect(cam.bounds2D.maxX).toBeGreaterThanOrEqual(3.0);
+        expect(cam.bounds2D.minY).toBeLessThanOrEqual(0);
+        expect(cam.bounds2D.maxY).toBeGreaterThanOrEqual(12.0);
+        expect(cam.displayAxes).toEqual(['time', 'y']);
+        viewport.dispose();
+      } finally {
+        if (origDoc) {
+          (globalThis as any).document = origDoc;
+        } else {
+          delete (globalThis as any).document;
+        }
+      }
+    });
   });
 });
+

@@ -1,5 +1,6 @@
 import { NumericCompiledFn } from './compiler';
 import { MARCHING_CUBES_TRI_TABLE, CUBE_EDGE_VERTICES } from './marching_cubes_tables';
+import type { SpaceValue } from './types';
 
 export type RangeInput = [number, number] | { min: number; max: number };
 
@@ -88,6 +89,9 @@ export function sample2D(
   yRangeInput: RangeInput,
   resolution: number | [number, number]
 ): Contour2DResult {
+  if (typeof fn !== 'function') {
+    return { polylines: [], bounds: null, sampleCount: 0 };
+  }
   const xR = normalizeRange(xRangeInput);
   const yR = normalizeRange(yRangeInput);
 
@@ -534,6 +538,16 @@ export function sample3D(
   zRangeInput: RangeInput,
   resolution: number | [number, number, number]
 ): TriangleMesh3D {
+  if (typeof fn !== 'function') {
+    return {
+      vertices: [],
+      triangles: [],
+      positions: new Float32Array(0),
+      indices: new Uint32Array(0),
+      bounds: null,
+      sampleCount: 0,
+    };
+  }
   const xR = normalizeRange(xRangeInput);
   const yR = normalizeRange(yRangeInput);
   const zR = normalizeRange(zRangeInput);
@@ -947,6 +961,19 @@ export function sampleSlice(
   ranges: RangeInput[] | Record<string, RangeInput>,
   resolution: number | number[]
 ): Contour2DResult | TriangleMesh3D {
+  if (typeof fn !== 'function') {
+    if (freeAxes.length === 2) {
+      return { polylines: [], bounds: null, sampleCount: 0 };
+    }
+    return {
+      vertices: [],
+      triangles: [],
+      positions: new Float32Array(0),
+      indices: new Uint32Array(0),
+      bounds: null,
+      sampleCount: 0,
+    };
+  }
   for (const axis of freeAxes) {
     if (!allVars.includes(axis)) {
       throw new Error(`Free axis '${axis}' not found in declared variables: [${allVars.join(', ')}]`);
@@ -984,28 +1011,294 @@ export function sampleSlice(
 /**
  * Zoom-to-fit domain discovery helper.
  * Samples coarsely over an initial window, finds where the relation holds, and tightens bounds.
- * If the relation holds nowhere in the window, returns null (empty result).
+ * If the relation holds nowhere in the window, searches broader scales.
  */
 export function findBounds2D(
   fn: (x: number, y: number) => number,
-  initialRangeX: RangeInput = [-10, 10],
-  initialRangeY: RangeInput = [-10, 10],
-  coarseResolution: number = 30
+  initialRangeX: RangeInput = [-15, 15],
+  initialRangeY: RangeInput = [-15, 15],
+  coarseResolution: number = 40
 ): Bounds2D | null {
-  const coarse = sample2D(fn, initialRangeX, initialRangeY, coarseResolution);
-  if (!coarse.bounds || coarse.polylines.length === 0) {
+  if (typeof fn !== 'function') return null;
+
+  // Try initial range, then expand if no contour found
+  const rangesToTry: [RangeInput, RangeInput][] = [
+    [initialRangeX, initialRangeY],
+    [[-50, 50], [-50, 50]],
+    [[-200, 200], [-200, 200]],
+  ];
+
+  let coarse: Contour2DResult | null = null;
+  for (const [rx, ry] of rangesToTry) {
+    const res = sample2D(fn, rx, ry, coarseResolution);
+    if (res.bounds && res.polylines.length > 0) {
+      coarse = res;
+      break;
+    }
+  }
+
+  if (!coarse || !coarse.bounds || coarse.polylines.length === 0) {
     return null;
   }
 
-  // Add 10% padding margin around detected manifold
-  const b = coarse.bounds;
-  const padX = Math.max(0.1, (b.maxX - b.minX) * 0.1);
-  const padY = Math.max(0.1, (b.maxY - b.minY) * 0.1);
+  // Collect all contour vertices
+  const allPts: [number, number][] = [];
+  for (const poly of coarse.polylines) {
+    for (const pt of poly.points) {
+      allPts.push(pt);
+    }
+  }
+
+  if (allPts.length === 0) return null;
+
+  // Check if there is a primary trajectory arc (e.g. projectile in positive quadrant with roots near zero)
+  const hasNegativeXPositiveY = allPts.some(([x, y]) => x < -1.0 && y > 1.0);
+  const hasNegativeXNegativeY = allPts.some(([x, y]) => x < -1.0 && y < -1.0);
+  const hasPositiveXPositiveY = allPts.some(([x, y]) => x > 1.0 && y > 1.0);
+  const isMultiQuadrant = hasNegativeXPositiveY && hasNegativeXNegativeY && hasPositiveXPositiveY;
+
+  const nonNegPts = allPts.filter(([x, y]) => x >= -0.1 && y >= -0.1);
+  if (!isMultiQuadrant && nonNegPts.length >= 4) {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const [x, y] of nonNegPts) {
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+    }
+    if (maxY > 1 && (maxX - minX) > 0.5 && !hasNegativeXPositiveY) {
+      const spanX = Math.max(1, maxX - minX);
+      const spanY = Math.max(1, maxY - minY);
+      const padX = spanX * 0.15;
+      const padY = spanY * 0.15;
+      return {
+        minX: Math.floor((minX - padX) * 10) / 10,
+        maxX: Math.ceil((maxX + padX) * 10) / 10,
+        minY: Math.floor((minY - padY) * 10) / 10,
+        maxY: Math.ceil((maxY + padY) * 10) / 10,
+      };
+    }
+  }
+
+  // General manifold bounding
+  const minX = coarse.bounds.minX;
+  const maxX = coarse.bounds.maxX;
+  const minY = coarse.bounds.minY;
+  const maxY = coarse.bounds.maxY;
+
+  const spanX = Math.max(0.1, maxX - minX);
+  const spanY = Math.max(0.1, maxY - minY);
+  const padX = Math.max(0.2, spanX * 0.12);
+  const padY = Math.max(0.2, spanY * 0.12);
 
   return {
-    minX: b.minX - padX,
-    maxX: b.maxX + padX,
-    minY: b.minY - padY,
-    maxY: b.maxY + padY,
+    minX: minX - padX,
+    maxX: maxX + padX,
+    minY: minY - padY,
+    maxY: maxY + padY,
   };
 }
+
+/**
+ * 1D Root discovery helper.
+ * Finds real roots along the real line for a 1D relation fn(x) == 0.
+ */
+export function findRoots1D(
+  fn: (x: number) => number,
+  searchMin: number = -1000,
+  searchMax: number = 1000,
+  steps: number = 2000
+): number[] {
+  if (typeof fn !== 'function') return [];
+  const roots: number[] = [];
+
+  // Check linear/affine behavior first: f(x) = ax + b -> root = -f(0) / (f(1) - f(0))
+  try {
+    const f0 = fn(0);
+    const f1 = fn(1);
+    const f2 = fn(2);
+    const slope = f1 - f0;
+    if (Math.abs((f2 - f1) - slope) < 1e-9 && Math.abs(slope) > 1e-12) {
+      const exactRoot = -f0 / slope;
+      if (exactRoot >= searchMin && exactRoot <= searchMax && !isNaN(exactRoot) && isFinite(exactRoot)) {
+        return [exactRoot];
+      }
+    }
+  } catch {
+    // Fall through to sampling
+  }
+
+  const step = (searchMax - searchMin) / steps;
+  let prevVal: number | null = null;
+
+  for (let i = 0; i <= steps; i++) {
+    const x = searchMin + i * step;
+    let v: number;
+    try {
+      v = fn(x);
+    } catch {
+      prevVal = null;
+      continue;
+    }
+    if (!isFinite(v) || isNaN(v)) {
+      prevVal = null;
+      continue;
+    }
+
+    if (prevVal !== null && ((prevVal <= 0 && v >= 0) || (prevVal >= 0 && v <= 0))) {
+      const denom = v - prevVal;
+      const t = Math.abs(denom) > 1e-15 ? -prevVal / denom : 0.5;
+      const rx = (x - step) + t * step;
+      roots.push(rx);
+    }
+    prevVal = v;
+  }
+
+  return roots;
+}
+
+/**
+ * 1D Zoom-to-fit domain discovery helper.
+ * Fits a tight, natural coordinate window around detected 1D roots.
+ * For a single point r (e.g. g = 9.8), fits a window scaled to that value.
+ */
+export function findBounds1D(
+  fn: (x: number) => number,
+  searchMin: number = -1000,
+  searchMax: number = 1000
+): Bounds2D | null {
+  if (typeof fn !== 'function') return null;
+  const roots = findRoots1D(fn, searchMin, searchMax);
+  if (roots.length === 0) {
+    return null;
+  }
+
+  const rmin = Math.min(...roots);
+  const rmax = Math.max(...roots);
+
+  if (Math.abs(rmax - rmin) < 1e-9) {
+    const r = rmin;
+    if (Math.abs(r) < 1e-6) {
+      return { minX: -5, maxX: 5, minY: -5, maxY: 5 };
+    }
+    const pad = Math.max(2.0, Math.abs(r) * 0.25);
+    let minX: number;
+    let maxX: number;
+    if (r > 0 && r - pad <= 2) {
+      minX = 0;
+      maxX = Math.ceil(r + pad);
+    } else if (r < 0 && r + pad >= -2) {
+      minX = Math.floor(r - pad);
+      maxX = 0;
+    } else {
+      minX = Math.floor(r - pad);
+      maxX = Math.ceil(r + pad);
+    }
+    return { minX, maxX, minY: minX, maxY: maxX };
+  } else {
+    const span = rmax - rmin;
+    const pad = Math.max(1.0, span * 0.2);
+    const minX = Math.floor(rmin - pad);
+    const maxX = Math.ceil(rmax + pad);
+    return { minX, maxX, minY: minX, maxY: maxX };
+  }
+}
+
+/**
+ * Populates a Space simulation container with pre-sampled manifold geometry (contours, meshes, roots)
+ * and discovers the spatial extent of the space.
+ * This runs independently of any camera viewport.
+ */
+export function populateSpaceGeometry(space: SpaceValue): void {
+  if (!space || !space.entities || space.entities.length === 0) return;
+
+  const dim = space.dimension;
+  const coords = space.coordinates.length > 0 ? space.coordinates : ['x', 'y'];
+
+  // 1. Determine or discover space extent
+  let extent2D: Bounds2D = { minX: -5, maxX: 5, minY: -5, maxY: 5 };
+  let extent3D: Bounds3D = { minX: -3, maxX: 3, minY: -3, maxY: 3, minZ: -3, maxZ: 3 };
+
+  if (space.coordinateBounds) {
+    const b0 = space.coordinateBounds[coords[0]];
+    const b1 = coords.length >= 2 ? space.coordinateBounds[coords[1]] : undefined;
+    const b2 = coords.length >= 3 ? space.coordinateBounds[coords[2]] : undefined;
+    if (b0 && b1) {
+      extent2D = { minX: b0[0], maxX: b0[1], minY: b1[0], maxY: b1[1] };
+    }
+    if (b0 && b1 && b2) {
+      extent3D = { minX: b0[0], maxX: b0[1], minY: b1[0], maxY: b1[1], minZ: b2[0], maxZ: b2[1] };
+    }
+  } else {
+    // Discover domain from primary entity
+    const primary = space.entities[0];
+    if (typeof primary?.compiledFn === 'function') {
+      if (dim === 1 && primary.coordinates.length <= 1) {
+        const b1D = findBounds1D(primary.compiledFn);
+        if (b1D) {
+          extent2D = { ...b1D };
+        }
+      } else if (dim === 2) {
+        const b2D = findBounds2D(primary.compiledFn, [-15, 15], [-15, 15]);
+        if (b2D) {
+          extent2D = { ...b2D };
+        }
+      }
+    }
+  }
+
+  space.extent2D = extent2D;
+  space.extent3D = extent3D;
+
+  // 2. Pre-sample geometry for all entities over the space's extent
+  for (const ent of space.entities) {
+    if (typeof ent.compiledFn !== 'function') continue;
+
+    if (dim === 1 && ent.coordinates.length <= 1) {
+      const N = 400;
+      const minX = extent2D.minX;
+      const maxX = extent2D.maxX;
+      const stepSample = (maxX - minX) / N;
+      const roots: number[] = [];
+      let prevVal: number | null = null;
+      for (let i = 0; i <= N; i++) {
+        const xVal = minX + i * stepSample;
+        let v: number;
+        try {
+          v = ent.compiledFn(xVal);
+        } catch {
+          continue;
+        }
+        if (prevVal !== null && ((prevVal <= 0 && v >= 0) || (prevVal >= 0 && v <= 0))) {
+          const denom = v - prevVal;
+          const t = Math.abs(denom) > 1e-15 ? -prevVal / denom : 0.5;
+          const rootX = (xVal - stepSample) + t * stepSample;
+          roots.push(rootX);
+        }
+        prevVal = v;
+      }
+      ent.cachedRoots1D = roots;
+    } else if (dim === 2) {
+      const resolution = 200;
+      if (ent.coordinates.length === 1) {
+        const isAxisX = ent.coordinates[0] === coords[0];
+        const sliceFn = isAxisX
+          ? (x: number, _y: number) => ent.compiledFn(x)
+          : (_x: number, y: number) => ent.compiledFn(y);
+        ent.cachedContours = sample2D(sliceFn, [extent2D.minX, extent2D.maxX], [extent2D.minY, extent2D.maxY], resolution);
+      } else {
+        ent.cachedContours = sample2D(ent.compiledFn, [extent2D.minX, extent2D.maxX], [extent2D.minY, extent2D.maxY], resolution);
+      }
+    } else if (dim === 3) {
+      const resolution = 40;
+      ent.cachedMesh = sample3D(
+        ent.compiledFn,
+        [extent3D.minX, extent3D.maxX],
+        [extent3D.minY, extent3D.maxY],
+        [extent3D.minZ, extent3D.maxZ],
+        resolution
+      );
+    }
+  }
+}
+
