@@ -557,14 +557,14 @@ export class Evaluator {
         if (valAnalysis.freeVariables.length > 0) {
           const coordinates = declaredAxes ?? [ast.target, ...valAnalysis.freeVariables].sort((a, b) => a.localeCompare(b));
           const uniqueCoords = [...new Set(coordinates)];
-          const canGraph = declaredAxes === undefined || uniqueCoords.every(v => declaredAxes.includes(v));
+          const canSample = declaredAxes === undefined || uniqueCoords.every(v => declaredAxes.includes(v));
           const comp = compileAST(ast, uniqueCoords, this.env);
           const spVal: SpaceValue = {
             type: 'space',
             coordinates: uniqueCoords,
             dimension: uniqueCoords.length,
             declaredAxes,
-            entities: canGraph && comp.success ? [{
+            entities: canSample && comp.success ? [{
               coordinates: uniqueCoords,
               ast,
               compiledFn: comp.fn,
@@ -618,14 +618,14 @@ export class Evaluator {
           this.env[boundVar] = boundVal;
           if (declaredAxes !== undefined || boundVar.length === 1) {
             const coordinates = declaredAxes ?? [boundVar];
-            const canGraph = declaredAxes === undefined || declaredAxes.includes(boundVar);
+            const canSample = declaredAxes === undefined || declaredAxes.includes(boundVar);
             const comp = compileAST(ast, coordinates, this.env);
             const spVal: SpaceValue = {
               type: 'space',
               coordinates,
               dimension: coordinates.length,
               declaredAxes,
-              entities: canGraph && comp.success ? [{
+              entities: canSample && comp.success ? [{
                 coordinates,
                 ast,
                 compiledFn: comp.fn,
@@ -654,13 +654,13 @@ export class Evaluator {
       };
 
       if ((isRelation || isBareIdentifierOrProduct(ast)) && analysis.freeVariables.length > 0 && !analysis.isDefinition) {
-        const canGraph = declaredAxes === undefined || (
+        const canSample = declaredAxes === undefined || (
           analysis.freeVariables.every(v => declaredAxes.includes(v))
         );
         const coordinates = declaredAxes ?? [...analysis.freeVariables].sort((a, b) => a.localeCompare(b));
         const comp = compileAST(ast, coordinates, this.env);
         const entities: SpatialEntity[] = [];
-        if (isRelation && canGraph) {
+        if (isRelation && canSample) {
           const compiledFn = comp.success ? comp.fn : this.createReducerSamplerFn(ast, coordinates, this.env);
           entities.push({
             coordinates,
@@ -863,12 +863,12 @@ export class Evaluator {
         const rewrittenStmt: AssignmentNode = { ...stmt, value: rewrittenValue };
         const valAnalysis = analyzeAST(rewrittenValue, blockEnv, new Set(), this.source);
         const stmtVars = [stmt.target, ...valAnalysis.freeVariables];
-        const canGraph = declaredAxes === undefined || (
+        const canSample = declaredAxes === undefined || (
           stmtVars.length > 0 &&
           stmtVars.every(v => declaredAxes!.includes(v))
         );
 
-        if (canGraph && (stmtVars.length > 0 || valAnalysis.freeVariables.length > 0)) {
+        if (canSample && (stmtVars.length > 0 || valAnalysis.freeVariables.length > 0)) {
           const stmtCoords = declaredAxes ?? [...new Set([stmt.target, ...valAnalysis.freeVariables])].sort((a, b) => a.localeCompare(b));
           const comp = compileAST(rewrittenStmt, stmtCoords.length > 0 ? stmtCoords : [stmt.target], blockEnv);
           const compiledFn = comp.success ? comp.fn : this.createReducerSamplerFn(rewrittenStmt, stmtCoords.length > 0 ? stmtCoords : [stmt.target], blockEnv);
@@ -928,11 +928,11 @@ export class Evaluator {
         const rewrittenStmt = substituteExpressions(stmt, substMap);
         const stmtAnalysis = analyzeAST(rewrittenStmt, blockEnv, new Set(), this.source);
         const isRel = rewrittenStmt.type === 'BinaryOp' && ['=', '==', '!=', '<', '<=', '>', '>='].includes(rewrittenStmt.op);
-        const canGraph = declaredAxes === undefined || (
+        const canSample = declaredAxes === undefined || (
           stmtAnalysis.freeVariables.every(v => declaredAxes!.includes(v))
         );
 
-        if (canGraph && (stmtAnalysis.freeVariables.length > 0 || isRel)) {
+        if (canSample && (stmtAnalysis.freeVariables.length > 0 || isRel)) {
           const stmtCoords = declaredAxes ?? [...new Set([...coordinates, ...stmtAnalysis.freeVariables])].sort((a, b) => a.localeCompare(b));
           const comp = compileAST(rewrittenStmt, stmtCoords, blockEnv);
           const compiledFn = comp.success ? comp.fn : this.createReducerSamplerFn(rewrittenStmt, stmtCoords, blockEnv);

@@ -800,12 +800,6 @@ export interface MatrixValue {
   data: Value[][];
 }
 
-export interface GraphTypeValue {
-  type: 'graph_type';
-  vertices: string[];
-  edges: [string, string][];
-}
-
 export interface ClaimValue {
   type: 'claim';
   name: string;
@@ -1114,7 +1108,6 @@ export type Value =
   | NoneValue
   | UnknownValue
   | MatrixValue
-  | GraphTypeValue
   | ClaimValue
   | RangeValue
   | FunctionValue
