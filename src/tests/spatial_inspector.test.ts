@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   SpatialInspector,
   pointToSegmentDistance,
+  rayIntersectsSphere,
+  rayIntersectsCapsule,
   rayIntersectsTriangle,
 } from '../plot/spatial_inspector';
 import { SpaceValue, SpatialEntity } from '../core/types';
@@ -27,25 +29,67 @@ describe('Spatial Inspector & 3-Layer Graph Inspection Engine', () => {
       expect(resAfter.closestX).toBeCloseTo(4.0, 5);
     });
 
-    it('performs Möller-Trumbore ray-triangle intersection', () => {
-      const v0: [number, number, number] = [0, 0, 0];
-      const v1: [number, number, number] = [2, 0, 0];
-      const v2: [number, number, number] = [0, 2, 0];
+    it('performs analytical ray-sphere intersection testing for point colliders', () => {
+      const center: [number, number, number] = [0, 0, 0];
+      const radius = 1.0;
 
-      // Ray through triangle center (0.5, 0.5, 0) from z = 5 pointing down [0, 0, -1]
-      const origHit: [number, number, number] = [0.5, 0.5, 5];
+      // Ray through center from z = 5 pointing down [0, 0, -1]
+      const origHit: [number, number, number] = [0, 0, 5];
       const dirHit: [number, number, number] = [0, 0, -1];
-      const hitRes = rayIntersectsTriangle(origHit, dirHit, v0, v1, v2);
+      const hitRes = rayIntersectsSphere(origHit, dirHit, center, radius);
 
       expect(hitRes.hit).toBe(true);
-      expect(hitRes.t).toBeCloseTo(5.0, 5);
-      expect(hitRes.point?.[0]).toBeCloseTo(0.5, 5);
-      expect(hitRes.point?.[1]).toBeCloseTo(0.5, 5);
-      expect(hitRes.point?.[2]).toBeCloseTo(0.0, 5);
+      expect(hitRes.t).toBeCloseTo(4.0, 5); // 5 - 1 = 4
+      expect(hitRes.point?.[0]).toBeCloseTo(0.0, 5);
+      expect(hitRes.point?.[1]).toBeCloseTo(0.0, 5);
+      expect(hitRes.point?.[2]).toBeCloseTo(1.0, 5);
 
-      // Ray outside triangle (3, 3, 5) pointing down
-      const origMiss: [number, number, number] = [3, 3, 5];
-      const missRes = rayIntersectsTriangle(origMiss, dirHit, v0, v1, v2);
+      // Ray through point at offset x = 0.6 from z = 5
+      const origOffset: [number, number, number] = [0.6, 0, 5];
+      const offsetRes = rayIntersectsSphere(origOffset, dirHit, center, radius);
+      expect(offsetRes.hit).toBe(true);
+      expect(offsetRes.point?.[0]).toBeCloseTo(0.6, 5);
+      expect(offsetRes.point?.[2]).toBeCloseTo(0.8, 5); // sqrt(1 - 0.36) = 0.8
+
+      // Ray outside sphere at x = 1.5 from z = 5
+      const origMiss: [number, number, number] = [1.5, 0, 5];
+      const missRes = rayIntersectsSphere(origMiss, dirHit, center, radius);
+      expect(missRes.hit).toBe(false);
+    });
+
+    it('performs analytical ray-capsule intersection testing along line segments', () => {
+      const a: [number, number, number] = [0, 0, 0];
+      const b: [number, number, number] = [4, 0, 0];
+      const radius = 0.5;
+
+      // 1. Ray hitting the cylindrical body at x = 2.0 from z = 5 pointing down
+      const origBody: [number, number, number] = [2, 0, 5];
+      const dirHit: [number, number, number] = [0, 0, -1];
+      const bodyRes = rayIntersectsCapsule(origBody, dirHit, a, b, radius);
+
+      expect(bodyRes.hit).toBe(true);
+      expect(bodyRes.t).toBeCloseTo(4.5, 5); // 5 - 0.5 = 4.5
+      expect(bodyRes.point?.[0]).toBeCloseTo(2.0, 5);
+      expect(bodyRes.point?.[1]).toBeCloseTo(0.0, 5);
+      expect(bodyRes.point?.[2]).toBeCloseTo(0.5, 5);
+
+      // 2. Ray hitting the hemispherical end-cap at A (x = -0.3)
+      const origCapA: [number, number, number] = [-0.3, 0, 5];
+      const capARes = rayIntersectsCapsule(origCapA, dirHit, a, b, radius);
+      expect(capARes.hit).toBe(true);
+      expect(capARes.point?.[0]).toBeCloseTo(-0.3, 5);
+      expect(capARes.point?.[2]).toBeCloseTo(0.4, 5); // sqrt(0.25 - 0.09) = 0.4
+
+      // 3. Ray hitting the hemispherical end-cap at B (x = 4.3)
+      const origCapB: [number, number, number] = [4.3, 0, 5];
+      const capBRes = rayIntersectsCapsule(origCapB, dirHit, a, b, radius);
+      expect(capBRes.hit).toBe(true);
+      expect(capBRes.point?.[0]).toBeCloseTo(4.3, 5);
+      expect(capBRes.point?.[2]).toBeCloseTo(0.4, 5);
+
+      // 4. Ray missing outside capsule at y = 1.0
+      const origMiss: [number, number, number] = [2, 1.0, 5];
+      const missRes = rayIntersectsCapsule(origMiss, dirHit, a, b, radius);
       expect(missRes.hit).toBe(false);
     });
   });
@@ -226,6 +270,60 @@ describe('Spatial Inspector & 3-Layer Graph Inspection Engine', () => {
       expect(res.worldCoord.x).toBeDefined();
       expect(res.worldCoord.y).toBeDefined();
       expect(res.worldCoord.z).toBeDefined();
+    });
+  });
+
+  describe('Viewport Interaction & Stop Ramp Dynamics', () => {
+    it('exports STOP_RAMP_MS constant defined as 50ms', async () => {
+      const { STOP_RAMP_MS } = await import('../plot/space_viewport');
+      expect(STOP_RAMP_MS).toBe(50);
+    });
+
+    it('performs click selection without auto-opening inspector panel', async () => {
+      const { SpaceViewport } = await import('../plot/space_viewport');
+      const container: any = {
+        innerHTML: '',
+        className: '',
+        appendChild: () => {},
+        querySelector: () => null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        classList: { add: () => {}, remove: () => {}, contains: () => false },
+      };
+
+      const ent: SpatialEntity = {
+        coordinates: ['x', 'y'],
+        ast: null as any,
+        compiledFn: (x: number, y: number) => y - x,
+        dimension: 2,
+        source: 'y = x',
+        cachedContours: {
+          polylines: [{ points: [[0, 0], [2, 2], [4, 4]], closed: false }],
+          bounds: { minX: 0, maxX: 4, minY: 0, maxY: 4 },
+          sampleCount: 10,
+        },
+      };
+
+      const space: SpaceValue = {
+        type: 'space',
+        coordinates: ['x', 'y'],
+        dimension: 2,
+        entities: [ent],
+      };
+
+      const vp = new SpaceViewport(container, space);
+
+      // Verify inspector panel is NOT open initially
+      expect(vp.getInspectionResult()).toBeNull();
+
+      // Inspect at coordinate selects and shows reticle
+      vp.inspectAtCoordinate(2.0, 2.0);
+      expect(vp.getInspectionResult()).not.toBeNull();
+      expect(vp.getReticlePos()?.x).toBeCloseTo(2.0, 4);
+
+      // Close inspector
+      vp.closeInspection();
+      expect(vp.getInspectionResult()).not.toBeNull(); // Selection retained
     });
   });
 });

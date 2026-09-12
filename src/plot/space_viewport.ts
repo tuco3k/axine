@@ -27,6 +27,11 @@ const ENTITY_PALETTE = [
   '#84cc16', // lime-500
 ];
 
+/**
+ * Universal velocity stop ramp duration in milliseconds for both rotation and translation.
+ */
+export const STOP_RAMP_MS = 50;
+
 export class SpaceViewport {
   private container: HTMLElement;
   private space: SpaceValue;
@@ -58,15 +63,19 @@ export class SpaceViewport {
   private reticlePos: { x: number; y?: number; z?: number } | null = null;
   private showReticle: boolean = false;
 
-  // Interactivity State
+  // Interactivity & Pointer Lock State
   private isFocused: boolean = false;
   private isFullscreen: boolean = false;
   private isDragging: boolean = false;
   private isPanning3D: boolean = false;
   private lastMouseX: number = 0;
   private lastMouseY: number = 0;
+  private isShiftHeld: boolean = false;
+  private discardNextMouseDelta: boolean = false;
+  private isPointerLocked: boolean = false;
+  private isCameraFrozen: boolean = false;
 
-  // Continuous Flight & Physics State
+  // Continuous Flight & Physics State (governed by STOP_RAMP_MS)
   private pressedKeys: Set<string> = new Set();
   private velX: number = 0;
   private velY: number = 0;
@@ -159,6 +168,7 @@ export class SpaceViewport {
       closePath: () => {},
       moveTo: () => {},
       lineTo: () => {},
+      arc: () => {},
       stroke: () => {},
       fill: () => {},
       setLineDash: () => {},
@@ -197,11 +207,15 @@ export class SpaceViewport {
     const hudEl = targetEl || (this.container.querySelector('.space-flight-hud') as HTMLElement);
     if (!hudEl) return;
     if (this.viewMode === '1d') {
-      hudEl.textContent = 'Pan A/D / Drag • Zoom +/- / Wheel • Esc Exit';
+      hudEl.textContent = 'Pan A/D / Drag • Zoom +/- / Wheel • [I] Inspect • Esc Exit';
     } else if (this.viewMode === '2d') {
-      hudEl.textContent = 'Pan WASD / Drag • Zoom +/- / Wheel • Esc Exit';
+      hudEl.textContent = 'Pan WASD / Drag • Zoom +/- / Wheel • [I] Inspect • Esc Exit';
     } else {
-      hudEl.textContent = 'WASD Fly • Mouse Look • Shift-Drag Orbit • Zoom +/- / Wheel • Esc Exit';
+      if (this.isShiftHeld) {
+        hudEl.textContent = '[SHIFT HELD] Cursor Active • Camera Frozen • Click to Select • Release Shift to Fly';
+      } else {
+        hudEl.textContent = 'WASD Fly • Mouse Look • Hold Shift for Cursor • [I] Inspect • Esc Exit';
+      }
     }
   }
 
@@ -484,7 +498,15 @@ export class SpaceViewport {
   }
 
   private animationStep = (timestamp: number): void => {
-    if (!this.isFocused && this.pressedKeys.size === 0 && Math.abs(this.velX) < 1e-4 && Math.abs(this.velY) < 1e-4 && Math.abs(this.velZoom) < 1e-4 && Math.abs(this.velAngleX) < 1e-4 && Math.abs(this.velAngleZ) < 1e-4) {
+    if (
+      !this.isFocused &&
+      this.pressedKeys.size === 0 &&
+      Math.abs(this.velX) < 1e-4 &&
+      Math.abs(this.velY) < 1e-4 &&
+      Math.abs(this.velZoom) < 1e-4 &&
+      Math.abs(this.velAngleX) < 1e-4 &&
+      Math.abs(this.velAngleZ) < 1e-4
+    ) {
       this.animFrameId = null;
       return;
     }
@@ -497,45 +519,63 @@ export class SpaceViewport {
     const accel2DX = spanX * 2.5;
     const accel2DY = spanY * 2.5;
 
-    // Accumulate acceleration from held keys
+    let targetVelX = 0;
+    let targetVelY = 0;
+    let targetVelZoom = 0;
+    let targetVelAngleX = 0;
+    let targetVelAngleZ = 0;
+
+    // Target velocity determined from active keys
     if (this.pressedKeys.has('a') || this.pressedKeys.has('A') || this.pressedKeys.has('ArrowLeft')) {
       if (this.viewMode === '3d') {
-        this.velAngleZ -= 2.0 * dt;
-        this.velX -= 150 * dt;
+        targetVelX = -150;
       } else {
-        this.velX -= accel2DX * dt;
+        targetVelX = -accel2DX;
       }
     }
     if (this.pressedKeys.has('d') || this.pressedKeys.has('D') || this.pressedKeys.has('ArrowRight')) {
       if (this.viewMode === '3d') {
-        this.velAngleZ += 2.0 * dt;
-        this.velX += 150 * dt;
+        targetVelX = 150;
       } else {
-        this.velX += accel2DX * dt;
+        targetVelX = accel2DX;
       }
     }
     if (this.pressedKeys.has('w') || this.pressedKeys.has('W') || this.pressedKeys.has('ArrowUp')) {
       if (this.viewMode === '3d') {
-        this.velZoom += 1.5 * dt;
-        this.velY -= 80 * dt;
+        targetVelZoom = 1.5;
+        targetVelY = -80;
       } else if (this.viewMode === '2d') {
-        this.velY += accel2DY * dt;
+        targetVelY = accel2DY;
       }
     }
     if (this.pressedKeys.has('s') || this.pressedKeys.has('S') || this.pressedKeys.has('ArrowDown')) {
       if (this.viewMode === '3d') {
-        this.velZoom -= 1.5 * dt;
-        this.velY += 80 * dt;
+        targetVelZoom = -1.5;
+        targetVelY = 80;
       } else if (this.viewMode === '2d') {
-        this.velY -= accel2DY * dt;
+        targetVelY = -accel2DY;
       }
     }
     if (this.pressedKeys.has('+') || this.pressedKeys.has('=')) {
-      this.velZoom += 1.5 * dt;
+      targetVelZoom = 1.5;
     }
     if (this.pressedKeys.has('-') || this.pressedKeys.has('_')) {
-      this.velZoom -= 1.5 * dt;
+      targetVelZoom = -1.5;
     }
+
+    // Stop ramp: ease velocity to target (or 0) over STOP_RAMP_MS
+    const rampAlpha = 1.0 - Math.exp(-dt / (STOP_RAMP_MS / 1000));
+    this.velX += (targetVelX - this.velX) * rampAlpha;
+    this.velY += (targetVelY - this.velY) * rampAlpha;
+    this.velZoom += (targetVelZoom - this.velZoom) * rampAlpha;
+    this.velAngleX += (targetVelAngleX - this.velAngleX) * rampAlpha;
+    this.velAngleZ += (targetVelAngleZ - this.velAngleZ) * rampAlpha;
+
+    if (Math.abs(this.velX) < 1e-4 && targetVelX === 0) this.velX = 0;
+    if (Math.abs(this.velY) < 1e-4 && targetVelY === 0) this.velY = 0;
+    if (Math.abs(this.velZoom) < 1e-4 && targetVelZoom === 0) this.velZoom = 0;
+    if (Math.abs(this.velAngleX) < 1e-4 && targetVelAngleX === 0) this.velAngleX = 0;
+    if (Math.abs(this.velAngleZ) < 1e-4 && targetVelAngleZ === 0) this.velAngleZ = 0;
 
     // Integrate velocities into camera
     let changed = false;
@@ -564,17 +604,19 @@ export class SpaceViewport {
       changed = true;
     }
 
-    // Apply damping friction
-    const damping = Math.pow(0.05, dt);
-    this.velX *= damping;
-    this.velY *= damping;
-    this.velZoom *= damping;
-    this.velAngleX *= damping;
-    this.velAngleZ *= damping;
-
     if (changed) {
       this.notifyCameraChange();
       this.render();
+    } else if (
+      this.pressedKeys.size === 0 &&
+      this.velX === 0 &&
+      this.velY === 0 &&
+      this.velZoom === 0 &&
+      this.velAngleX === 0 &&
+      this.velAngleZ === 0
+    ) {
+      this.stopAnimationLoop();
+      return;
     }
 
     this.animFrameId = typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(this.animationStep) : null;
@@ -586,18 +628,32 @@ export class SpaceViewport {
     const focusHandler = () => {
       if (!this.isFocused) {
         this.isFocused = true;
+        this.container.focus?.();
         this.container.classList?.add('focused');
         this.updateHUD(hudEl);
         hudEl?.classList.remove('hidden');
         if (this.options.onFocusChange) this.options.onFocusChange(true);
       }
     };
-    this.container.addEventListener?.('click', focusHandler);
-    this.canvas.addEventListener?.('click', focusHandler);
+    this.container.addEventListener?.('click', () => {
+      this.container.focus?.();
+      focusHandler();
+    });
+    this.container.addEventListener?.('focus', focusHandler);
+    this.canvas.addEventListener?.('click', () => {
+      this.container.focus?.();
+      focusHandler();
+    });
 
     const blurHandler = () => {
       if (this.isFocused) {
         this.isFocused = false;
+        this.isShiftHeld = false;
+        this.isCameraFrozen = false;
+        this.canvas.classList.remove('shift-cursor');
+        if (typeof document !== 'undefined' && document.pointerLockElement === this.canvas) {
+          document.exitPointerLock?.();
+        }
         this.container.classList?.remove('focused');
         this.pressedKeys.clear();
         this.stopAnimationLoop();
@@ -607,11 +663,35 @@ export class SpaceViewport {
     };
     this.container.addEventListener?.('blur', blurHandler);
 
+    // Pointer lock change listener
+    const pointerLockChangeHandler = () => {
+      if (typeof document !== 'undefined') {
+        this.isPointerLocked = document.pointerLockElement === this.canvas;
+      }
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener?.('pointerlockchange', pointerLockChangeHandler);
+    }
+
     // Continuous Keyboard Navigation with Event Capture
     const flightKeys = ['w', 'a', 's', 'd', 'W', 'A', 'S', 'D', '+', '-', '=', '_'];
 
     const keydownHandler = (e: KeyboardEvent) => {
       if (!this.isFocused) return;
+
+      // Shift key: release pointer lock and show free cursor with frozen camera
+      if (e.key === 'Shift') {
+        if (!this.isShiftHeld) {
+          this.isShiftHeld = true;
+          this.isCameraFrozen = true;
+          if (typeof document !== 'undefined' && document.pointerLockElement === this.canvas) {
+            document.exitPointerLock?.();
+          }
+          this.canvas.classList.add('shift-cursor');
+          this.updateHUD();
+        }
+        return;
+      }
 
       if (e.key === 'Escape') {
         e.preventDefault?.();
@@ -620,12 +700,22 @@ export class SpaceViewport {
           this.closeInspection();
           return;
         }
+        if (typeof document !== 'undefined' && document.pointerLockElement === this.canvas) {
+          document.exitPointerLock?.();
+        }
         if (this.isFullscreen) {
           this.toggleFullscreen();
         } else {
           this.container.blur?.();
           blurHandler();
         }
+        return;
+      }
+
+      if (e.key === 'i' || e.key === 'I') {
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        this.toggleInspector();
         return;
       }
 
@@ -644,8 +734,18 @@ export class SpaceViewport {
       }
 
       // Keyboard space cursor / reticle navigation
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown' ||
-          e.key === 'PageUp' || e.key === 'PageDown' || e.key === 'e' || e.key === 'E' || e.key === 'q' || e.key === 'Q') {
+      if (
+        e.key === 'ArrowLeft' ||
+        e.key === 'ArrowRight' ||
+        e.key === 'ArrowUp' ||
+        e.key === 'ArrowDown' ||
+        e.key === 'PageUp' ||
+        e.key === 'PageDown' ||
+        e.key === 'e' ||
+        e.key === 'E' ||
+        e.key === 'q' ||
+        e.key === 'Q'
+      ) {
         e.preventDefault?.();
         e.stopPropagation?.();
         if (!this.reticlePos) {
@@ -701,32 +801,87 @@ export class SpaceViewport {
         this.startAnimationLoop();
       }
     };
-    this.container.addEventListener?.('keydown', keydownHandler as any);
-
     const keyupHandler = (e: KeyboardEvent) => {
+      // Releasing Shift immediately re-locks and resumes camera control
+      if (e.key === 'Shift') {
+        this.isShiftHeld = false;
+        this.isCameraFrozen = false;
+        this.canvas.classList.remove('shift-cursor');
+        if (this.isFocused && this.viewMode === '3d') {
+          this.discardNextMouseDelta = true; // Discard first frame mouse delta after re-lock
+          try {
+            this.canvas.requestPointerLock?.();
+          } catch {}
+        }
+        this.updateHUD();
+        return;
+      }
+
       if (flightKeys.includes(e.key)) {
         this.pressedKeys.delete(e.key);
       }
     };
+
+    this.container.addEventListener?.('keydown', keydownHandler as any);
     this.container.addEventListener?.('keyup', keyupHandler as any);
 
-    // Mouse drag for 1D/2D pan and 3D orbit/look
+    const globalKeydown = (e: KeyboardEvent) => {
+      if (!this.isFocused) return;
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target as HTMLElement)?.isContentEditable
+      ) {
+        return;
+      }
+      keydownHandler(e);
+    };
+    const globalKeyup = (e: KeyboardEvent) => {
+      if (!this.isFocused) return;
+      keyupHandler(e);
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener?.('keydown', globalKeydown);
+      window.addEventListener?.('keyup', globalKeyup);
+    }
+
+    // Mouse interaction: rotation driven from per-frame delta (velocity) without drift
     let mouseDownPos = { x: 0, y: 0 };
     const mousedownHandler = (e: MouseEvent) => {
       if (e.target !== this.canvas) return;
       this.isDragging = true;
-      this.isPanning3D = e.shiftKey || e.button === 2;
+      this.isPanning3D = e.button === 2;
       this.lastMouseX = e.clientX;
       this.lastMouseY = e.clientY;
       mouseDownPos = { x: e.clientX, y: e.clientY };
       focusHandler();
+
+      if (!this.isShiftHeld && this.viewMode === '3d' && e.button === 0) {
+        try {
+          this.canvas.requestPointerLock?.();
+        } catch {}
+      }
     };
     this.canvas.addEventListener?.('mousedown', mousedownHandler as any);
 
     const mousemoveHandler = (e: MouseEvent) => {
-      if (!this.isDragging) return;
-      const dx = e.clientX - this.lastMouseX;
-      const dy = e.clientY - this.lastMouseY;
+      // If Shift is held, camera is frozen (free cursor)
+      if (this.isShiftHeld) {
+        return;
+      }
+
+      // Discard first frame mouse delta after re-lock to prevent camera jump
+      if (this.discardNextMouseDelta) {
+        this.discardNextMouseDelta = false;
+        this.lastMouseX = e.clientX;
+        this.lastMouseY = e.clientY;
+        return;
+      }
+
+      if (!this.isDragging && !this.isPointerLocked) return;
+
+      const dx = this.isPointerLocked && typeof e.movementX === 'number' && e.movementX !== 0 ? e.movementX : e.clientX - this.lastMouseX;
+      const dy = this.isPointerLocked && typeof e.movementY === 'number' && e.movementY !== 0 ? e.movementY : e.clientY - this.lastMouseY;
       this.lastMouseX = e.clientX;
       this.lastMouseY = e.clientY;
 
@@ -735,8 +890,9 @@ export class SpaceViewport {
           this.pan3DX += dx;
           this.pan3DY += dy;
         } else {
-          this.angleZ += dx * 0.01;
-          this.angleX = Math.max(0.05, Math.min(Math.PI / 2 - 0.05, this.angleX - dy * 0.01));
+          // Instant velocity-driven rotation without floating drift
+          this.angleZ += dx * 0.005;
+          this.angleX = Math.max(0.05, Math.min(Math.PI / 2 - 0.05, this.angleX - dy * 0.005));
         }
       } else if (this.viewMode === '1d') {
         const spanX = this.bounds2D.maxX - this.bounds2D.minX;
@@ -764,8 +920,8 @@ export class SpaceViewport {
       this.isDragging = false;
       this.isPanning3D = false;
 
-      // Click (not drag) -> trigger spatial inspection
-      if (dist < 6 && e.target === this.canvas) {
+      // Click (not drag) -> select point without moving camera and without auto-opening inspector
+      if (dist < 6 && (e.target === this.canvas || this.container.contains(e.target as Node))) {
         const rect = this.canvas.getBoundingClientRect();
         const clickX = e.clientX - rect.left;
         const clickY = e.clientY - rect.top;
@@ -787,7 +943,26 @@ export class SpaceViewport {
           res = SpatialInspector.inspect2D(this.space, this.bounds2D, clickX, clickY, width, height);
         }
 
-        this.showInspection(res);
+        if (res.isExactGeometryHit) {
+          this.inspectionResult = res;
+          this.reticlePos = { ...res.worldCoord };
+          this.showReticle = true;
+
+          // If inspector is already open by user, update it live; otherwise do NOT auto-open
+          if (this.inspectorPanelEl) {
+            this.showInspection(res);
+          } else {
+            this.render();
+          }
+        } else {
+          this.showReticle = false;
+          this.inspectionResult = null;
+          if (this.inspectorPanelEl) {
+            this.closeInspection();
+          } else {
+            this.render();
+          }
+        }
       }
     };
     if (typeof window !== 'undefined') window.addEventListener?.('mouseup', mouseupHandler);
@@ -818,6 +993,9 @@ export class SpaceViewport {
       this.container.removeEventListener?.('click', focusHandler);
       this.canvas.removeEventListener?.('click', focusHandler);
       this.container.removeEventListener?.('blur', blurHandler);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener?.('pointerlockchange', pointerLockChangeHandler);
+      }
       this.container.removeEventListener?.('keydown', keydownHandler as any);
       this.container.removeEventListener?.('keyup', keyupHandler as any);
       this.canvas.removeEventListener?.('mousedown', mousedownHandler as any);
@@ -858,6 +1036,20 @@ export class SpaceViewport {
     return { x: screenX, y: screenY, depth: y2 };
   }
 
+  public toggleInspector(): void {
+    if (this.inspectorPanelEl) {
+      this.closeInspection();
+    } else if (this.inspectionResult) {
+      this.showInspection(this.inspectionResult);
+    } else if (this.reticlePos) {
+      this.inspectAtCoordinate(this.reticlePos.x, this.reticlePos.y, this.reticlePos.z);
+    } else {
+      const midX = (this.bounds2D.minX + this.bounds2D.maxX) * 0.5;
+      const midY = (this.bounds2D.minY + this.bounds2D.maxY) * 0.5;
+      this.inspectAtCoordinate(midX, midY, 0);
+    }
+  }
+
   public showInspection(result: SpatialInspectionResult): void {
     this.inspectionResult = result;
     this.reticlePos = { ...result.worldCoord };
@@ -886,8 +1078,7 @@ export class SpaceViewport {
       this.inspectorPanelEl.remove();
       this.inspectorPanelEl = null;
     }
-    this.inspectionResult = null;
-    this.showReticle = false;
+    this.container.focus?.();
     this.render();
   }
 

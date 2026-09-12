@@ -69,6 +69,147 @@ export function pointToSegmentDistance(
 }
 
 /**
+ * Ray-sphere intersection test for 3D/2D point colliders.
+ */
+export function rayIntersectsSphere(
+  orig: Point3D,
+  dir: Point3D,
+  center: Point3D,
+  radius: number
+): { hit: boolean; t: number; point?: Point3D } {
+  const mx = orig[0] - center[0];
+  const my = orig[1] - center[1];
+  const mz = orig[2] - center[2];
+
+  const b = mx * dir[0] + my * dir[1] + mz * dir[2];
+  const c = (mx * mx + my * my + mz * mz) - radius * radius;
+
+  if (c > 0 && b > 0) {
+    return { hit: false, t: 0 };
+  }
+
+  const discr = b * b - c;
+  if (discr < 0) {
+    return { hit: false, t: 0 };
+  }
+
+  const s = Math.sqrt(discr);
+  let t = -b - s;
+  if (t <= 1e-6) {
+    t = -b + s;
+  }
+
+  if (t > 1e-6) {
+    const pt: Point3D = [
+      orig[0] + dir[0] * t,
+      orig[1] + dir[1] * t,
+      orig[2] + dir[2] * t,
+    ];
+    return { hit: true, t, point: pt };
+  }
+  return { hit: false, t: 0 };
+}
+
+/**
+ * Analytical ray-capsule intersection test along a line segment (a -> b) with radius r.
+ */
+export function rayIntersectsCapsule(
+  orig: Point3D,
+  dir: Point3D,
+  a: Point3D,
+  b: Point3D,
+  radius: number
+): { hit: boolean; t: number; point?: Point3D } {
+  const ux = b[0] - a[0];
+  const uy = b[1] - a[1];
+  const uz = b[2] - a[2];
+  const segLen = Math.hypot(ux, uy, uz);
+
+  if (segLen < 1e-7) {
+    return rayIntersectsSphere(orig, dir, a, radius);
+  }
+
+  const axisX = ux / segLen;
+  const axisY = uy / segLen;
+  const axisZ = uz / segLen;
+
+  const wx = orig[0] - a[0];
+  const wy = orig[1] - a[1];
+  const wz = orig[2] - a[2];
+
+  const wDotAxis = wx * axisX + wy * axisY + wz * axisZ;
+  const vPerpX = wx - wDotAxis * axisX;
+  const vPerpY = wy - wDotAxis * axisY;
+  const vPerpZ = wz - wDotAxis * axisZ;
+
+  const dDotAxis = dir[0] * axisX + dir[1] * axisY + dir[2] * axisZ;
+  const dPerpX = dir[0] - dDotAxis * axisX;
+  const dPerpY = dir[1] - dDotAxis * axisY;
+  const dPerpZ = dir[2] - dDotAxis * axisZ;
+
+  const A = dPerpX * dPerpX + dPerpY * dPerpY + dPerpZ * dPerpZ;
+  const B = vPerpX * dPerpX + vPerpY * dPerpY + vPerpZ * dPerpZ;
+  const C = vPerpX * vPerpX + vPerpY * vPerpY + vPerpZ * vPerpZ - radius * radius;
+
+  const validTs: number[] = [];
+
+  // 1. Test infinite cylinder section bounded by [0, segLen]
+  if (A > 1e-9) {
+    const discr = B * B - A * C;
+    if (discr >= 0) {
+      const s = Math.sqrt(discr);
+      const t1 = (-B - s) / A;
+      const t2 = (-B + s) / A;
+
+      for (const t of [t1, t2]) {
+        if (t > 1e-6) {
+          const hitX = orig[0] + dir[0] * t;
+          const hitY = orig[1] + dir[1] * t;
+          const hitZ = orig[2] + dir[2] * t;
+          const proj = (hitX - a[0]) * axisX + (hitY - a[1]) * axisY + (hitZ - a[2]) * axisZ;
+          if (proj >= 0 && proj <= segLen) {
+            validTs.push(t);
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Test spherical end-cap at A
+  const resA = rayIntersectsSphere(orig, dir, a, radius);
+  if (resA.hit && resA.point && resA.t > 1e-6) {
+    const projA = (resA.point[0] - a[0]) * axisX + (resA.point[1] - a[1]) * axisY + (resA.point[2] - a[2]) * axisZ;
+    if (projA <= 1e-6) {
+      validTs.push(resA.t);
+    }
+  }
+
+  // 3. Test spherical end-cap at B
+  const resB = rayIntersectsSphere(orig, dir, b, radius);
+  if (resB.hit && resB.point && resB.t > 1e-6) {
+    const projB = (resB.point[0] - b[0]) * axisX + (resB.point[1] - b[1]) * axisY + (resB.point[2] - b[2]) * axisZ;
+    if (projB >= -1e-6) {
+      validTs.push(resB.t);
+    }
+  }
+
+  if (validTs.length > 0) {
+    let minT = Infinity;
+    for (const t of validTs) {
+      if (t < minT) minT = t;
+    }
+    const pt: Point3D = [
+      orig[0] + dir[0] * minT,
+      orig[1] + dir[1] * minT,
+      orig[2] + dir[2] * minT,
+    ];
+    return { hit: true, t: minT, point: pt };
+  }
+
+  return { hit: false, t: 0 };
+}
+
+/**
  * Möller–Trumbore ray-triangle intersection algorithm for 3D mesh surface picking.
  */
 export function rayIntersectsTriangle(
@@ -100,7 +241,7 @@ export function rayIntersectsTriangle(
   const s: Point3D = [orig[0] - v0[0], orig[1] - v0[1], orig[2] - v0[2]];
   // u = f * dot(s, h)
   const u = f * (s[0] * h[0] + s[1] * h[1] + s[2] * h[2]);
-  if (u < 0.0 || u > 1.0) {
+  if (u < -1e-6 || u > 1.0 + 1e-6) {
     return { hit: false, t: 0 };
   }
 
@@ -113,7 +254,7 @@ export function rayIntersectsTriangle(
 
   // v = f * dot(dir, q)
   const v = f * (dir[0] * q[0] + dir[1] * q[1] + dir[2] * q[2]);
-  if (v < 0.0 || u + v > 1.0) {
+  if (v < -1e-6 || u + v > 1.0 + 1e-6) {
     return { hit: false, t: 0 };
   }
 
@@ -239,35 +380,41 @@ export class SpatialInspector {
   }
 
   /**
-   * Hit test in 1D Number Line space.
+   * Hit test in 1D Number Line space using real sphere colliders on roots/points.
    */
   public static inspect1D(
     space: SpaceValue,
     bounds2D: Bounds2D,
     clickPixelX: number,
     width: number,
-    pixelTolerance: number = 8
+    pointRadius?: number
   ): SpatialInspectionResult {
     const minX = bounds2D.minX;
     const maxX = bounds2D.maxX;
-    const worldX = minX + (clickPixelX / width) * (maxX - minX);
-    const pixelScale = width / Math.max(1e-6, maxX - minX);
+    const spanX = Math.max(1e-6, maxX - minX);
+    const worldX = minX + (clickPixelX / width) * spanX;
+
+    const rPoint = pointRadius ?? Math.max(0.08, spanX * 0.018);
+    const rayOrig: Point3D = [worldX, 0, 10];
+    const rayDir: Point3D = [0, 0, -1];
 
     let isExact = false;
+    let selectedX = worldX;
     const hitEntities: InspectedEntityRecord[] = [];
 
     space.entities.forEach((ent, idx) => {
+      let entHit = false;
       let inspectedX = worldX;
-      let holds = false;
 
-      // Check cached roots
+      // Check cached roots with real sphere colliders
       if (ent.cachedRoots1D && ent.cachedRoots1D.length > 0) {
         for (const root of ent.cachedRoots1D) {
-          const distPx = Math.abs(root - worldX) * pixelScale;
-          if (distPx <= pixelTolerance) {
+          const hitRes = rayIntersectsSphere(rayOrig, rayDir, [root, 0, 0], rPoint);
+          if (hitRes.hit) {
             inspectedX = root;
+            selectedX = root;
+            entHit = true;
             isExact = true;
-            holds = true;
             break;
           }
         }
@@ -280,12 +427,9 @@ export class SpatialInspector {
         val = Number.NaN;
       }
 
-      if (Math.abs(val) < 1e-4) {
-        holds = true;
-        isExact = true;
-      }
-
+      const holds = entHit || Math.abs(val) < 1e-4;
       const trace = SpatialInspector.generateReductionTrace(ent, inspectedX);
+
       hitEntities.push({
         entityIndex: idx,
         relationExpr: ent.source || (ent.ast ? formatAST(ent.ast) : `f(x) = 0`),
@@ -302,7 +446,7 @@ export class SpatialInspector {
 
     return {
       dimension: 1,
-      worldCoord: { x: worldX },
+      worldCoord: { x: isExact ? selectedX : worldX },
       screenPos: { x: clickPixelX, y: 0 },
       isExactGeometryHit: isExact,
       hitEntities,
@@ -310,7 +454,7 @@ export class SpatialInspector {
   }
 
   /**
-   * Hit test in 2D Cartesian Space.
+   * Hit test in 2D Cartesian Space using thin capsule colliders on line segments and sphere colliders on points.
    */
   public static inspect2D(
     space: SpaceValue,
@@ -319,35 +463,39 @@ export class SpatialInspector {
     clickScreenY: number,
     width: number,
     height: number,
-    pixelTolerance: number = 8
+    capsuleRadius?: number
   ): SpatialInspectionResult {
     const minX = bounds2D.minX;
     const maxX = bounds2D.maxX;
     const minY = bounds2D.minY;
     const maxY = bounds2D.maxY;
 
-    const rawWorldX = minX + (clickScreenX / width) * (maxX - minX);
-    const rawWorldY = maxY - (clickScreenY / height) * (maxY - minY);
+    const spanX = Math.max(1e-6, maxX - minX);
+    const spanY = Math.max(1e-6, maxY - minY);
 
-    const scaleX = width / Math.max(1e-6, maxX - minX);
-    const scaleY = height / Math.max(1e-6, maxY - minY);
+    const rawWorldX = minX + (clickScreenX / width) * spanX;
+    const rawWorldY = maxY - (clickScreenY / height) * spanY;
 
-    let bestDistPx = Infinity;
+    const rCapsule = capsuleRadius ?? Math.max(0.06, spanX * 0.015);
+    const rayOrig: Point3D = [rawWorldX, rawWorldY, 10];
+    const rayDir: Point3D = [0, 0, -1];
+
     let snappedX = rawWorldX;
     let snappedY = rawWorldY;
     let isSnapped = false;
+    let bestT = Infinity;
 
     const entitySnapInfo: {
       index: number;
       ent: SpatialEntity;
-      distPx: number;
       snapPt: [number, number];
     }[] = [];
 
-    // 1. Hit test all entity contours
+    // 1. Ray-capsule intersection test across all polyline contours
     space.entities.forEach((ent, idx) => {
-      let entMinDist = Infinity;
+      let entHit = false;
       let entSnapPt: [number, number] = [rawWorldX, rawWorldY];
+      let entMinT = Infinity;
 
       if (ent.cachedContours && ent.cachedContours.polylines) {
         for (const poly of ent.cachedContours.polylines) {
@@ -355,33 +503,30 @@ export class SpatialInspector {
           for (let i = 0; i < pts.length - 1; i++) {
             const p1 = pts[i];
             const p2 = pts[i + 1];
-            // Screen coords of segment
-            const sx1 = (p1[0] - minX) * scaleX;
-            const sy1 = (maxY - p1[1]) * scaleY;
-            const sx2 = (p2[0] - minX) * scaleX;
-            const sy2 = (maxY - p2[1]) * scaleY;
 
-            const segRes = pointToSegmentDistance(clickScreenX, clickScreenY, sx1, sy1, sx2, sy2);
-            if (segRes.dist < entMinDist) {
-              entMinDist = segRes.dist;
-              // Convert screen closest back to world
-              const cWorldX = minX + (segRes.closestX / width) * (maxX - minX);
-              const cWorldY = maxY - (segRes.closestY / height) * (maxY - minY);
-              entSnapPt = [cWorldX, cWorldY];
+            const a: Point3D = [p1[0], p1[1], 0];
+            const b: Point3D = [p2[0], p2[1], 0];
+
+            const capRes = rayIntersectsCapsule(rayOrig, rayDir, a, b, rCapsule);
+            if (capRes.hit && capRes.t < entMinT) {
+              entMinT = capRes.t;
+              entHit = true;
+              // Project 2D point on segment
+              const segRes = pointToSegmentDistance(rawWorldX, rawWorldY, p1[0], p1[1], p2[0], p2[1]);
+              entSnapPt = [segRes.closestX, segRes.closestY];
             }
           }
         }
       }
 
-      if (entMinDist <= pixelTolerance) {
+      if (entHit) {
         entitySnapInfo.push({
           index: idx,
           ent,
-          distPx: entMinDist,
           snapPt: entSnapPt,
         });
-        if (entMinDist < bestDistPx) {
-          bestDistPx = entMinDist;
+        if (entMinT < bestT) {
+          bestT = entMinT;
           snappedX = entSnapPt[0];
           snappedY = entSnapPt[1];
           isSnapped = true;
@@ -432,7 +577,7 @@ export class SpatialInspector {
   }
 
   /**
-   * Hit test in 3D Mesh space via view-ray picking (Möller–Trumbore ray-triangle intersection).
+   * Hit test in 3D Mesh space via view-ray picking against triangle meshes, capsule colliders, and sphere colliders.
    */
   public static inspect3D(
     space: SpaceValue,
@@ -453,7 +598,7 @@ export class SpatialInspector {
     const centerY = height * 0.5 + camera.pan3DY;
     const scale3D = Math.min(width, height) * 0.22 * camera.zoom3D;
 
-    // Approximate camera ray direction in world space
+    // Camera ray direction in world space
     const cosAz = Math.cos(camera.angleZ);
     const sinAz = Math.sin(camera.angleZ);
     const cosEl = Math.cos(camera.angleX);
@@ -509,58 +654,40 @@ export class SpatialInspector {
       }
     });
 
-    // 2. If no mesh hit, intersect with ground plane z = 0 for empty space coordinates
-    if (!hitWorldPt) {
-      if (Math.abs(rayDir[2]) > 1e-6) {
-        const tPlane = -rayOrig[2] / rayDir[2];
-        if (tPlane > 0) {
-          hitWorldPt = [
-            rayOrig[0] + rayDir[0] * tPlane,
-            rayOrig[1] + rayDir[1] * tPlane,
-            0,
-          ];
-        }
-      }
-      if (!hitWorldPt) {
-        hitWorldPt = [ndcX, ndcY, 0];
-      }
-    }
+    const isHit = hitEntityIdx !== -1 && hitWorldPt !== null;
+    const evalCoord: Point3D = hitWorldPt || [ndcX, ndcY, 0];
 
-    const isHit = hitEntityIdx !== -1;
     const inspectedEntities: InspectedEntityRecord[] = [];
+    if (isHit) {
+      space.entities.forEach((ent, idx) => {
+        let val = 0;
+        try {
+          val = ent.compiledFn(evalCoord[0], evalCoord[1], evalCoord[2]);
+        } catch {
+          val = Number.NaN;
+        }
 
-    space.entities.forEach((ent, idx) => {
-      const ptX = hitWorldPt![0];
-      const ptY = hitWorldPt![1];
-      const ptZ = hitWorldPt![2];
+        const holds = idx === hitEntityIdx || Math.abs(val) < 1e-2;
+        const trace = SpatialInspector.generateReductionTrace(ent, evalCoord[0], evalCoord[1], evalCoord[2]);
 
-      let val = 0;
-      try {
-        val = ent.compiledFn(ptX, ptY, ptZ);
-      } catch {
-        val = Number.NaN;
-      }
-
-      const holds = (isHit && idx === hitEntityIdx) || Math.abs(val) < 1e-3;
-      const trace = SpatialInspector.generateReductionTrace(ent, ptX, ptY, ptZ);
-
-      inspectedEntities.push({
-        entityIndex: idx,
-        relationExpr: ent.source || (ent.ast ? formatAST(ent.ast) : `f(x, y, z) = 0`),
-        lineIdx: ent.ast?.span?.line ? ent.ast.span.line - 1 : undefined,
-        sourceText: ent.source,
-        valueAtPoint: val,
-        residual: val,
-        holds,
-        isSnapped: isHit && idx === hitEntityIdx,
-        reductionSteps: trace.steps,
-        libraryTrace: trace.libraryTrace,
+        inspectedEntities.push({
+          entityIndex: idx,
+          relationExpr: ent.source || (ent.ast ? formatAST(ent.ast) : `f(x, y, z) = 0`),
+          lineIdx: ent.ast?.span?.line ? ent.ast.span.line - 1 : undefined,
+          sourceText: ent.source,
+          valueAtPoint: val,
+          residual: val,
+          holds,
+          isSnapped: idx === hitEntityIdx,
+          reductionSteps: trace.steps,
+          libraryTrace: trace.libraryTrace,
+        });
       });
-    });
+    }
 
     return {
       dimension: 3,
-      worldCoord: { x: hitWorldPt[0], y: hitWorldPt[1], z: hitWorldPt[2] },
+      worldCoord: { x: evalCoord[0], y: evalCoord[1], z: evalCoord[2] },
       screenPos: { x: clickScreenX, y: clickScreenY },
       isExactGeometryHit: isHit,
       hitEntities: inspectedEntities,
@@ -577,6 +704,10 @@ export class SpatialInspector {
       onClose?: () => void;
     } = {}
   ): HTMLElement {
+    if (typeof document === 'undefined') {
+      return { className: '', innerHTML: '', appendChild: () => {}, remove: () => {}, querySelector: () => null } as any;
+    }
+
     const panel = document.createElement('div');
     panel.className = 'spatial-inspector-panel';
 
