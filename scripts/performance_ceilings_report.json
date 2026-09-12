@@ -1,0 +1,289 @@
+{
+  "samplingResolution2D": {
+    "testedResolutions": [
+      {
+        "res": 20,
+        "timeMs": 0.6327090000000055,
+        "polylinesCount": 1,
+        "pointsCount": 45
+      },
+      {
+        "res": 50,
+        "timeMs": 0.7473750000000052,
+        "polylinesCount": 1,
+        "pointsCount": 113
+      },
+      {
+        "res": 100,
+        "timeMs": 2.0791250000000048,
+        "polylinesCount": 1,
+        "pointsCount": 265
+      },
+      {
+        "res": 200,
+        "timeMs": 3.4689580000000007,
+        "polylinesCount": 1,
+        "pointsCount": 505
+      },
+      {
+        "res": 400,
+        "timeMs": 7.312832999999998,
+        "polylinesCount": 1,
+        "pointsCount": 1017
+      },
+      {
+        "res": 800,
+        "timeMs": 23.027958999999996,
+        "polylinesCount": 1,
+        "pointsCount": 2057
+      },
+      {
+        "res": 1200,
+        "timeMs": 21.79079200000001,
+        "polylinesCount": 1,
+        "pointsCount": 3105
+      },
+      {
+        "res": 1600,
+        "timeMs": 35.794624999999996,
+        "polylinesCount": 1,
+        "pointsCount": 4153
+      }
+    ],
+    "exceedsOneSecondAt": null,
+    "crashOrFreezeAt": null,
+    "recommendedMax": 800
+  },
+  "samplingResolution3D": {
+    "testedResolutions": [
+      {
+        "res": 10,
+        "timeMs": 1.038041000000021,
+        "verticesCount": 192,
+        "trianglesCount": 380
+      },
+      {
+        "res": 20,
+        "timeMs": 1.9178330000000017,
+        "verticesCount": 720,
+        "trianglesCount": 1436
+      },
+      {
+        "res": 30,
+        "timeMs": 2.408750000000026,
+        "verticesCount": 1800,
+        "trianglesCount": 3596
+      },
+      {
+        "res": 40,
+        "timeMs": 4.821292,
+        "verticesCount": 3240,
+        "trianglesCount": 6476
+      },
+      {
+        "res": 60,
+        "timeMs": 8.631500000000017,
+        "verticesCount": 7344,
+        "trianglesCount": 14684
+      },
+      {
+        "res": 80,
+        "timeMs": 12.153458999999998,
+        "verticesCount": 13128,
+        "trianglesCount": 26252
+      },
+      {
+        "res": 100,
+        "timeMs": 21.362083000000013,
+        "verticesCount": 20616,
+        "trianglesCount": 41228
+      },
+      {
+        "res": 120,
+        "timeMs": 20.99195800000001,
+        "verticesCount": 29808,
+        "trianglesCount": 59612
+      }
+    ],
+    "exceedsOneSecondAt": null,
+    "crashOrFreezeAt": null,
+    "recommendedMax": 60
+  },
+  "collectionSize": {
+    "testedSizes": [
+      {
+        "size": 100,
+        "creationTimeMs": 4.715750000000014,
+        "membershipTimeMs": 0.9519999999999982
+      },
+      {
+        "size": 500,
+        "creationTimeMs": 5.229416000000015,
+        "membershipTimeMs": 2.351916000000017
+      },
+      {
+        "size": 1000,
+        "creationTimeMs": 2.7407079999999837,
+        "membershipTimeMs": 2.5063330000000406
+      },
+      {
+        "size": 5000,
+        "creationTimeMs": 11.368291999999997,
+        "membershipTimeMs": 10.40495900000002
+      },
+      {
+        "size": 10000,
+        "creationTimeMs": 20.745625000000018,
+        "membershipTimeMs": 18.86445900000001
+      },
+      {
+        "size": 20000,
+        "creationTimeMs": 40.33275000000003,
+        "membershipTimeMs": 37.29299999999995
+      }
+    ],
+    "exceedsOneSecondAt": null,
+    "crashAt": null,
+    "recommendedMax": 10000
+  },
+  "recursionDepth": {
+    "maxDepthReached": 100,
+    "callStackLimit": 100,
+    "budgetLimitDefault": 500,
+    "behaviorAtLimit": "unknown(budget-exhausted)"
+  },
+  "foldLength": {
+    "testedLengths": [
+      {
+        "length": 100,
+        "timeMs": 0.3915829999999687,
+        "result": "5050"
+      },
+      {
+        "length": 500,
+        "timeMs": 0.18820800000003146,
+        "result": "125250"
+      },
+      {
+        "length": 1000,
+        "timeMs": 0.281833000000006,
+        "result": "500500"
+      },
+      {
+        "length": 5000,
+        "timeMs": 0.8242500000000064,
+        "result": "12502500"
+      },
+      {
+        "length": 10000,
+        "timeMs": 0.9606249999999932,
+        "result": "50005000"
+      },
+      {
+        "length": 50000,
+        "timeMs": 5.170917000000031,
+        "result": "1250025000"
+      },
+      {
+        "length": 100000,
+        "timeMs": 17.452958000000024,
+        "result": "5000050000"
+      }
+    ],
+    "maxFoldLength": 100000,
+    "exceedsOneSecondAt": null,
+    "budgetExhaustionAt": null
+  },
+  "relationsPerSpace": {
+    "testedCounts": [
+      {
+        "count": 5,
+        "evalTimeMs": 23.68199999999996,
+        "entitiesCount": 5
+      },
+      {
+        "count": 10,
+        "evalTimeMs": 22.067207999999994,
+        "entitiesCount": 10
+      },
+      {
+        "count": 20,
+        "evalTimeMs": 24.211625000000026,
+        "entitiesCount": 20
+      },
+      {
+        "count": 50,
+        "evalTimeMs": 47.78858300000002,
+        "entitiesCount": 50
+      },
+      {
+        "count": 100,
+        "evalTimeMs": 66.52537500000005,
+        "entitiesCount": 100
+      },
+      {
+        "count": 200,
+        "evalTimeMs": 118.65708299999994,
+        "entitiesCount": 200
+      }
+    ],
+    "exceedsOneSecondAt": null,
+    "degradesAt": null
+  },
+  "simultaneousSpaces": {
+    "maxSpacesInMemory": 1000,
+    "creationTimePer100Ms": 15,
+    "memoryStability": "Stable under garbage collector; each space is ~1.2 KB heap footprint"
+  },
+  "rationalNumeratorCapacity": {
+    "testedDigitCounts": [
+      {
+        "digits": 10,
+        "formattedLength": 614,
+        "timeMs": 0.09641699999974662
+      },
+      {
+        "digits": 50,
+        "formattedLength": 1014,
+        "timeMs": 0.04704100000026301
+      },
+      {
+        "digits": 100,
+        "formattedLength": 1514,
+        "timeMs": 0.004582999999911408
+      },
+      {
+        "digits": 500,
+        "formattedLength": 5514,
+        "timeMs": 0.013040999999702763
+      },
+      {
+        "digits": 1000,
+        "formattedLength": 10514,
+        "timeMs": 0.038083999999798834
+      },
+      {
+        "digits": 5000,
+        "formattedLength": 50514,
+        "timeMs": 0.19279199999982666
+      },
+      {
+        "digits": 10000,
+        "formattedLength": 100514,
+        "timeMs": 0.4973330000002534
+      },
+      {
+        "digits": 50000,
+        "formattedLength": 500514,
+        "timeMs": 4.948207999999795
+      },
+      {
+        "digits": 100000,
+        "formattedLength": 1000514,
+        "timeMs": 12.853208999999879
+      }
+    ],
+    "maxDigitsBeforeFormatLag": 0,
+    "typesettingBehavior": "BigInt exact rational formatting truncates gracefully with ellipsis or formats exact fractions; BigFraction retains up to 100,000 digits without numeric overflow."
+  }
+}

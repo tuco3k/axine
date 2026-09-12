@@ -173,7 +173,7 @@ function typesetASTNode(node: ASTNode, options: TypesetOptions): string {
         return `
           <span class="tm-integral-wrap">
             <span class="tm-integral-block">
-              <span class="tm-int-symbol tm-clickable" data-symbol="\u222b" data-parent-type="integral">&int;</span>
+              <span class="tm-int-symbol">&int;</span>
               ${hasLimits ? `
                 <span class="tm-int-limits">
                   <span class="tm-int-upper">${upper}</span>
@@ -182,7 +182,7 @@ function typesetASTNode(node: ASTNode, options: TypesetOptions): string {
               ` : ''}
             </span>
             <span class="tm-integrand">${integrand}</span>
-            <span class="tm-diff tm-clickable" data-symbol="d${escapeHtml(varName)}" data-parent-type="integral"><span class="tm-diff-d">d</span><span class="tm-var">${escapeHtml(varName)}</span></span>
+            <span class="tm-diff"><span class="tm-diff-d">d</span><span class="tm-var">${escapeHtml(varName)}</span></span>
           </span>
         `;
       }
@@ -195,7 +195,7 @@ function typesetASTNode(node: ASTNode, options: TypesetOptions): string {
         return `
           <span class="tm-bigop-wrap">
             <span class="tm-bigop-block">
-              <span class="tm-bigop-symbol tm-clickable" data-symbol="${isSum ? '\u03a3' : '\u03a0'}" data-parent-type="summation">${sym}</span>
+              <span class="tm-bigop-symbol">${sym}</span>
             </span>
             <span class="tm-bigop-body">${body}</span>
           </span>
@@ -208,7 +208,7 @@ function typesetASTNode(node: ASTNode, options: TypesetOptions): string {
         const target = node.args.length > 1 ? typesetASTNode(node.args[1], options) : '';
         return `
           <span class="tm-lim-wrap">
-            <span class="tm-fn tm-clickable" data-symbol="lim" data-parent-type="limit">lim</span>
+            <span class="tm-fn">lim</span>
             ${target ? `<sub class="tm-sub">${target}</sub>` : ''}
             ${body ? ` ${body}` : ''}
           </span>
@@ -221,13 +221,12 @@ function typesetASTNode(node: ASTNode, options: TypesetOptions): string {
 
     case 'Diff': {
       const sym = node.isPartial ? '&part;' : 'd';
-      const opSym = node.isPartial ? '\u2202' : 'd';
       const varName = node.variable;
       const opHtml = `
         <span class="tm-frac tm-diff-frac">
-          <span class="tm-num-box"><span class="tm-diff-d tm-clickable" data-symbol="${opSym}" data-parent-type="derivative">${sym}</span></span>
+          <span class="tm-num-box"><span class="tm-diff-d">${sym}</span></span>
           <span class="tm-frac-bar"></span>
-          <span class="tm-den-box"><span class="tm-diff tm-clickable" data-symbol="${opSym}${escapeHtml(varName)}" data-parent-type="derivative" data-var="${escapeHtml(varName)}"><span class="tm-diff-d">${sym}</span><span class="tm-var">${escapeHtml(varName)}</span></span></span>
+          <span class="tm-den-box"><span class="tm-diff"><span class="tm-diff-d">${sym}</span><span class="tm-var">${escapeHtml(varName)}</span></span></span>
         </span>
       `;
       if (node.expr) {
@@ -246,7 +245,7 @@ function typesetASTNode(node: ASTNode, options: TypesetOptions): string {
         return `
           <span class="tm-integral-wrap">
             <span class="tm-integral-block">
-              <span class="tm-int-symbol tm-clickable" data-symbol="\u222b" data-parent-type="integral"${hasLimits ? ` data-bounds-lower="${escapeHtml(node.start ? formatAST(node.start) : '')}" data-bounds-upper="${escapeHtml(node.end ? formatAST(node.end) : '')}"` : ''}>&int;</span>
+              <span class="tm-int-symbol">&int;</span>
               ${hasLimits ? `
                 <span class="tm-int-limits">
                   <span class="tm-int-upper">${upperHtml}</span>
@@ -255,7 +254,7 @@ function typesetASTNode(node: ASTNode, options: TypesetOptions): string {
               ` : ''}
             </span>
             <span class="tm-integrand">${bodyHtml}</span>
-            <span class="tm-diff tm-clickable" data-symbol="d${escapeHtml(node.variable)}" data-parent-type="integral" data-integrand="${escapeHtml(formatAST(node.body))}" data-var="${escapeHtml(node.variable)}"><span class="tm-diff-d">d</span><span class="tm-var">${escapeHtml(node.variable)}</span></span>
+            <span class="tm-diff"><span class="tm-diff-d">d</span><span class="tm-var">${escapeHtml(node.variable)}</span></span>
           </span>
         `;
       }
@@ -269,7 +268,7 @@ function typesetASTNode(node: ASTNode, options: TypesetOptions): string {
       return `
         <span class="tm-bigop-wrap">
           <span class="tm-bigop-block">
-            <span class="tm-bigop-symbol tm-clickable" data-symbol="${isSum ? '\u03a3' : '\u03a0'}" data-parent-type="summation">${sym}</span>
+            <span class="tm-bigop-symbol">${sym}</span>
             <span class="tm-bigop-limits">
               <span class="tm-bigop-upper">${upperHtml}</span>
               <span class="tm-bigop-lower">${lowerHtml}</span>
@@ -288,7 +287,7 @@ function typesetASTNode(node: ASTNode, options: TypesetOptions): string {
 
       return `
         <span class="tm-lim-wrap">
-          <span class="tm-fn tm-clickable" data-symbol="lim" data-parent-type="limit" data-var="${escapeHtml(node.variable)}" data-point="${escapeHtml(formatAST(node.target))}" data-direction="${node.direction}">lim</span>
+          <span class="tm-fn">lim</span>
           <sub class="tm-sub">${varHtml} &rarr; ${targetHtml}${dirHtml}</sub>
           <span class="tm-lim-body">${exprHtml}</span>
         </span>
@@ -459,7 +458,7 @@ export function typesetStringExpression(expr: string, options: TypesetOptions = 
     const rest = limMatch[3]?.trim();
     const subHtml = sub ? `<sub class="tm-sub">${typesetStringExpression(sub, options)}</sub>` : '';
     const restHtml = rest ? ` ${typesetStringExpression(rest, options)}` : '';
-    return `<span class="tm-fn tm-clickable" data-symbol="lim" data-parent-type="limit">lim</span>${subHtml}${restHtml}`;
+    return `<span class="tm-fn">lim</span>${subHtml}${restHtml}`;
   }
 
   // 4. Definite / Indefinite Integrals: \u222b ... dx or \u222b_a^b ... dx
@@ -479,7 +478,7 @@ export function typesetStringExpression(expr: string, options: TypesetOptions = 
     return `
       <span class="tm-integral-wrap">
         <span class="tm-integral-block">
-          <span class="tm-int-symbol tm-clickable" data-symbol="\u222b" data-parent-type="integral"${hasLimits ? ` data-bounds-lower="${escapeHtml(lower || '')}" data-bounds-upper="${escapeHtml(upper || '')}"` : ''}>&int;</span>
+          <span class="tm-int-symbol">&int;</span>
           ${hasLimits ? `
             <span class="tm-int-limits">
               <span class="tm-int-lower">${lowerHtml}</span>
@@ -488,7 +487,7 @@ export function typesetStringExpression(expr: string, options: TypesetOptions = 
           ` : ''}
         </span>
         <span class="tm-integrand">${bodyHtml}</span>
-        <span class="tm-diff tm-clickable" data-symbol="d${escapeHtml(varName)}" data-parent-type="integral" data-integrand="${escapeHtml(body)}" data-var="${escapeHtml(varName)}"><span class="tm-diff-d">d</span><span class="tm-var">${escapeHtml(varName)}</span></span>
+        <span class="tm-diff"><span class="tm-diff-d">d</span><span class="tm-var">${escapeHtml(varName)}</span></span>
       </span>
     `;
   }
@@ -500,13 +499,12 @@ export function typesetStringExpression(expr: string, options: TypesetOptions = 
     const varName = diffMatch[2];
     const operand = diffMatch[3]?.trim();
     const sym = isPartial ? '&part;' : 'd';
-    const opSym = isPartial ? '\u2202' : 'd';
 
     const opHtml = `
       <span class="tm-frac tm-diff-frac">
-        <span class="tm-num-box"><span class="tm-diff-d tm-clickable" data-symbol="${opSym}" data-parent-type="derivative">${sym}</span></span>
+        <span class="tm-num-box"><span class="tm-diff-d">${sym}</span></span>
         <span class="tm-frac-bar"><span class="tm-frac-slash">/</span></span>
-        <span class="tm-den-box"><span class="tm-diff tm-clickable" data-symbol="${opSym}${escapeHtml(varName)}" data-parent-type="derivative" data-var="${escapeHtml(varName)}"><span class="tm-diff-d">${sym}</span><span class="tm-var">${escapeHtml(varName)}</span></span></span>
+        <span class="tm-den-box"><span class="tm-diff"><span class="tm-diff-d">${sym}</span><span class="tm-var">${escapeHtml(varName)}</span></span></span>
       </span>
     `;
 
@@ -676,13 +674,13 @@ function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
     } else if (fnTok) {
       if (fnTok === 'pi') out += `<span class="tm-const">&pi;</span>`;
       else if (fnTok === 'inf') out += `<span class="tm-const">&infin;</span>`;
-      else if (fnTok === 'lim') out += `<span class="tm-fn tm-clickable" data-symbol="lim" data-parent-type="limit">${escapeHtml(fnTok)}</span>`;
+      else if (fnTok === 'lim') out += `<span class="tm-fn">${escapeHtml(fnTok)}</span>`;
       else out += `<span class="tm-fn">${escapeHtml(fnTok)}</span>`;
     } else if (identTok) {
       if (identTok === 'sum' || identTok === '\u03a3') {
-        out += `<span class="tm-bigop-symbol tm-clickable" data-symbol="\u03a3" data-parent-type="summation">&sum;</span>`;
+        out += `<span class="tm-bigop-symbol">&sum;</span>`;
       } else if (identTok.startsWith('d') && identTok.length > 1) {
-        out += `<span class="tm-diff tm-clickable" data-symbol="${escapeHtml(identTok)}" data-parent-type="differential">${escapeHtml(identTok)}</span>`;
+        out += `<span class="tm-diff">${escapeHtml(identTok)}</span>`;
       } else if (identTok.startsWith('Delta')) {
         const sub = identTok.replace(/^Delta_?/, '');
         out += `<span class="tm-var">&Delta;${escapeHtml(sub)}</span>`;

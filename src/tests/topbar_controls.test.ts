@@ -501,13 +501,13 @@ describe('Top-Bar Control Responsiveness & Live Handlers after Typing', () => {
     expect(contextMenu).toBeTruthy();
 
     const items = contextMenu?.querySelectorAll('.pane-dropdown-item').map(it => it.textContent) || [];
-    expect(items.some(t => t.includes('Results Stream'))).toBe(true);
-    expect(items.some(t => t.includes('Scope (Definitions)'))).toBe(true);
-    expect(items.some(t => t.includes('Execution Trace & Fuel'))).toBe(true);
-    expect(items.some(t => t.includes('Captured Visual Frames'))).toBe(true);
+    expect(items.some(t => t.includes('Results (thrown_ball)'))).toBe(true);
+    expect(items.some(t => t.includes('Scope'))).toBe(true);
+    expect(items.some(t => t.includes('Trace'))).toBe(true);
+    expect(items.some(t => t.includes('Frames'))).toBe(true);
     expect(items.some(t => t.includes('L2:'))).toBe(true);
-    expect(items.some(t => t.includes('Split Pane Right'))).toBe(true);
-    expect(items.some(t => t.includes('Split Pane Down'))).toBe(true);
-    expect(items.some(t => t.includes('Close Tab'))).toBe(true);
+    expect(items.some(t => t.includes('Split pane right'))).toBe(true);
+    expect(items.some(t => t.includes('Split pane down'))).toBe(true);
+    expect(items.some(t => t.includes('Close tab'))).toBe(true);
   });
 });

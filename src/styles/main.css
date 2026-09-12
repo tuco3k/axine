@@ -178,10 +178,10 @@ html, body {
   left: 0;
   margin-top: 4px;
   background-color: var(--color-bg-surface);
-  border: 1px solid var(--color-border-default);
+  border: var(--border-width-default) solid var(--color-border-default);
   border-radius: var(--border-radius-sm);
   padding: 4px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-floating);
   z-index: 100;
   display: flex;
   flex-direction: column;
@@ -221,7 +221,7 @@ html, body {
 }
 
 .doc-file-menu-divider {
-  height: 1px;
+  height: var(--border-width-default);
   background-color: var(--color-border-subtle);
   margin: 4px 0;
 }
@@ -230,8 +230,7 @@ html, body {
   font-size: var(--font-size-2xs);
   color: var(--color-text-tertiary);
   padding: 4px 8px 2px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.02em;
 }
 
 /* Document Session Tabs Bar */
@@ -239,7 +238,7 @@ html, body {
   display: flex;
   align-items: center;
   background-color: var(--color-bg-surface);
-  border-bottom: 1px solid var(--color-border-subtle);
+  border-bottom: var(--border-width-default) solid var(--color-border-subtle);
   height: 32px;
   padding: 0 var(--space-xs);
   overflow-x: auto;
@@ -264,7 +263,7 @@ html, body {
   font-size: var(--font-size-xs);
   border-top-left-radius: var(--border-radius-xs);
   border-top-right-radius: var(--border-radius-xs);
-  border: 1px solid transparent;
+  border: var(--border-width-default) solid transparent;
   border-bottom: none;
   cursor: pointer;
   transition: all var(--duration-fast);
@@ -319,7 +318,7 @@ html, body {
 }
 
 .doc-session-tab-close-btn:hover {
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: var(--color-bg-surface-hover);
   color: var(--color-text-primary);
 }
 
@@ -391,32 +390,35 @@ html, body {
 .doc-btn.primary {
   color: var(--color-accent);
   border-color: var(--color-accent-border);
-  background-color: var(--color-accent-subtle);
+  background-color: transparent;
 }
 
 .doc-btn.primary:hover {
-  background-color: var(--color-accent);
-  color: var(--color-bg-base);
+  background-color: var(--color-bg-surface-hover);
+  color: var(--color-accent);
+  border-color: var(--color-accent);
 }
 
 .doc-btn.danger {
   color: var(--color-semantic-error);
   border-color: var(--color-semantic-error-border);
+  background-color: transparent;
 }
 
 .doc-btn.danger:hover {
-  background-color: var(--color-semantic-error);
-  color: var(--color-bg-base);
+  background-color: var(--color-bg-surface-hover);
+  color: var(--color-semantic-error);
+  border-color: var(--color-semantic-error);
 }
 
 .doc-btn-runnable {
   color: var(--color-semantic-verified);
   border-color: var(--color-semantic-verified-border);
-  background-color: var(--color-semantic-verified-bg);
+  background-color: var(--color-bg-surface-elevated);
 }
 
 .doc-btn-runnable:hover {
-  background-color: var(--color-semantic-verified-bg);
+  background-color: var(--color-bg-surface-hover);
   border-color: var(--color-semantic-verified);
   color: var(--color-semantic-verified);
 }
@@ -424,11 +426,11 @@ html, body {
 .doc-btn-running {
   color: var(--color-semantic-error);
   border-color: var(--color-semantic-error-border);
-  background-color: var(--color-semantic-error-bg);
+  background-color: var(--color-bg-surface-elevated);
 }
 
 .doc-btn-running:hover {
-  background-color: var(--color-semantic-error-bg);
+  background-color: var(--color-bg-surface-hover);
   border-color: var(--color-semantic-error);
   color: var(--color-semantic-error);
 }
@@ -564,7 +566,7 @@ html, body {
   min-width: 200px;
   min-height: 200px;
   background-color: var(--color-bg-base);
-  border: 1px solid var(--color-border-default);
+  border: var(--border-width-default) solid var(--color-border-default);
   position: relative;
   overflow: hidden;
   transition: border-color var(--duration-fast);
@@ -580,7 +582,7 @@ html, body {
   justify-content: space-between;
   height: 32px;
   background-color: var(--color-bg-surface);
-  border-bottom: 1px solid var(--color-border-subtle);
+  border-bottom: var(--border-width-default) solid var(--color-border-subtle);
   padding: 0 var(--space-xs);
   flex-shrink: 0;
   user-select: none;
@@ -604,8 +606,8 @@ html, body {
   color: var(--color-text-secondary);
   font-family: var(--font-family-ui);
   font-size: var(--font-size-xs);
-  border: 1px solid transparent;
-  border-bottom: 2px solid transparent;
+  border: var(--border-width-default) solid transparent;
+  border-bottom: var(--border-width-default) solid transparent;
   cursor: pointer;
   transition: all var(--duration-fast);
   max-width: 200px;
@@ -620,7 +622,7 @@ html, body {
   background-color: var(--color-bg-base);
   color: var(--color-text-primary);
   border-color: var(--color-border-subtle);
-  border-bottom: 2px solid var(--color-accent);
+  border-bottom: var(--border-width-default) solid var(--color-accent);
   font-weight: 500;
 }
 
@@ -629,7 +631,7 @@ html, body {
 }
 
 .pane-tab.tab-dragover {
-  border-left: 2px solid var(--color-accent);
+  border-left: var(--border-width-default) solid var(--color-accent);
 }
 
 .pane-tab-title {
@@ -646,7 +648,7 @@ html, body {
 .pane-tab-rename-input {
   background: var(--color-bg-input);
   color: var(--color-text-primary);
-  border: 1px solid var(--color-accent);
+  border: var(--border-width-default) solid var(--color-accent);
   border-radius: var(--border-radius-xs);
   font-size: var(--font-size-xs);
   padding: 1px 4px;
@@ -716,10 +718,10 @@ html, body {
   right: 0;
   margin-top: 4px;
   background-color: var(--color-bg-surface);
-  border: 1px solid var(--color-border-default);
+  border: var(--border-width-default) solid var(--color-border-default);
   border-radius: var(--border-radius-sm);
   padding: 4px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-floating);
   z-index: 100;
   display: flex;
   flex-direction: column;
@@ -738,7 +740,7 @@ html, body {
   background-color: var(--color-bg-surface-elevated);
   border: var(--border-width-default) solid var(--color-border-default);
   border-radius: var(--border-radius-sm);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-floating);
   padding: var(--space-2xs);
   min-width: 220px;
   max-height: 380px;
@@ -756,8 +758,7 @@ html, body {
   font-size: var(--font-size-2xs);
   color: var(--color-text-tertiary);
   padding: 4px 8px 2px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.02em;
 }
 
 .pane-dropdown-item {
@@ -1184,7 +1185,7 @@ html, body {
 .doc-tab-btn {
   background: transparent;
   border: none;
-  border-bottom: 2px solid transparent;
+  border-bottom: var(--border-width-default) solid transparent;
   color: var(--color-text-secondary);
   font-family: var(--font-family-ui);
   font-size: var(--font-size-xs);
@@ -1204,7 +1205,7 @@ html, body {
 
 .doc-tab-btn.active {
   color: var(--color-accent);
-  border-bottom-color: var(--color-accent);
+  border-bottom: var(--border-width-default) solid var(--color-accent);
   font-weight: var(--font-weight-semibold);
 }
 
@@ -1217,7 +1218,7 @@ html, body {
 
 .doc-dock-menu-btn {
   background: transparent;
-  border: 1px solid transparent;
+  border: var(--border-width-default) solid transparent;
   border-radius: var(--border-radius-xs);
   color: var(--color-text-secondary);
   font-family: var(--font-family-ui);
@@ -1242,10 +1243,10 @@ html, body {
   right: 0;
   margin-top: 4px;
   background-color: var(--color-bg-surface);
-  border: 1px solid var(--color-border-default);
+  border: var(--border-width-default) solid var(--color-border-default);
   border-radius: var(--border-radius-sm);
   padding: 4px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-floating);
   z-index: 100;
   display: flex;
   flex-direction: column;
@@ -1291,13 +1292,13 @@ html, body {
   width: 4px;
   height: 8px;
   border: solid var(--color-accent);
-  border-width: 0 2px 2px 0;
+  border-width: 0 1px 1px 0;
   transform: rotate(45deg);
   margin-right: 4px;
 }
 
 .doc-dock-menu-divider {
-  height: 1px;
+  height: var(--border-width-default);
   background-color: var(--color-border-subtle);
   margin: 4px 0;
 }
@@ -1329,7 +1330,7 @@ html, body {
   background: var(--color-plot-bg);
   border-radius: var(--border-radius-sm);
   overflow: hidden;
-  border: 1px solid var(--color-border-subtle);
+  border: var(--border-width-default) solid var(--color-border-subtle);
   margin-top: var(--space-xs);
 }
 
@@ -1370,7 +1371,7 @@ html, body {
 
 /* Pinned Visuals Slot */
 #doc-pinned-visuals {
-  border-bottom: 2px solid var(--color-border-default);
+  border-bottom: var(--border-width-default) solid var(--color-border-default);
   background: var(--color-bg-surface-elevated);
   padding: var(--space-sm);
   display: flex;
@@ -1387,7 +1388,7 @@ html, body {
 
 .doc-pinned-item {
   background: var(--color-bg-base);
-  border: 1px solid var(--color-border-subtle);
+  border: var(--border-width-default) solid var(--color-border-subtle);
   border-radius: var(--border-radius-sm);
   padding: var(--space-xs) var(--space-sm);
   display: flex;
@@ -1402,10 +1403,9 @@ html, body {
   font-size: var(--font-size-2xs);
   font-weight: var(--font-weight-semibold);
   color: var(--color-accent);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
   padding-bottom: var(--space-2xs);
-  border-bottom: 1px solid var(--color-border-subtle);
+  border-bottom: var(--border-width-default) solid var(--color-border-subtle);
 }
 
 .doc-pinned-canvas {
@@ -1418,7 +1418,7 @@ html, body {
 
 .doc-unpin-btn {
   background: transparent;
-  border: 1px solid var(--color-border-subtle);
+  border: var(--border-width-default) solid var(--color-border-subtle);
   color: var(--color-text-tertiary);
   border-radius: var(--border-radius-xs);
   padding: 1px 6px;
@@ -1450,7 +1450,7 @@ html, body {
   display: flex;
   flex-direction: column;
   background-color: var(--color-bg-base);
-  border: 1px solid var(--color-border-subtle);
+  border: var(--border-width-default) solid var(--color-border-subtle);
   border-radius: var(--border-radius-sm);
   padding: var(--space-xs) var(--space-sm);
   gap: var(--space-2xs);
@@ -1504,7 +1504,7 @@ html, body {
 .space-btn {
   background: transparent;
   color: var(--color-text-tertiary);
-  border: 1px solid transparent;
+  border: var(--border-width-default) solid transparent;
   border-radius: var(--border-radius-xs);
   padding: 1px 6px;
   font-size: var(--font-size-2xs);
@@ -1591,7 +1591,7 @@ html, body {
   position: relative;
   border-radius: var(--border-radius-xs);
   overflow: hidden;
-  border: 1px solid var(--color-border-subtle);
+  border: var(--border-width-default) solid var(--color-border-subtle);
   background: var(--color-plot-bg);
 }
 
@@ -1836,8 +1836,8 @@ html, body {
 }
 
 .doc-pin-btn.pinned {
-  background: var(--color-accent);
-  color: var(--color-bg-base);
+  background: transparent;
+  color: var(--color-accent);
   border-color: var(--color-accent);
 }
 
@@ -1900,7 +1900,7 @@ html, body {
   color: var(--color-text-primary);
   padding: var(--space-xs) var(--space-sm);
   background-color: var(--color-accent-subtle);
-  border-left: 3px solid var(--color-accent);
+  border-left: var(--border-width-default) solid var(--color-accent);
   border-radius: var(--border-radius-sm);
   font-variant-numeric: lining-nums;
 }
@@ -1925,7 +1925,6 @@ html, body {
   font-family: var(--font-family-ui);
   font-size: var(--font-size-2xs);
   color: var(--color-text-tertiary);
-  text-transform: uppercase;
 }
 
 .step-rule-badge {
@@ -1936,7 +1935,6 @@ html, body {
   color: var(--color-text-secondary);
   border: var(--border-width-default) solid var(--color-border-subtle);
   border-radius: var(--border-radius-xs);
-  text-transform: uppercase;
 }
 
 .step-card-eq {
@@ -2031,7 +2029,7 @@ html, body {
   color: var(--color-semantic-verified);
   padding: var(--space-xs) var(--space-sm);
   background-color: var(--color-semantic-verified-bg);
-  border-left: 3px solid var(--color-semantic-verified);
+  border-left: var(--border-width-default) solid var(--color-semantic-verified);
   border-radius: var(--border-radius-sm);
   font-variant-numeric: lining-nums;
 }
@@ -2042,9 +2040,8 @@ html, body {
 .doc-panel-section-title {
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
-  text-transform: uppercase;
   color: var(--color-text-tertiary);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.02em;
   margin-bottom: var(--space-sm);
 }
 
@@ -2434,19 +2431,19 @@ html, body {
 
 .tm-matrix-delim {
   width: 0.45em;
-  border-top: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
+  border-top: var(--border-width-default) solid currentColor;
+  border-bottom: var(--border-width-default) solid currentColor;
   flex-shrink: 0;
 }
 
 .tm-delim-left {
-  border-left: 1.5px solid currentColor;
+  border-left: var(--border-width-default) solid currentColor;
   margin-right: 0.2em;
   border-radius: 2px 0 0 2px;
 }
 
 .tm-delim-right {
-  border-right: 1.5px solid currentColor;
+  border-right: var(--border-width-default) solid currentColor;
   margin-left: 0.2em;
   border-radius: 0 2px 2px 0;
 }
@@ -2506,340 +2503,6 @@ html, body {
   margin-left: 0.05em;
 }
 
-/* =========================================================================
-   Explainable Math Popover (Phase 9)
-   ========================================================================= */
-.tm-clickable {
-  cursor: pointer;
-  border-radius: var(--border-radius-xs);
-  transition: background-color var(--duration-fast), color var(--duration-fast);
-  padding: 0 1px;
-}
-
-.tm-clickable:hover {
-  background-color: var(--color-accent-subtle);
-  color: var(--color-accent);
-  outline: 1px solid var(--color-accent-border);
-}
-
-.doc-math-popover {
-  position: fixed;
-  z-index: 10000;
-  width: 380px;
-  max-width: calc(100vw - 32px);
-  background-color: var(--color-bg-surface-elevated);
-  border: var(--border-width-default) solid var(--color-border-default);
-  border-radius: var(--border-radius-md);
-  box-shadow: var(--shadow-floating);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  font-family: var(--font-family-ui);
-  animation: popoverFadeIn var(--duration-fast) ease-out;
-}
-
-.doc-math-popover.hidden {
-  display: none !important;
-}
-
-@keyframes popoverFadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.popover-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-  padding: var(--space-xs) var(--space-sm);
-  background-color: var(--color-bg-surface);
-  border-bottom: var(--border-width-default) solid var(--color-border-subtle);
-}
-
-.popover-symbol-badge {
-  font-family: var(--font-family-math);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-accent);
-  background-color: var(--color-accent-subtle);
-  border: var(--border-width-default) solid var(--color-accent-border);
-  border-radius: var(--border-radius-sm);
-  padding: 2px var(--space-xs);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 28px;
-}
-
-.popover-title-group {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.popover-role {
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-primary);
-}
-
-.popover-close-btn {
-  background: transparent;
-  border: none;
-  color: var(--color-text-tertiary);
-  font-size: var(--font-size-md);
-  cursor: pointer;
-  padding: 0 var(--space-2xs);
-  line-height: 1;
-}
-
-.popover-close-btn:hover {
-  color: var(--color-text-primary);
-}
-
-.doc-math-popover {
-  position: fixed;
-  z-index: 10000;
-  width: 400px;
-  max-width: calc(100vw - 32px);
-  background-color: var(--color-bg-surface-elevated);
-  border: var(--border-width-default) solid var(--color-border-default);
-  border-radius: var(--border-radius-md);
-  box-shadow: var(--shadow-floating);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  font-family: var(--font-family-ui);
-  animation: popoverFadeIn var(--duration-fast) ease-out;
-}
-
-.popover-body {
-  padding: var(--space-sm);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-  max-height: 520px;
-  overflow-y: auto;
-}
-
-.popover-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2xs);
-}
-
-.popover-section-label {
-  font-size: var(--font-size-2xs);
-  font-weight: var(--font-weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--color-accent);
-  cursor: default;
-}
-
-.popover-section-content {
-  font-size: var(--font-size-xs);
-  color: var(--color-text-secondary);
-  line-height: 1.45;
-}
-
-.popover-showme-preview {
-  background-color: var(--color-bg-base);
-  border: var(--border-width-default) solid var(--color-border-subtle);
-  border-radius: var(--border-radius-sm);
-  padding: var(--space-xs);
-  color: var(--color-text-primary);
-  font-size: var(--font-size-xs);
-}
-
-/* =========================================================================
-   Interactive Explainer Visualizer (Phase 9 — Gate F3)
-   ========================================================================= */
-.popover-visualizer-container {
-  margin-top: var(--space-xs);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-}
-
-.vis-root {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-}
-
-.vis-canvas-frame {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background-color: var(--color-bg-base);
-  border: var(--border-width-default) solid var(--color-border-subtle);
-  border-radius: var(--border-radius-sm);
-  overflow: hidden;
-}
-
-.vis-canvas {
-  display: block;
-  width: 340px;
-  height: 140px;
-}
-
-.vis-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-  padding: 0;
-}
-
-.vis-slider-line {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.vis-segmented-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--space-xs);
-}
-
-.vis-segmented-control {
-  display: inline-flex;
-  background-color: var(--color-bg-base);
-  border: var(--border-width-default) solid var(--color-border-subtle);
-  border-radius: var(--border-radius-sm);
-  padding: 1px;
-  gap: 1px;
-}
-
-.vis-seg-btn {
-  background: transparent;
-  border: none;
-  color: var(--color-text-tertiary);
-  font-family: var(--font-family-ui);
-  font-size: var(--font-size-2xs);
-  padding: 1px 6px;
-  border-radius: 2px;
-  cursor: pointer;
-  transition: all var(--duration-fast);
-}
-
-.vis-seg-btn:hover {
-  color: var(--color-text-secondary);
-}
-
-.vis-seg-btn.active {
-  background-color: var(--color-bg-surface-elevated);
-  color: var(--color-accent);
-  font-weight: var(--font-weight-medium);
-}
-
-.vis-slider-label {
-  font-size: var(--font-size-2xs);
-  font-weight: var(--font-weight-normal);
-  color: var(--color-text-secondary);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.vis-accent-badge {
-  font-family: var(--font-family-doc);
-  font-size: var(--font-size-2xs);
-  color: var(--color-accent);
-  font-weight: var(--font-weight-semibold);
-}
-
-.vis-slider {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 3px;
-  border-radius: 1.5px;
-  background: var(--color-border-default);
-  outline: none;
-}
-
-.vis-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--color-accent);
-  cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  transition: transform var(--duration-fast);
-}
-
-.vis-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.25);
-}
-
-.vis-metrics-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 2px 12px;
-  padding: 2px 0 0 0;
-}
-
-.vis-metric {
-  font-size: var(--font-size-2xs);
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  line-height: 1.35;
-}
-
-.vis-metric-full {
-  grid-column: span 2;
-}
-
-.vis-metric-key {
-  color: var(--color-text-tertiary);
-  font-weight: var(--font-weight-normal);
-}
-
-.vis-metric-val {
-  font-family: var(--font-family-doc);
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-2xs);
-  font-weight: var(--font-weight-normal);
-}
-
-.popover-details {
-  cursor: pointer;
-}
-
-.popover-details summary {
-  list-style: none;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2xs);
-}
-
-.popover-details summary::-webkit-details-marker {
-  display: none;
-}
-
-.popover-details summary::after {
-  content: ' \25B8';
-  font-size: 0.8em;
-  transition: transform var(--duration-fast);
-}
-
-.popover-details[open] summary::after {
-  transform: rotate(90deg);
-}
-
-.deeper-content {
-  margin-top: var(--space-2xs);
-  padding: var(--space-xs);
-  background-color: var(--color-bg-base);
-  border-left: 2px solid var(--color-accent);
-  border-radius: 0 var(--border-radius-sm) var(--border-radius-sm) 0;
-}
 
 /* ============================================================
    Phase 10: Described Value & Representation Styling
@@ -2884,7 +2547,7 @@ html, body {
   background: var(--color-bg-elevated);
   padding: var(--space-md);
   border-radius: var(--border-radius-md);
-  border: 1px solid var(--color-border-subtle);
+  border: var(--border-width-default) solid var(--color-border-subtle);
 }
 
 .described-header-card .described-kind-badge {
@@ -2909,14 +2572,13 @@ html, body {
   background: var(--color-bg-elevated);
   padding: var(--space-sm) var(--space-md);
   border-radius: var(--border-radius-sm);
-  border: 1px solid var(--color-border-subtle);
+  border: var(--border-width-default) solid var(--color-border-subtle);
 }
 
 .described-section .section-label {
   font-size: 0.75rem;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.02em;
   color: var(--color-text-tertiary);
   margin-bottom: var(--space-2xs);
 }
@@ -2929,7 +2591,7 @@ html, body {
   border-radius: var(--border-radius-xs);
   background: var(--color-semantic-unknown-bg);
   color: var(--color-semantic-unknown);
-  border: 1px solid var(--color-semantic-unknown-border);
+  border: var(--border-width-default) solid var(--color-semantic-unknown-border);
   font-family: var(--font-family-mono);
 }
 
@@ -2958,10 +2620,10 @@ html, body {
   display: inline-block;
   padding: 2px 8px;
   font-size: 0.8rem;
-  border-radius: 12px;
+  border-radius: var(--border-radius-sm);
   background: var(--color-bg-base);
   color: var(--color-text-secondary);
-  border: 1px solid var(--color-border-subtle);
+  border: var(--border-width-default) solid var(--color-border-subtle);
 }
 
 /* Animation Player (Phase 12) */
@@ -2969,12 +2631,12 @@ html, body {
   display: flex;
   flex-direction: column;
   background: var(--color-bg-base);
-  border: 1px solid var(--color-border-subtle);
+  border: var(--border-width-default) solid var(--color-border-subtle);
   border-radius: var(--border-radius-md);
   padding: var(--space-sm);
   gap: var(--space-xs);
   max-width: 520px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-floating);
 }
 
 .anim-hud {
@@ -2994,10 +2656,10 @@ html, body {
   font-size: 0.72rem;
   font-weight: 600;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--border-radius-xs);
   background: var(--color-bg-surface-elevated);
   color: var(--color-text-secondary);
-  border: 1px solid var(--color-border-subtle);
+  border: var(--border-width-default) solid var(--color-border-subtle);
 }
 
 .hud-source {
@@ -3021,7 +2683,7 @@ html, body {
 .anim-canvas {
   background: var(--color-plot-bg);
   border-radius: var(--border-radius-sm);
-  border: 1px solid var(--color-border-subtle);
+  border: var(--border-width-default) solid var(--color-border-subtle);
   width: 100%;
   height: auto;
   aspect-ratio: 16 / 10;
@@ -3053,7 +2715,7 @@ html, body {
   color: var(--color-text-secondary);
   background: var(--color-bg-elevated);
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--border-radius-xs);
   overflow-x: auto;
   white-space: nowrap;
 }
@@ -3067,10 +2729,10 @@ html, body {
 
 .anim-btn {
   background: var(--color-bg-elevated);
-  border: 1px solid var(--color-border-subtle);
+  border: var(--border-width-default) solid var(--color-border-subtle);
   color: var(--color-text-primary);
   padding: 4px 10px;
-  border-radius: 4px;
+  border-radius: var(--border-radius-xs);
   font-size: 0.78rem;
   font-weight: 500;
   cursor: pointer;
@@ -3138,8 +2800,7 @@ html, body {
   font-size: var(--font-size-2xs);
   font-weight: var(--font-weight-semibold);
   color: var(--color-accent);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
 }
 
 .spatial-inspector-coord-val {
@@ -3194,11 +2855,11 @@ html, body {
 }
 
 .spatial-inspector-card.holds {
-  border-left: 2px solid var(--color-accent);
+  border-left: var(--border-width-default) solid var(--color-accent);
 }
 
 .spatial-inspector-card.residual {
-  border-left: 2px solid var(--color-semantic-stale);
+  border-left: var(--border-width-default) solid var(--color-semantic-stale);
 }
 
 .spatial-layer-1,
@@ -3220,16 +2881,14 @@ html, body {
   font-size: var(--font-size-2xs);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.02em;
 }
 
 .layer-title-collapsible {
   font-size: var(--font-size-2xs);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.02em;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3299,9 +2958,9 @@ html, body {
 }
 
 .spatial-jump-line-btn {
-  background: var(--color-accent-subtle);
-  color: var(--color-accent);
-  border: var(--border-width-default) solid var(--color-accent-border);
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: var(--border-width-default) solid var(--color-border-subtle);
   border-radius: var(--border-radius-xs);
   padding: 1px 6px;
   font-size: var(--font-size-xs);
@@ -3311,8 +2970,9 @@ html, body {
 }
 
 .spatial-jump-line-btn:hover {
-  background: var(--color-accent);
-  color: var(--color-bg-base);
+  background: var(--color-bg-surface-hover);
+  color: var(--color-text-primary);
+  border-color: var(--color-border-default);
 }
 
 .spatial-line-tag {

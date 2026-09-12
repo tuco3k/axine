@@ -110,28 +110,18 @@ AST Formatter           Scope Analyzer         Kleene 3-Valued Logic    Numeric 
 - **[`GRAMMAR.md`](./GRAMMAR.md)**: Formal EBNF grammar, precedence hierarchy, ambiguity resolution table, and Kleene truth tables.
 ---
 
-## Graphing & Dimensionality Inference (`graph(...)`)
+## Spatial Manifolds & Coordinate Blocks (`{\axis ...}`)
 
-The scope analyzer counts free variables (excluding bound parameters and assigned variables) to infer visualization mode:
+Axine renders geometry exclusively through pure mathematical relations inside coordinate blocks:
 
-1. **1 Free Variable** $\rightarrow$ **2D Adaptive Curve Plot** (`graph(2x)`):
-   - Adaptive recursive subdivision in areas of high curvature.
-   - Discontinuity detection that breaks asymptotes (e.g. $\tan x$) without vertical spikes.
-   - Header indicates default domain `[-10, 10]` or explicit domain.
-2. **Multiple Series on Shared Axes** (`graph(2x, x^2, ln x)`):
-   - Plots multiple series with distinct color coding and legend.
-3. **Different Free Variables** (`graph(2x, y, 9z)`):
-   - Maps each distinct variable to the common horizontal axis and displays an explicit notification banner:
-     `"Note: Variables 'x', 'y', and 'z' were each mapped to the same horizontal axis."`
-4. **Parametric 2D Curves** (`graph((cos t, sin t), t in 0..tau)`):
-   - Detects 2D tuple with 1 free parameter and samples $(x(t), y(t))$.
-5. **2 Free Variables** $\rightarrow$ **2D Heatmap & 3D Surface** (`graph(sin x cos y)`):
-   - 2D Heatmap with Viridis color gradient and colorbar scale.
-   - Interactive 3D Surface view with Orbit (drag), Pan (shift+drag), Zoom (scroll), and Reset (double-click).
-6. **Multiple Surfaces on Shared 3D Axes** (`graph(sin(x) * cos(y), 0.5 * (x - y), x in -3..3, y in -3..3)`):
-   - Composes multiple surfaces into a single unified 3D scene.
-   - Polygon quads are depth-sorted together via Painter's algorithm, producing depth-interleaved intersection seams.
-7. **0 Free Variables** $\rightarrow$ Descriptive error: `"graph() requires at least one free variable to plot against, found 0."`
+1. **Declared Coordinate Axes (`{\axis :x, :y; ...}`)**:
+   - Declaring coordinate axes forms a geometric manifold space.
+   - Relations such as `:y = :sin(:x)` or `:x^2 + :y^2 = 4` are sampled by the interval constraint solver and rendered into interactive 2D curve and contour viewports.
+2. **3D Surfaces & Manifolds (`{\axis :x, :y, :z; ...}`)**:
+   - Declaring three axes forms a 3D spatial viewport with depth-sorted polygon rasterization, orbit, pan, and zoom.
+   - Surfaces with shared coordinate axes automatically composite into a unified coordinate frame.
+3. **No Procedural Plotting Calls**:
+   - There are no `graph()` or `plot()` builtins in Axine. Relations stand directly as mathematical truths within their declared coordinate spaces.
 
 ---
 
@@ -193,10 +183,10 @@ Axine provides full standalone HTML, PDF print view, and Markdown export capabil
 
 ### 1. Typesetting Rules: Mathematics vs Procedure Code
 To maintain visual clarity, the export engine and print view distinguish between mathematical statements and procedure instructions:
-- **Mathematical Formulations**: Definitions (`:=`), equations (`=`), arithmetic expressions, algebraic calls (`isolate`, `simplify`, `check`), and evaluations are mathematically typeset with italic variables, roman numbers, TeX operator spacing, raised superscripts, and clean typography.
-- **Identifiers with Underscores**: Multi-letter identifiers (e.g. `y_pos`, `ball_at_2`, `spring_force`, `traj_euler`) retain underscores as legal identifier characters and are not converted into subscripts.
+- **Mathematical Formulations**: Mathematical relations (`=`), expressions, quantifiers (`\forall`, `\exists`), algebraic operations, and evaluations are mathematically typeset with italic variables, roman numbers, TeX operator spacing, raised superscripts, and clean typography.
+- **Identifiers with Underscores**: Multi-letter identifiers (e.g. `:y_pos`, `:ball_at_2`, `:spring_force`, `:traj_euler`) retain underscores as legal identifier characters and are not converted into subscripts.
 - **Inline Fractions in Print/Export**: While on-screen layout renders stacked fraction bars (`a // b`), export and print views render fractions inline as `a/b` (e.g. `52/5`) to prevent vertical layout instability and page splits.
-- **Monospace Procedure Instructions**: Procedure calls and declarative instructions (`import "..."`, `module ...`, `simulate(...)`) remain in monospace code typography.
+- **Declarative Instructions**: Module declarations and imports (`\import "..."`, `\module ...`) remain in clean code typography.
 
 ### 2. Derivations and Step-by-Step Traces in Export
 Every step-by-step derivation is a first-class value. In HTML and PDF exports:

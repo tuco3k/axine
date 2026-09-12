@@ -324,7 +324,7 @@ export class SpatialInspector {
     steps.push({
       label: 'Coordinate Substitution',
       equation: instantiatedExpr,
-      detail: `Instantiate spatial coordinates at (${coordArgs})`,
+      detail: `Substitute (${coordArgs})`,
     });
 
     // Check for library function (e.g. sqrt / newton_sqrt)
@@ -856,7 +856,7 @@ export class SpatialInspector {
         <span class="spatial-inspector-coord-val">(${escapeHtml(coordStr)})</span>
         ${gridTag ? `<span class="spatial-inspector-grid-tag">${escapeHtml(gridTag)}</span>` : ''}
       </div>
-      <button class="spatial-inspector-close-btn" title="Close inspector (Esc)">&times;</button>
+      <button class="spatial-inspector-close-btn" title="Close (Esc)">&times;</button>
     `;
 
     const closeBtn = header.querySelector('.spatial-inspector-close-btn') as HTMLElement;
@@ -879,7 +879,7 @@ export class SpatialInspector {
     };
 
     if (result.hitEntities.length === 0) {
-      body.innerHTML = `<div class="spatial-inspector-empty">No active mathematical relations in this space.</div>`;
+      body.innerHTML = `<div class="spatial-inspector-empty">No relations in space.</div>`;
     } else {
       result.hitEntities.forEach((ent) => {
         const card = document.createElement('div');
@@ -890,7 +890,7 @@ export class SpatialInspector {
         const residualBadge = `<span class="spatial-residual-tag">f = ${residualValStr}</span>`;
 
         const sourceLineHtml = typeof ent.lineIdx === 'number'
-          ? `<button class="spatial-jump-line-btn" title="Jump to definition in document">Line ${ent.lineIdx + 1}</button>`
+          ? `<button class="spatial-jump-line-btn" title="Go to line">Line ${ent.lineIdx + 1}</button>`
           : `<span class="spatial-line-tag">Space Relation</span>`;
 
         let stepsHtml = '';
@@ -929,7 +929,7 @@ export class SpatialInspector {
         card.innerHTML = `
           <!-- Layer 1: What is here -->
           <div class="spatial-layer-1">
-            <div class="layer-title">Layer 1: Value at Point</div>
+            <div class="layer-title">Value at point</div>
             <div class="layer-1-row">
               <div class="relation-source">${typesetMath(ent.relationExpr, { displayMode: false })}</div>
               ${residualBadge}
@@ -939,9 +939,9 @@ export class SpatialInspector {
 
           <!-- Layer 2: What produced this -->
           <div class="spatial-layer-2">
-            <div class="layer-title">Layer 2: Source Provenance</div>
+            <div class="layer-title">Where it came from</div>
             <div class="layer-2-row">
-              <span class="provenance-label">Origin:</span>
+              <span class="provenance-label">Origin</span>
               ${sourceLineHtml}
             </div>
           </div>
@@ -949,7 +949,7 @@ export class SpatialInspector {
           <!-- Layer 3: How it got that value -->
           <div class="spatial-layer-3">
             <div class="layer-title-collapsible">
-              <span>Layer 3: Algebraic Reduction & Derivation</span>
+              <span>How it got here</span>
               <span class="collapsible-icon">\u25be</span>
             </div>
             <div class="spatial-reduction-content">

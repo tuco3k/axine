@@ -14,7 +14,6 @@
 :Body = \record { :mass, :position, :velocity }
 :Particle = \record { :mass, :position, :velocity }
 
-\view \for :Body = b -> [:circle(b.:position, 1), :arrow(b.:position, b.:velocity)]
 
 # Forces
 :gravity_force(b, g) = (0, -b.:mass * g)

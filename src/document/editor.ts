@@ -4,12 +4,8 @@ import { Value, DerivationValue, SolveTraceValue, DescribedValue, TrajectoryValu
 import { SpaceViewport } from '../plot/space_viewport';
 import { AnimationPlayer } from '../plot/animation_player';
 import { typesetMath, typesetSourceLine, TypesetOptions } from '../core/math_typeset';
-import { explainSymbol } from '../core/explainer';
-import { analyzeAndParse, createInitialEnvironment, evaluate, Evaluator } from '../core/evaluator';
-import { formatAST } from '../core/formatter';
-import { valueToNumber } from '../core/numeric/tower';
+import { createInitialEnvironment, Evaluator } from '../core/evaluator';
 import { formatKind } from '../core/kinds';
-import { MathPopover } from './popover';
 import { ICONS } from '../styles/icons';
 import { FileManager, OpenFileResult, SaveFileResult } from './file_manager';
 import { exportToHtml, exportToMarkdown, parseFrontMatter, renderSVGSpaceToString } from './exporter';
@@ -174,7 +170,6 @@ export class DocumentEditor {
   private pinnedViewports: Map<number, SpaceViewport> = new Map();
   private animationPlayers: Map<number, AnimationPlayer> = new Map();
   private pinnedAnimationPlayers: Map<number, AnimationPlayer> = new Map();
-  public mathPopover: MathPopover;
   public paneContainer?: PaneContainer;
 
   constructor(container: HTMLElement, initialText?: string) {
@@ -184,7 +179,6 @@ export class DocumentEditor {
     this.savedContent = docText;
     this.isDirty = false;
     this.state = new DocumentState(docText);
-    this.mathPopover = new MathPopover();
     this.loadDockLayout();
 
     const initialSessionId = 'sess_' + Math.random().toString(36).substring(2, 9);
@@ -915,13 +909,13 @@ export class DocumentEditor {
           </div>
 
           <div class="doc-file-menu-wrapper">
-            <button id="doc-file-menu-btn" class="doc-btn" title="File Menu (New, Open, Save)">
+            <button id="doc-file-menu-btn" class="doc-btn" title="File">
               File
               <svg width="8" height="8" viewBox="0 0 12 12" fill="currentColor"><path d="M2 4L6 8L10 4Z" /></svg>
             </button>
             <div id="doc-file-dropdown" class="doc-file-dropdown hidden">
               <button id="doc-new-file-btn" class="doc-file-menu-item">
-                <span>New File</span>
+                <span>New file</span>
               </button>
               <button id="doc-open-file-btn" class="doc-file-menu-item">
                 <span>Open...</span>
@@ -937,7 +931,7 @@ export class DocumentEditor {
               </button>
               <div class="doc-file-menu-divider"></div>
               <button id="doc-clear-file-btn" class="doc-file-menu-item">
-                <span>Clear Document</span>
+                <span>Clear document</span>
               </button>
               <div class="doc-file-menu-divider"></div>
               <div class="doc-file-menu-section-title">Export</div>
@@ -952,14 +946,14 @@ export class DocumentEditor {
                 <span>Export Markdown...</span>
               </button>
               <div class="doc-file-menu-divider"></div>
-              <div class="doc-file-menu-section-title">Recent Files</div>
+              <div class="doc-file-menu-section-title">Recent files</div>
               <div id="doc-recent-files-list"></div>
             </div>
             <span id="doc-dirty-badge" class="doc-dirty-badge ${this.isDirty ? '' : 'hidden'}" style="display:none"></span>
           </div>
 
           <div class="doc-file-menu-wrapper doc-view-menu-wrapper">
-            <button id="doc-view-menu-btn" class="doc-btn" title="Open View (+ Document, Results, Space, Inspector)">
+            <button id="doc-view-menu-btn" class="doc-btn" title="View">
               + View
               <svg width="8" height="8" viewBox="0 0 12 12" fill="currentColor"><path d="M2 4L6 8L10 4Z" /></svg>
             </button>
@@ -978,13 +972,13 @@ export class DocumentEditor {
                 <option value="unbounded">Unbounded</option>
               </select>
             </div>
-            <button id="doc-run-btn" class="doc-btn doc-btn-runnable" title="Execute current document (Cmd+Enter / Ctrl+Enter)">
+            <button id="doc-run-btn" class="doc-btn doc-btn-runnable" title="Run (Cmd+Enter)">
               ${ICONS.run} Run
             </button>
           </div>
           <div class="doc-toolbar-right">
             <span id="doc-stats-badge" class="doc-stats-badge">Ready</span>
-            <button id="doc-theme-btn" class="doc-btn doc-btn-icon" title="Toggle dark/light theme">
+            <button id="doc-theme-btn" class="doc-btn doc-btn-icon" title="Theme">
               ${ICONS.sun}
             </button>
           </div>
@@ -1008,9 +1002,9 @@ export class DocumentEditor {
             </div>
           </div>
 
-          <div id="doc-splitter" class="doc-splitter" title="Drag to resize panel"></div>
+          <div id="doc-splitter" class="doc-splitter" title="Resize panel"></div>
 
-          <div id="doc-panel-edge-affordance" class="doc-panel-edge-affordance" title="Click to show panel (Cmd+B)"></div>
+          <div id="doc-panel-edge-affordance" class="doc-panel-edge-affordance" title="Show panel (Cmd+B)"></div>
 
           <div id="doc-work-panel" class="doc-work-panel">
             <div class="doc-work-panel-header">
@@ -1021,7 +1015,7 @@ export class DocumentEditor {
                 <button class="doc-tab-btn" data-tab="frames">Frames</button>
               </div>
               <div class="doc-dock-menu-wrapper">
-                <button id="doc-dock-menu-btn" class="doc-dock-menu-btn" title="Dock & Layout Options (Cmd+Shift+D)">
+                <button id="doc-dock-menu-btn" class="doc-dock-menu-btn" title="Dock (Cmd+Shift+D)">
                   <svg class="doc-dock-menu-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
                     <rect x="2" y="2" width="12" height="12" rx="1.5" />
                     <line x1="9" y1="2" x2="9" y2="14" />
@@ -1048,7 +1042,7 @@ export class DocumentEditor {
                     Dock Right
                   </button>
                   <div class="doc-dock-menu-divider"></div>
-                  <button class="doc-dock-collapse-btn" title="Toggle panel collapse (Cmd+B)">Hide Panel</button>
+                  <button class="doc-dock-collapse-btn" title="Collapse panel (Cmd+B)">Hide Panel</button>
                 </div>
               </div>
             </div>
@@ -1606,141 +1600,6 @@ export class DocumentEditor {
     this.textarea.addEventListener('keyup', () => this.updateCaret());
     this.textarea.addEventListener('click', () => this.updateCaret());
 
-    // Explainable Math Click Handler on Editor Surface
-    if (this.overlayEl) {
-      this.overlayEl.addEventListener('click', (e) => {
-        const clickTarget = e.target as HTMLElement;
-        const lineEl = clickTarget.closest('.doc-typeset-line') as HTMLElement;
-        if (!lineEl) return;
-
-        const lines = this.textarea.value.split('\n');
-        const lineIdx = Array.from(this.overlayEl.querySelectorAll('.doc-typeset-line')).indexOf(lineEl);
-        if (lineIdx === -1) return;
-
-        const lineText = lines[lineIdx]?.trim() || '';
-        if (!lineText) return;
-
-        const clickableEl = (clickTarget.closest('.tm-clickable') as HTMLElement) || null;
-        const constructEl = clickableEl || (clickTarget.closest('.typeset-box') as HTMLElement) || lineEl;
-
-        let symbol = clickableEl?.dataset.symbol || 'dx';
-        let parentType = clickableEl?.dataset.parentType || '';
-        let varName = clickableEl?.dataset.var || 'x';
-        let integrand = clickableEl?.dataset.integrand || '';
-        let boundsLower: string | undefined = clickableEl?.dataset.boundsLower;
-        let boundsUpper: string | undefined = clickableEl?.dataset.boundsUpper;
-        let point: number | undefined = clickableEl?.dataset.point ? parseFloat(clickableEl.dataset.point) : undefined;
-        let targetLimit: number | undefined;
-
-        try {
-          const env = createInitialEnvironment();
-          const ast = analyzeAndParse(lineText, env);
-
-          // 1. BigOp integral: \u222b x^2 dx or integral(3*x + 1, x in 1..3)
-          if (ast.type === 'BigOp' && ast.op === 'integral') {
-            parentType = parentType || 'integral';
-            varName = ast.variable;
-            symbol = symbol || `d${varName}`;
-            integrand = formatAST(ast.body);
-            if (ast.start) boundsLower = formatAST(ast.start);
-            if (ast.end) boundsUpper = formatAST(ast.end);
-          }
-          // 2. LimitNode: lim(x -> 0, sin(x)/x)
-          else if (ast.type === 'Limit') {
-            parentType = parentType || 'limit';
-            symbol = 'lim';
-            varName = ast.variable;
-            integrand = formatAST(ast.expr);
-            try {
-              point = valueToNumber(evaluate(formatAST(ast.target), env).value);
-            } catch {
-              point = 0;
-            }
-          }
-          // 3. DiffNode: d//dx (x^3 - 2*x)
-          else if (ast.type === 'Diff') {
-            parentType = parentType || 'derivative';
-            varName = ast.variable;
-            symbol = symbol || `d${varName}`;
-            integrand = formatAST(ast.expr);
-            point = point ?? 1.5;
-          }
-          // 4. FunctionCall check: check(3/4 * pi * r^2, is: "sphere volume")
-          else if (ast.type === 'FunctionCall' && ((ast as any).callee === 'check' || (ast as any).name === 'check')) {
-            parentType = parentType || 'check';
-            symbol = 'check';
-            varName = 'r';
-            integrand = lineText;
-          }
-        } catch {
-          // Fallback for typeset math notation strings in editor
-        }
-
-        // Mathematical notation fallback if not standard AST node
-        if (!parentType) {
-          if (lineText.includes('d//') || lineText.startsWith('diff') || lineText.startsWith('d/dx')) {
-            parentType = 'derivative';
-            symbol = symbol || 'dx';
-            const match = lineText.match(/d\/\/d([a-zA-Z_][a-zA-Z0-9_]*)\s*([\s\S]*)/);
-            if (match) {
-              varName = match[1] || 'x';
-              integrand = match[2]?.replace(/^\(|\)$/g, '') || 'x^3 - 2*x';
-              symbol = `d${varName}`;
-            } else {
-              integrand = 'x^3 - 2*x';
-            }
-            point = point ?? 1.5;
-          } else if (lineText.startsWith('lim')) {
-            parentType = 'limit';
-            symbol = 'lim';
-            const match = lineText.match(/lim(?:\(([a-zA-Z_][a-zA-Z0-9_]*)\s*->\s*([0-9a-zA-Z\.\-]+)\))?\s*([\s\S]*)/);
-            if (match) {
-              varName = match[1] || 'x';
-              point = match[2] ? parseFloat(match[2]) : 3.0;
-              integrand = match[3]?.replace(/^\(|\)$/g, '') || '2*x + 4';
-            } else {
-              point = 3.0;
-              integrand = '2*x + 4';
-            }
-            targetLimit = 10.0;
-          } else if (lineText.includes('\u222b') || lineText.startsWith('integral')) {
-            parentType = 'integral';
-            symbol = symbol || 'dx';
-            const match = lineText.match(/(?:\u222b|integral)(?:_([0-9a-zA-Z\.\-]+))?(?:\^([0-9a-zA-Z\.\-]+))?\s+(?:from\s+([0-9a-zA-Z\.\-]+)\s+to\s+([0-9a-zA-Z\.\-]+)\s+of\s+)?([\s\S]+?)\s+(d[a-zA-Z_][a-zA-Z0-9_]*)/);
-            if (match) {
-              boundsLower = match[1] || match[3] || undefined;
-              boundsUpper = match[2] || match[4] || undefined;
-              integrand = match[5]?.replace(/^\(|\)$/g, '') || 'x^2';
-              symbol = match[6] || 'dx';
-              varName = symbol.startsWith('d') ? symbol.slice(1) : 'x';
-            } else {
-              integrand = 'x^2';
-              symbol = 'dx';
-            }
-          } else if (lineText.includes('check(') || lineText.startsWith('check')) {
-            parentType = 'check';
-            symbol = 'check';
-            varName = 'r';
-            integrand = lineText;
-          }
-        }
-
-        if (symbol) {
-          const explanation = explainSymbol(symbol, {
-            parentType,
-            integrand: integrand || lineText,
-            exprString: integrand || lineText,
-            variableName: varName,
-            bounds: boundsLower || boundsUpper ? { lower: boundsLower || '0', upper: boundsUpper || '1' } : undefined,
-            point,
-            targetLimit,
-          });
-
-          this.mathPopover.show(explanation, constructEl);
-        }
-      });
-    }
-
     this.bindSurfaceMouseEvents();
   }
 
@@ -2087,7 +1946,7 @@ export class DocumentEditor {
     if (this.scopePanelEl) {
       let scopeHtml = '';
       if (activeSymbols.size === 0) {
-        scopeHtml = `<div class="doc-scope-empty">No user definitions in scope</div>`;
+        scopeHtml = `<div class="doc-scope-empty">No definitions in scope</div>`;
       } else {
         activeSymbols.forEach((info, name) => {
           scopeHtml += `
@@ -2355,7 +2214,7 @@ export class DocumentEditor {
     if (countEl) countEl.textContent = `${this.frames.length}`;
 
     if (this.frames.length === 0) {
-      this.framesPanelEl.innerHTML = `<div class="doc-frames-empty">No visual frames recorded</div>`;
+      this.framesPanelEl.innerHTML = `<div class="doc-frames-empty">No frames recorded</div>`;
       return;
     }
 
@@ -2456,10 +2315,10 @@ export class DocumentEditor {
           <div class="doc-gutter-row-header">
             <span class="doc-gutter-lineno">L${lineIdx + 1} &bull; Space (${spaceVal.dimension}D)</span>
             <div class="doc-gutter-row-actions">
-              <button class="doc-gutter-action-btn doc-gutter-popout-btn" data-line="${lineIdx}" title="Open space as dedicated pane tab">Open as Tab</button>
-              <button class="doc-gutter-action-btn doc-gutter-pin-btn ${isPinned ? 'pinned' : ''}" data-line="${lineIdx}" title="Pin space to top of panel">${isPinned ? 'Pinned' : 'Pin'}</button>
-              ${!isCollapsed ? `<button class="doc-gutter-action-btn doc-gutter-expand-plot-btn" data-line="${lineIdx}" title="Toggle space viewport size">${isExpandedPlot ? 'Compact' : 'Expand'}</button>` : ''}
-              <button class="doc-gutter-action-btn doc-gutter-collapse-btn" data-line="${lineIdx}" title="Collapse/Expand row">${collapseText}</button>
+              <button class="doc-gutter-action-btn doc-gutter-popout-btn" data-line="${lineIdx}" title="Open as tab">Open as Tab</button>
+              <button class="doc-gutter-action-btn doc-gutter-pin-btn ${isPinned ? 'pinned' : ''}" data-line="${lineIdx}" title="Pin to top">${isPinned ? 'Pinned' : 'Pin'}</button>
+              ${!isCollapsed ? `<button class="doc-gutter-action-btn doc-gutter-expand-plot-btn" data-line="${lineIdx}" title="Resize viewport">${isExpandedPlot ? 'Compact' : 'Expand'}</button>` : ''}
+              <button class="doc-gutter-action-btn doc-gutter-collapse-btn" data-line="${lineIdx}" title="Collapse row">${collapseText}</button>
             </div>
           </div>
           <div class="doc-gutter-content">
@@ -2481,8 +2340,8 @@ export class DocumentEditor {
           <div class="doc-gutter-row-header">
             <span class="doc-gutter-lineno">L${lineIdx + 1} &bull; Derivation (${escapeHtml(derivVal.targetVar ?? 'Roots')})</span>
             <div class="doc-gutter-row-actions">
-              <button class="doc-gutter-action-btn doc-gutter-pin-btn ${isPinned ? 'pinned' : ''}" data-line="${lineIdx}" title="Pin derivation to top of panel">${isPinned ? 'Pinned' : 'Pin'}</button>
-              <button class="doc-gutter-action-btn doc-gutter-collapse-btn" data-line="${lineIdx}" title="Collapse/Expand row">${collapseText}</button>
+              <button class="doc-gutter-action-btn doc-gutter-pin-btn ${isPinned ? 'pinned' : ''}" data-line="${lineIdx}" title="Pin to top">${isPinned ? 'Pinned' : 'Pin'}</button>
+              <button class="doc-gutter-action-btn doc-gutter-collapse-btn" data-line="${lineIdx}" title="Collapse row">${collapseText}</button>
             </div>
           </div>
           <div class="doc-gutter-content">
@@ -2506,8 +2365,8 @@ export class DocumentEditor {
           <div class="doc-gutter-row-header">
             <span class="doc-gutter-lineno">L${lineIdx + 1} &bull; ${escapeHtml(kindStr)} (${escapeHtml(opStr)})</span>
             <div class="doc-gutter-row-actions">
-              <button class="doc-gutter-action-btn doc-gutter-pin-btn ${isPinned ? 'pinned' : ''}" data-line="${lineIdx}" title="Pin described card to top of panel">${isPinned ? 'Pinned' : 'Pin'}</button>
-              <button class="doc-gutter-action-btn doc-gutter-collapse-btn" data-line="${lineIdx}" title="Collapse/Expand row">${collapseText}</button>
+              <button class="doc-gutter-action-btn doc-gutter-pin-btn ${isPinned ? 'pinned' : ''}" data-line="${lineIdx}" title="Pin to top">${isPinned ? 'Pinned' : 'Pin'}</button>
+              <button class="doc-gutter-action-btn doc-gutter-collapse-btn" data-line="${lineIdx}" title="Collapse row">${collapseText}</button>
             </div>
           </div>
           <div class="doc-gutter-content">
@@ -2529,8 +2388,8 @@ export class DocumentEditor {
           <div class="doc-gutter-row-header">
             <span class="doc-gutter-lineno">L${lineIdx + 1} &bull; Check (${escapeHtml(checkVal.targetQuantity)})</span>
             <div class="doc-gutter-row-actions">
-              <button class="doc-gutter-action-btn doc-gutter-pin-btn ${isPinned ? 'pinned' : ''}" data-line="${lineIdx}" title="Pin check to top of panel">${isPinned ? 'Pinned' : 'Pin'}</button>
-              <button class="doc-gutter-action-btn doc-gutter-collapse-btn" data-line="${lineIdx}" title="Collapse/Expand row">${collapseText}</button>
+              <button class="doc-gutter-action-btn doc-gutter-pin-btn ${isPinned ? 'pinned' : ''}" data-line="${lineIdx}" title="Pin to top">${isPinned ? 'Pinned' : 'Pin'}</button>
+              <button class="doc-gutter-action-btn doc-gutter-collapse-btn" data-line="${lineIdx}" title="Collapse row">${collapseText}</button>
             </div>
           </div>
           <div class="doc-gutter-content">
@@ -2552,8 +2411,8 @@ export class DocumentEditor {
           <div class="doc-gutter-row-header">
             <span class="doc-gutter-lineno">L${lineIdx + 1} &bull; Trace (${escapeHtml(traceVal.method)})</span>
             <div class="doc-gutter-row-actions">
-              <button class="doc-gutter-action-btn doc-gutter-pin-btn ${isPinned ? 'pinned' : ''}" data-line="${lineIdx}" title="Pin trace to top of panel">${isPinned ? 'Pinned' : 'Pin'}</button>
-              <button class="doc-gutter-action-btn doc-gutter-collapse-btn" data-line="${lineIdx}" title="Collapse/Expand row">${collapseText}</button>
+              <button class="doc-gutter-action-btn doc-gutter-pin-btn ${isPinned ? 'pinned' : ''}" data-line="${lineIdx}" title="Pin to top">${isPinned ? 'Pinned' : 'Pin'}</button>
+              <button class="doc-gutter-action-btn doc-gutter-collapse-btn" data-line="${lineIdx}" title="Collapse row">${collapseText}</button>
             </div>
           </div>
           <div class="doc-gutter-content">
@@ -2575,8 +2434,8 @@ export class DocumentEditor {
           <div class="doc-gutter-row-header">
             <span class="doc-gutter-lineno">L${lineIdx + 1} &bull; Animation (${escapeHtml(trajVal.stateKind)})</span>
             <div class="doc-gutter-row-actions">
-              <button class="doc-gutter-action-btn doc-gutter-pin-btn ${isPinned ? 'pinned' : ''}" data-line="${lineIdx}" title="Pin animation to top of panel">${isPinned ? 'Pinned' : 'Pin'}</button>
-              <button class="doc-gutter-action-btn doc-gutter-collapse-btn" data-line="${lineIdx}" title="Collapse/Expand row">${collapseText}</button>
+              <button class="doc-gutter-action-btn doc-gutter-pin-btn ${isPinned ? 'pinned' : ''}" data-line="${lineIdx}" title="Pin to top">${isPinned ? 'Pinned' : 'Pin'}</button>
+              <button class="doc-gutter-action-btn doc-gutter-collapse-btn" data-line="${lineIdx}" title="Collapse row">${collapseText}</button>
             </div>
           </div>
           <div class="doc-gutter-content">
@@ -3124,7 +2983,6 @@ export class DocumentEditor {
     this.animationPlayers.clear();
     this.pinnedAnimationPlayers.forEach(p => p.dispose());
     this.pinnedAnimationPlayers.clear();
-    this.mathPopover.dispose();
     this.state.dispose();
   }
 }

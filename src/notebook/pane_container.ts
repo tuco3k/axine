@@ -533,13 +533,13 @@ export class PaneContainer {
 
       const sectionTitle = document.createElement('div');
       sectionTitle.className = 'pane-dropdown-section-title';
-      sectionTitle.textContent = 'Document Views';
+      sectionTitle.textContent = 'Views';
       menu.appendChild(sectionTitle);
 
       // Results Stream
       const resItem = document.createElement('button');
       resItem.className = 'pane-dropdown-item';
-      resItem.innerHTML = `<span>Results Stream (${escapeHtml(docBaseName)})</span>`;
+      resItem.innerHTML = `<span>Results (${escapeHtml(docBaseName)})</span>`;
       resItem.addEventListener('click', () => {
         menu.remove();
         this.openTab({
@@ -554,7 +554,7 @@ export class PaneContainer {
       // Scope
       const scopeItem = document.createElement('button');
       scopeItem.className = 'pane-dropdown-item';
-      scopeItem.innerHTML = `<span>Scope (Definitions)</span>`;
+      scopeItem.innerHTML = `<span>Scope</span>`;
       scopeItem.addEventListener('click', () => {
         menu.remove();
         this.openTab({
@@ -569,13 +569,13 @@ export class PaneContainer {
       // Trace
       const traceItem = document.createElement('button');
       traceItem.className = 'pane-dropdown-item';
-      traceItem.innerHTML = `<span>Execution Trace & Fuel</span>`;
+      traceItem.innerHTML = `<span>Trace</span>`;
       traceItem.addEventListener('click', () => {
         menu.remove();
         this.openTab({
           id: 'tab_trace_' + Math.random().toString(36).substring(2, 9),
           type: 'trace',
-          title: 'Trace & Fuel',
+          title: 'Trace',
           documentId: tab.documentId,
         }, leafId);
       });
@@ -584,7 +584,7 @@ export class PaneContainer {
       // Frames
       const framesItem = document.createElement('button');
       framesItem.className = 'pane-dropdown-item';
-      framesItem.innerHTML = `<span>Captured Visual Frames</span>`;
+      framesItem.innerHTML = `<span>Frames</span>`;
       framesItem.addEventListener('click', () => {
         menu.remove();
         this.openTab({
@@ -601,7 +601,7 @@ export class PaneContainer {
       if (spaces.length > 0) {
         const spaceSection = document.createElement('div');
         spaceSection.className = 'pane-dropdown-section-title';
-        spaceSection.textContent = 'Spaces in this Document';
+        spaceSection.textContent = 'Spaces';
         menu.appendChild(spaceSection);
 
         spaces.forEach(sp => {
@@ -632,7 +632,7 @@ export class PaneContainer {
     // Pane operations
     const splitRightItem = document.createElement('button');
     splitRightItem.className = 'pane-dropdown-item';
-    splitRightItem.innerHTML = `<span>Split Pane Right</span>`;
+    splitRightItem.innerHTML = `<span>Split pane right</span>`;
     splitRightItem.addEventListener('click', () => {
       menu.remove();
       this.split(leafId, 'horizontal', 'after');
@@ -641,7 +641,7 @@ export class PaneContainer {
 
     const splitDownItem = document.createElement('button');
     splitDownItem.className = 'pane-dropdown-item';
-    splitDownItem.innerHTML = `<span>Split Pane Down</span>`;
+    splitDownItem.innerHTML = `<span>Split pane down</span>`;
     splitDownItem.addEventListener('click', () => {
       menu.remove();
       this.split(leafId, 'vertical', 'after');
@@ -650,7 +650,7 @@ export class PaneContainer {
 
     const closeItem = document.createElement('button');
     closeItem.className = 'pane-dropdown-item';
-    closeItem.innerHTML = `<span>Close Tab</span>`;
+    closeItem.innerHTML = `<span>Close tab</span>`;
     closeItem.addEventListener('click', () => {
       menu.remove();
       this.closeTab(leafId, tab.id);
@@ -689,12 +689,12 @@ export class PaneContainer {
     // 1. Documents section
     const docSection = document.createElement('div');
     docSection.className = 'doc-file-menu-section-title';
-    docSection.textContent = 'Document & Results';
+    docSection.textContent = 'Document & results';
     dropdown.appendChild(docSection);
 
     const newDocItem = document.createElement('button');
     newDocItem.className = 'doc-file-menu-item';
-    newDocItem.innerHTML = `<span>New Document (.ax)</span>`;
+    newDocItem.innerHTML = `<span>New document (.ax)</span>`;
     newDocItem.onclick = () => {
       dropdown.classList.add('hidden');
       const newTab: TabData = this.options.onNewDocumentTab?.() || {
@@ -708,7 +708,7 @@ export class PaneContainer {
 
     const resultsItem = document.createElement('button');
     resultsItem.className = 'doc-file-menu-item';
-    resultsItem.innerHTML = `<span>Results Stream (${escapeHtml(docBaseName)})</span>`;
+    resultsItem.innerHTML = `<span>Results (${escapeHtml(docBaseName)})</span>`;
     resultsItem.onclick = () => {
       dropdown.classList.add('hidden');
       this.openTab({
@@ -729,7 +729,7 @@ export class PaneContainer {
 
       const spaceSection = document.createElement('div');
       spaceSection.className = 'doc-file-menu-section-title';
-      spaceSection.textContent = 'Spaces in Document';
+      spaceSection.textContent = 'Spaces';
       dropdown.appendChild(spaceSection);
 
       spaces.forEach(sp => {
@@ -766,13 +766,13 @@ export class PaneContainer {
 
     const scopeItem = document.createElement('button');
     scopeItem.className = 'doc-file-menu-item';
-    scopeItem.innerHTML = '<span>Scope (Definitions)</span>';
+    scopeItem.innerHTML = '<span>Scope</span>';
     scopeItem.onclick = () => {
       dropdown.classList.add('hidden');
       this.openTab({
         id: 'tab_scope_' + Math.random().toString(36).substring(2, 9),
         type: 'scope',
-        title: 'Scope (Definitions)',
+        title: 'Scope',
         documentId: activeDocTab?.documentId,
       }, leafId || undefined);
     };
@@ -780,13 +780,13 @@ export class PaneContainer {
 
     const traceItem = document.createElement('button');
     traceItem.className = 'doc-file-menu-item';
-    traceItem.innerHTML = '<span>Execution Trace & Fuel</span>';
+    traceItem.innerHTML = '<span>Trace</span>';
     traceItem.onclick = () => {
       dropdown.classList.add('hidden');
       this.openTab({
         id: 'tab_trace_' + Math.random().toString(36).substring(2, 9),
         type: 'trace',
-        title: 'Trace & Fuel',
+        title: 'Trace',
         documentId: activeDocTab?.documentId,
       }, leafId || undefined);
     };
@@ -794,7 +794,7 @@ export class PaneContainer {
 
     const framesItem = document.createElement('button');
     framesItem.className = 'doc-file-menu-item';
-    framesItem.innerHTML = '<span>Captured Visual Frames</span>';
+    framesItem.innerHTML = '<span>Frames</span>';
     framesItem.onclick = () => {
       dropdown.classList.add('hidden');
       this.openTab({
@@ -882,9 +882,9 @@ export class PaneContainer {
 
   private renderScopeView(container: HTMLElement): void {
     const scopeData = this.options.getScopeData?.() || new Map();
-    let html = '<div class="pane-inspector-view"><div class="doc-panel-section-title">Active Scope (Definitions)</div>';
+    let html = '<div class="pane-inspector-view"><div class="doc-panel-section-title">Scope</div>';
     if (scopeData.size === 0) {
-      html += '<div class="doc-scope-empty">No user definitions in scope</div>';
+      html += '<div class="doc-scope-empty">No definitions in scope</div>';
     } else {
       scopeData.forEach((info, name) => {
         html += `
@@ -908,14 +908,14 @@ export class PaneContainer {
     const trace = this.options.getTraceData?.() || { durationMs: 0, lineCount: 0, status: 'Ready' };
     container.innerHTML = `
       <div class="pane-inspector-view">
-        <div class="doc-panel-section-title">Execution Trace & Fuel Consumption</div>
+        <div class="doc-panel-section-title">Trace</div>
         <div class="doc-trace-content">
           <div class="trace-metric">
-            <span class="trace-label">Ambient Worker Duration:</span>
+            <span class="trace-label">Duration:</span>
             <span class="trace-value">${trace.durationMs.toFixed(1)} ms</span>
           </div>
           <div class="trace-metric">
-            <span class="trace-label">Evaluated Lines:</span>
+            <span class="trace-label">Evaluated lines:</span>
             <span class="trace-value">${trace.lineCount}</span>
           </div>
           <div class="trace-metric">
@@ -929,9 +929,9 @@ export class PaneContainer {
 
   private renderFramesView(container: HTMLElement): void {
     const frames = this.options.getFramesData?.() || [];
-    let html = '<div class="pane-inspector-view"><div class="doc-panel-section-title">Captured Visual Frames</div>';
+    let html = '<div class="pane-inspector-view"><div class="doc-panel-section-title">Frames</div>';
     if (frames.length === 0) {
-      html += '<div class="doc-scope-empty">No visual frames captured</div>';
+      html += '<div class="doc-scope-empty">No frames recorded</div>';
     } else {
       html += '<div class="doc-frames-list">';
       frames.forEach(f => {

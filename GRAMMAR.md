@@ -120,15 +120,17 @@ claim_field    = "statement" , ":" , string
 
 ---
 
-## 7. Graphing & Multi-Surface 3D Composition
+## 7. Relational Coordinate Blocks & Spatial Manifolds
 
 ```ebnf
-graph_call   = "graph" , "(" , expr_list , [ "," , domain_spec ] , ")" ;
-domain_spec  = identifier , "in" , range , [ "," , identifier , "in" , range ] ;
+axis_block   = "{" , "\axis" , axis_list , ";" , relation_list , "}" ;
+axis_list    = identifier , { "," , identifier } ;
+relation_list= relation , { [ ";" | newline ] , relation } ;
 ```
 
-- When multiple expressions with two shared free variables are provided (e.g. `graph(f(x, y), g(x, y), x in a..b, y in c..d)`), the plotter composes all surfaces into a **single 3D coordinate frame**.
-- The surfaces are depth-sorted together polygon-by-polygon using quad subdivision and Painter's algorithm, yielding accurate mutual occlusion and intersection seams.
+- Writing mathematical relations inside a coordinate block with declared axes (e.g. `{\axis :x, :y; :y = 2*:x}`) is the standard and only way spatial geometry and manifolds display.
+- Multiple relations declared over the same axes are composed into a unified coordinate frame and solved simultaneously.
+- When two or three independent coordinate axes are declared (e.g. `{\axis :x, :y, :z; ...}`), the spatial solver samples the manifold into 2D curves or 3D surfaces depth-sorted via Painter's algorithm with adaptive quad subdivision.
 
 ---
 
