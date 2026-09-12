@@ -349,7 +349,7 @@ export class Parser {
       let rdepth = 0;
       while (this.peek().type !== 'EOF') {
         const t = this.peek().type;
-        if (rdepth === 0 && t === 'REQUIRES') {
+        if (rdepth === 0 && (t === 'REQUIRES' || t === 'SEMICOLON' || t === 'RBRACE')) {
           break;
         }
         if (t === 'LPAREN' || t === 'LBRACKET' || t === 'LBRACE') rdepth++;
@@ -731,8 +731,8 @@ export class Parser {
         continue;
       }
 
-      // Check for indexing: left[index]
-      if (this.peek().type === 'LBRACKET' && precedence < PREC_POSTFIX) {
+      // Check for indexing: left[index] (must be on the same line as target)
+      if (this.peek().type === 'LBRACKET' && precedence < PREC_POSTFIX && this.peek().span.line === left.span.line) {
         this.advance(); // consume [
         const indexNode = this.parseExpression(PREC_NONE);
         const rBracket = this.expect('RBRACKET', ']');

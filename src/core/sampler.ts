@@ -280,9 +280,9 @@ export function sample2D(
         if (!Number.isFinite(t)) t = 0.5;
         t = Math.max(0, Math.min(1, t));
 
-        const rx = pAx + t * (pBx - pAx);
-        const ry = pAy + t * (pBy - pAy);
-        const rv = fn(rx, ry);
+        let rx = pAx + t * (pBx - pAx);
+        let ry = pAy + t * (pBy - pAy);
+        let rv = fn(rx, ry);
 
         if (!Number.isFinite(rv)) return null;
 
@@ -292,11 +292,11 @@ export function sample2D(
           return null;
         }
 
-        // Discontinuous step check: if residual is too large, bisect or reject
-        if (Math.abs(vB - vA) > 1.0 && Math.abs(rv) > 0.5 * maxCorner + 0.5) {
+        // If linear interpolation left a noticeable residual, refine via bisection
+        if (Math.abs(rv) > 0.1 || Math.abs(vB - vA) > 1.0) {
           let low = 0, high = 1;
           let bestT = t, minRes = Math.abs(rv);
-          for (let step = 0; step < 4; step++) {
+          for (let step = 0; step < 8; step++) {
             const mid = (low + high) / 2;
             const mx = pAx + mid * (pBx - pAx);
             const my = pAy + mid * (pBy - pAy);
@@ -312,10 +312,13 @@ export function sample2D(
               low = mid;
             }
           }
-          if (minRes > maxCorner * 0.9 + 1.0) {
+          // On a true continuous root, bisection converges to residual < 0.25
+          // On a pole / asymptote / jump discontinuity, minRes remains large
+          if (minRes > Math.min(0.25, maxCorner * 0.5 + 0.1)) {
             return null;
           }
-          return [pAx + bestT * (pBx - pAx), pAy + bestT * (pBy - pAy)];
+          rx = pAx + bestT * (pBx - pAx);
+          ry = pAy + bestT * (pBy - pAy);
         }
 
         return [rx, ry];
@@ -325,6 +328,18 @@ export function sample2D(
         const p1 = getEdgeRoot(idxA);
         const p2 = getEdgeRoot(idxB);
         if (p1 && p2) {
+          // Midpoint validation: verify relation holds along the segment interior
+          const mx = (p1[0] + p2[0]) / 2;
+          const my = (p1[1] + p2[1]) / 2;
+          const mv = fn(mx, my);
+          if (!Number.isFinite(mv)) return;
+
+          const maxCorner = Math.max(Math.abs(v0), Math.abs(v1), Math.abs(v2), Math.abs(v3));
+          // If midpoint residual blows up relative to corners or exceeds tolerance, reject
+          if (Math.abs(mv) > Math.min(25.0, maxCorner * 1.5 + 2.5)) {
+            return;
+          }
+
           segments.push({ p1, p2 });
         }
       };
@@ -839,7 +854,22 @@ export function sample3D(
           const idx2 = getEdgeVertex(i, j, k, e2, x0, y0, z0, valA2, valB2);
 
           if (idx0 !== -1 && idx1 !== -1 && idx2 !== -1) {
-            triangles.push([idx0, idx1, idx2]);
+            const p0 = vertices[idx0];
+            const p1 = vertices[idx1];
+            const p2 = vertices[idx2];
+            const cx = (p0[0] + p1[0] + p2[0]) / 3;
+            const cy = (p0[1] + p1[1] + p2[1]) / 3;
+            const cz = (p0[2] + p1[2] + p2[2]) / 3;
+            const cv = fn(cx, cy, cz);
+            if (Number.isFinite(cv)) {
+              const maxCorner = Math.max(
+                Math.abs(cv0), Math.abs(cv1), Math.abs(cv2), Math.abs(cv3),
+                Math.abs(cv4), Math.abs(cv5), Math.abs(cv6), Math.abs(cv7)
+              );
+              if (Math.abs(cv) <= Math.min(25.0, maxCorner * 1.5 + 2.5)) {
+                triangles.push([idx0, idx1, idx2]);
+              }
+            }
           }
         }
       }

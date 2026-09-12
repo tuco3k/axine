@@ -241,7 +241,7 @@ export function kindSubsumes(target: MathKind, source: MathKind): boolean {
       return kindSubsumes(target.elementKind, source.elementKind);
     }
     if (target.name === 'Record' && source.name === 'Record') {
-      if (target.typeName !== source.typeName && target.typeName !== 'Record') return false;
+      // Structural subsumption: all fields in target must exist in source and have subsuming kinds
       for (const [k, v] of Object.entries(target.fields)) {
         if (!source.fields[k] || !kindSubsumes(v, source.fields[k])) return false;
       }

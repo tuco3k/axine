@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { evaluate, createInitialEnvironment } from '../core/evaluator';
+import { formatKind } from '../core/kinds';
 
 /**
  * Systemic Enforcement Gate: Verification of Removed Constructs
@@ -58,6 +59,7 @@ describe('Enforcement Gate: Verification of Removed Constructs', () => {
       const env = createInitialEnvironment();
       const res = evaluate('graph(x^2, x \\in 0..10)', env);
       expect(res.value.type).not.toBe('graph_type');
+      expect(res.value.type).not.toBe('drawing_primitive');
     });
   });
 
@@ -79,11 +81,17 @@ describe('Enforcement Gate: Verification of Removed Constructs', () => {
       }
       expect(violations).toEqual([]);
     });
+
+    it('asserts equality and assignment work uniformly via = in relations', () => {
+      const env = createInitialEnvironment();
+      evaluate('x = 5', env);
+      expect(env['x']).toBeDefined();
+    });
   });
 
   // 3. : 3R annotations
   describe('3. Elimination of 3R Annotations', () => {
-    it('asserts zero occurrences of 3R annotations in core or documents/', () => {
+    it('asserts zero occurrences of 3R annotations in core or documents/ (grep check)', () => {
       const files = [...getAllFiles(path.resolve(srcDir, 'core'), ['.ts']), ...getAllFiles(docsDir, ['.ax'])];
       const violations: { file: string; line: number; text: string }[] = [];
 
@@ -98,6 +106,11 @@ describe('Enforcement Gate: Verification of Removed Constructs', () => {
         }
       }
       expect(violations).toEqual([]);
+    });
+
+    it('behaviorally asserts parser rejects : 3R annotation syntax with error', () => {
+      const env = createInitialEnvironment();
+      expect(() => evaluate('x = 0 : 3R', env)).toThrow();
     });
   });
 
@@ -119,6 +132,13 @@ describe('Enforcement Gate: Verification of Removed Constructs', () => {
         }
       }
       expect(violations).toEqual([]);
+    });
+
+    it('behaviorally asserts unreduced expressions stand as expression AST rather than undefined values', () => {
+      const env = createInitialEnvironment();
+      const res = evaluate(':unresolved_symbol + 2', env);
+      expect(res.value.type).toBe('expression');
+      expect(res.value.type).not.toBe('undefined');
     });
   });
 
@@ -149,6 +169,16 @@ describe('Enforcement Gate: Verification of Removed Constructs', () => {
       const evaluatorContent = fs.readFileSync(evaluatorPath, 'utf-8');
       expect(evaluatorContent).not.toContain('evalGraph(');
       expect(evaluatorContent).not.toContain('dispatchView(');
+    });
+
+    it('behaviorally asserts relation evaluation creates a SpaceValue with coordinate manifold', () => {
+      const env = createInitialEnvironment();
+      const res = evaluate('{\\axis x, y; x^2 + y^2 = 4}', env);
+      expect(res.value.type).toBe('space');
+      if (res.value.type === 'space') {
+        expect(res.value.dimension).toBe(2);
+        expect(res.value.declaredAxes).toEqual(['x', 'y']);
+      }
     });
   });
 
@@ -181,7 +211,7 @@ describe('Enforcement Gate: Verification of Removed Constructs', () => {
     });
   });
 
-  // 9. The Explainer Subsystem
+  // 9. Complete Elimination of Explainer Subsystem
   describe('9. Complete Elimination of Explainer Subsystem', () => {
     it('asserts explainer source files do not exist', () => {
       expect(fs.existsSync(path.resolve(srcDir, 'core/explainer.ts'))).toBe(false);
@@ -189,7 +219,7 @@ describe('Enforcement Gate: Verification of Removed Constructs', () => {
       expect(fs.existsSync(path.resolve(srcDir, 'tests/explainer.test.ts'))).toBe(false);
     });
 
-    it('asserts zero explainer UI headers or panels in src/', () => {
+    it('asserts zero explainer UI headers or panels in src/ (grep check)', () => {
       const srcFiles = getAllFiles(srcDir, ['.ts', '.html', '.css']);
       const violations: { file: string; line: number; text: string }[] = [];
 
@@ -212,6 +242,30 @@ describe('Enforcement Gate: Verification of Removed Constructs', () => {
         }
       }
       expect(violations).toEqual([]);
+    });
+  });
+
+  // 10. Order-Independent Kind Resolution (D9 Prevention Gate)
+  describe('10. Order-Independent Structural Kind Resolution', () => {
+    it('asserts kind resolution is determined purely by structure, not declaration order', () => {
+      // Order 1: Define Vec2 first, then Point2D
+      const env1 = createInitialEnvironment();
+      evaluate(':Vec2 = \\record { :x, :y }', env1);
+      evaluate(':Point2D = \\record { :x, :y }', env1);
+      evaluate(':p = :Point2D(:x: 1, :y: 2)', env1);
+      const kind1 = evaluate(':kindof(:p)', env1);
+
+      // Order 2: Define Point2D first, then Vec2
+      const env2 = createInitialEnvironment();
+      evaluate(':Point2D = \\record { :x, :y }', env2);
+      evaluate(':Vec2 = \\record { :x, :y }', env2);
+      evaluate(':p = :Point2D(:x: 1, :y: 2)', env2);
+      const kind2 = evaluate(':kindof(:p)', env2);
+
+      expect(kind1.value.type).toBe('kind');
+      expect(kind2.value.type).toBe('kind');
+      // Both resolve to structural Record with identical { :x, :y } field kinds
+      expect(formatKind((kind1.value as any).kind)).toEqual(formatKind((kind2.value as any).kind));
     });
   });
 });
