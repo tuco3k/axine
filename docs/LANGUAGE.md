@@ -1,0 +1,995 @@
+# The Axine Language Reference
+
+Axine is a language where equality is a mathematical relation rather than imperative variable assignment. Writing an equation establishes a predicate constraining coordinate variables in an ambient space, not a sequence of memory mutations. Because every equality is a relation, the declaration order of equations does not prescribe execution order, equations cannot mutate state (`x = x + 1` produces an algebraically contradictory empty set rather than an increment), and underdetermined systems define geometric manifolds spanning the dimensions of their free variables.
+
+From this relational foundation, computation is the reduction of relations and the sampling of manifolds. When a relation algebraically isolates a variable to a closed term, that binding unifies through its lexical scope. When an expression contains free variables, it defines a coordinate space whose level sets are extracted by numerical continuation or implicit grid sampling. Discrete recurrences and continuous differential relations describe trajectories across spatial coordinates and continuous time, while operations that cannot be evaluated symbolically stand unreduced as themselves.
+
+---
+
+## The Rules, in the Order Someone Needs Them
+
+### 1. `=` is the only binding form; everything is a relation
+
+#### What it is
+The equals sign `=` defines a mathematical relation between expressions. Axine has no assignment operator (`:=` does not exist). When an equation algebraically isolates a variable to a constant within a lexical scope, that variable is substituted into downstream expressions. When an equation contains multiple free variables or multiple roots, it defines a manifold or point set spanning those variables.
+
+#### Syntax
+```axine
+<expression> = <expression>
+```
+
+#### Real Examples and Output
+
+**Example 1: Scalar constraint and downstream evaluation**
+```axine
+:r = 5
+:area = 3.14159 * :r^2
+:area
+```
+Output:
+```
+:r = 5                  => 1D Space (r)
+:area = 3.14159 * :r^2  => 314159/4000
+:area                   => 314159/4000
+```
+
+**Example 2: Multi-valued and contradictory relations**
+```axine
+{\axis x; x^2 = 4}
+{\axis x; x = 1; x = 2}
+```
+Output:
+```
+{\axis x; x^2 = 4}        => Space (x, 1 entities)
+{\axis x; x = 1; x = 2}   => Space (x, 2 entities)
+```
+The relation `x^2 = 4` yields discrete roots $\{-2, 2\}$. The system `x = 1; x = 2` reduces algebraically to `0 = 1` (contradiction), rendering an empty level set.
+
+#### Common Mistake
+Treating `=` as imperative update:
+```axine
+x = 5
+x = x + 1
+```
+In an imperative language, `x` becomes 6. In Axine, asserting $x = 5$ and $x = x + 1$ simultaneously asserts $0 = 1$, which is false. State cannot be mutated in place.
+
+---
+
+### 2. `:` makes a multi-letter word one token; bare words are juxtaposed letters
+
+#### What it is
+In standard mathematical notation, writing letters adjacent to each other denotes multiplication ($ab = a \cdot b$). Axine enforces this universally: any unadorned sequence of letters is parsed as the implicit multiplication of individual single-letter variables. Any identifier consisting of two or more characters must begin with a colon (`:`).
+
+#### Syntax
+```axine
+:identifier_name
+```
+Identifier characters include letters, digits, and underscores (`:omega_0`, `:dt_1`, `:mass`). Bare underscores (`_`) are prohibited outside colon-prefixed identifiers.
+
+#### Real Examples and Output
+
+**Example 1: Bare juxtaposition as product**
+```axine
+a = 2
+b = 3
+c = 4
+abc
+```
+Output:
+```
+a = 2   => 1D Space (a)
+b = 3   => 1D Space (b)
+c = 4   => 1D Space (c)
+abc     => 24
+```
+`abc` evaluates as $a \cdot b \cdot c = 2 \cdot 3 \cdot 4 = 24$.
+
+**Example 2: Colon-prefixed multi-letter identifier**
+```axine
+:speed = 100
+:speed
+```
+Output:
+```
+:speed = 100  => 100
+:speed        => 100
+```
+
+#### Common Mistake
+Omitting the colon on descriptive variable names:
+```axine
+mass = 10
+```
+This parses as $m \cdot a \cdot s \cdot s = 10$ ($m \cdot a \cdot s^2 = 10$), defining a relation across three distinct variables ($a, m, s$) rather than one variable named `mass`. The correct syntax is `:mass = 10`.
+
+Writing bare underscores without a colon is also an error:
+```axine
+omega_d = 5
+```
+Output:
+```
+Unexpected character '_' in identifier position
+Suggestion: Bare '_' is not a valid variable. Multi-letter identifiers with underscores must start with ':' (e.g. ':omega_...')
+```
+
+---
+
+### 3. `\` prefixes every command; the complete list with arity
+
+#### What it is
+Every language keyword, command, quantifier, and structural constructor begins with a backslash (`\`). Bare words are reserved strictly for mathematical symbols.
+
+#### Complete Command List with Arity
+
+| Command | Arity | Form | Description |
+| :--- | :---: | :--- | :--- |
+| `\axis` | $1 \dots n$ | `\axis x, y, ...` | Declares coordinate axes for geometric rendering |
+| `\module` | 1 | `\module :name` | Declares module namespace |
+| `\import` | 1 | `\import "path"` | Imports module exports into active scope |
+| `\from ... \import` | 2 | `\from "path" \import :sym1, ...` | Imports selective symbols from a module |
+| `\unimport` | 1 | `\unimport :symbol` | Removes an imported symbol from the active environment |
+| `\export` | $1 \dots n$ | `\export :sym1, :sym2` | Exports symbols from a module |
+| `\forall` | 2 or 3 | `\forall x, f(x) = expr`<br>`\forall x \in S, pred` | Universal quantifier / relational function definition |
+| `\exists` | 2 | `\exists x \in S, pred` | Bounded existential quantifier |
+| `\exists!` / `\exists_unique` | 2 | `\exists! x \in S, pred` | Unique existential quantifier |
+| `\if ... \then ... \else` | 3 | `\if c \then a \else b` | Conditional expression |
+| `\cases` | 1 | `\cases { \when c: a, ..., \otherwise: b }` | Piecewise definition |
+| `\where` | 2 | `expr \where pred` | Infix domain restriction filter |
+| `\and` / `\land` | 2 | `p \and q` | Logical conjunction |
+| `\or` / `\lor` | 2 | `p \or q` | Logical disjunction |
+| `\not` | 1 | `\not p` | Logical negation |
+| `\set` | 1 | `\set { a, b, ... }`<br>`\set { x \where pred }` | Finite set or set comprehension |
+| `\multiset` | 1 | `\multiset { a, b, ... }` | Multiset with element multiplicities |
+| `\fold` | 3 | `\fold (op) \over coll \from init` | Catamorphism reduction over collections |
+| `\map` | 2 | `\map rel \over coll` | Elementwise mapping over collections |
+| `\quote` | 1 | `\quote(expr)` | Suppresses evaluation, returning symbolic AST |
+| `\unquote` | 1 | `\unquote(expr)` | Evaluates previously quoted AST |
+| `\match` | 2 | `\match expr { \case pat: res, ... }` | Structural AST pattern matching |
+| `\build` | 2 | `\build Node(args)` | Structural AST node synthesis |
+| `\rule` | 3 or 4 | `\rule name: pat = repl [\requires c]` | Equational rewrite rule |
+| `\dimension` | $1 \dots n$ | `\dimension :dim1, :dim2` | Declares physical dimension primitives |
+| `\unit` | 2 | `\unit :u : :dim`<br>`\unit :u = expr` | Declares base or derived units |
+| `\operator` | 5 | `\operator fix sym(params) = body \precedence: n \associativity: lr` | Custom operator definition |
+| `\kind` | 3 | `\kind :Name(p) \extends :Parent { ... }` | Mathematical kind declaration |
+| `\structure` | 2 | `\structure :Name { \carrier: S, \op o: r, \axiom a: p }` | Algebraic structure declaration |
+| `\with` | 2 | `\with :Struct { ... }` | Enters structure scope with overloaded operators |
+| `\quotient` | 2 | `\quotient :Struct \by rel` | Equivalence class quotient structure |
+| `\homomorphism` | 4 | `\homomorphism :name: S \to T \map rel` | Structure-preserving homomorphism |
+| `\isolate` | 2 | `\isolate(eq, \for x)` | Algebraic solver step isolation |
+| `\simplify` | 1 | `\simplify(expr)` | Algebraic rational simplification |
+| `\check` | 2 | `\check(expr, \is "target")` | Dimensional and invariant check |
+
+#### Real Examples and Output
+
+**Example 1: Conditional expression**
+```axine
+\if 1 < 2 \then 42 \else 99
+```
+Output:
+```
+42
+```
+
+**Example 2: Finite set and fold aggregation**
+```axine
+\set { 1, 2, 3, 4 }
+\fold (+) \over \set { 1, 2, 3, 4 } \from 0
+```
+Output:
+```
+Set(1, 2, 3, 4)
+10
+```
+
+#### Common Mistake
+Writing commands without a backslash:
+```axine
+if x < 2 then 42 else 99
+```
+Without `\`, `if` is parsed as $i \cdot f$, `then` as $t \cdot h \cdot e \cdot n$, and `else` as $e \cdot l \cdot s \cdot e$. All commands require a leading `\`.
+
+---
+
+### 4. `\axis` declares a space; nothing renders without it
+
+#### What it is
+Axine distinguishes between evaluating a relation and rendering its geometry. An equation like `x^2 + y^2 = 25` establishes an algebraic relation across free variables $(x, y)$, but the graphical viewport does not render visual geometry unless coordinate axes are declared via `\axis`.
+
+#### Syntax
+```axine
+{\axis x, y; <relations>}
+{\axis x, y, z; <relations>}
+```
+
+#### Real Examples and Output
+
+**Example 1: Rendered 2D coordinate space**
+```axine
+{\axis x, y; x^2 + y^2 = 25}
+```
+Output:
+```
+Space (x, y, 1 entities)
+```
+The viewport extracts the zero level set via Marching Squares and plots a circle of radius 5.
+
+**Example 2: Evaluated relation without `\axis`**
+```axine
+{x^2 + y^2 = 25}
+```
+Output:
+```
+2D Space (x, y)
+```
+The free variables are analyzed and tracked, but zero visual entities are drawn because no projection axes were declared.
+
+#### Common Mistake
+Declaring axes that do not match the variables used in the equations without an alias:
+```axine
+{\axis X, Y; y = x^2}
+```
+This renders nothing because $y$ and $x$ do not match the declared axes $X$ and $Y$. Either declare the axes directly matching the variables (`{\axis x, y; y = x^2}`) or supply explicit aliases (`{\axis X, Y; X = x; Y = y; y = x^2}`).
+
+---
+
+### 5. `{ }` is scope and space together, and how nesting cascades
+
+#### What it is
+Curly braces `{ ... }` define both a lexical scope boundary and a geometric space boundary. Variables bound inside a block do not leak into the outer scope. Child blocks inherit all variable definitions, unit declarations, and coordinates from their parent scope, and can shadow them locally.
+
+#### Syntax
+```axine
+{
+  <statement 1>
+  <statement 2>
+  <result_expression>
+}
+```
+
+#### Real Examples and Output
+
+**Example 1: Lexical shadowing and isolation**
+```axine
+:base = 10
+{
+  :base = 20
+  :inner = :base * 2
+  :inner
+}
+:base
+```
+Output:
+```
+:base = 10  => 10
+{ ... }     => 40
+:base       => 10
+```
+The inner `:base = 20` shadows the outer binding locally. Once the block exits, the outer `:base` remains 10.
+
+**Example 2: Multi-line block evaluation**
+```axine
+{
+  x = 3
+  y = 4
+  x^2 + y^2
+}
+```
+Output:
+```
+25
+```
+
+#### Common Mistake
+Attempting to read an internally computed variable outside its enclosing block:
+```axine
+{
+  :temp = 42
+}
+:temp
+```
+`:temp` is unbound in the outer scope and stands unreduced as `:temp`.
+
+---
+
+### 6. `\forall` for bound variables, which is how functions exist
+
+#### What it is
+Axine does not have an imperative function declaration keyword. A function is a universally quantified relation:
+$$\forall x, f(x) = \dots$$
+Declaring `\forall x` tells the analyzer that $x$ is a bound parameter rather than a free coordinate axis of the ambient space. Calling `:f(val)` then reduces the relation via substitution.
+
+#### Syntax
+```axine
+\forall <arg1>, <arg2>, ..., :name(<arg1>, <arg2>, ...) = <expression>
+```
+
+#### Real Examples and Output
+
+**Example 1: Single-argument function definition and application**
+```axine
+\forall x, :sq(x) = x^2
+:sq(5)
+```
+Output:
+```
+\forall x, :sq(x) = x^2  => none
+:sq(5)                  => 25
+```
+
+**Example 2: Multi-argument function with library call**
+```axine
+\import "lib/sqrt.ax"
+\forall a, b, :hypot(a, b) = :sqrt(a^2 + b^2)
+:hypot(3, 4)
+```
+Output:
+```
+5
+```
+
+#### Common Mistake
+Writing an equation without `\forall`:
+```axine
+:sq(x) = x^2
+```
+Without `\forall x`, this is not a function definition; it is a relational constraint between free variable $x$ and function variable `:sq`. Evaluating `:sq(5)` afterwards does not compute 25.
+
+---
+
+### 7. `\import` and `\unimport`, and how paths resolve
+
+#### What it is
+`\import` loads modules from relative file paths or virtual library paths. Modules export bindings via `\export`. `\unimport` removes a previously imported symbol from the active environment.
+
+#### Path Resolution Rules
+1. Paths are resolved relative to the virtual document cache (e.g. `"lib/sqrt.ax"`, `"lib/abs.ax"`, `"constants/pi.ax"`).
+2. If not in the virtual cache, paths resolve relative to the current workspace root or active file directory.
+3. Import paths must be quoted strings: `\import "path/to/file.ax"`.
+
+#### Real Examples and Output
+
+**Example 1: Importing and using standard libraries**
+```axine
+\import "lib/abs.ax"
+:abs(-42)
+```
+Output:
+```
+\import "lib/abs.ax"  => module abs { abs, :abs }
+:abs(-42)             => 42
+```
+
+**Example 2: Selective symbol import**
+```axine
+\from "lib/floor.ax" \import :floor
+:floor(3.8)
+```
+Output:
+```
+3
+```
+
+#### Common Mistake
+Omitting double quotes around the file path:
+```axine
+\import lib/abs.ax
+```
+This produces a syntax error because `lib` is parsed as adjacent variables $l \cdot i \cdot b$. Import paths must always be quoted string literals.
+
+---
+
+### 8. Reduction: expressions that cannot reduce stand as themselves
+
+#### What it is
+Axine does not invent values or throw exceptions when an algebraic term cannot be simplified. If symbols are unbound or no reduction rule applies, the expression stands unreduced as an unevaluated symbolic AST. Refusals to reduce are not engine failures; they are accurate reflections of unconstrained mathematical expressions.
+
+#### Real Examples and Output
+
+**Example 1: Unbound symbolic additions**
+```axine
+a + b
+x^2 + 1
+```
+Output:
+```
+a + b
+x^2 + 1
+```
+
+**Example 2: Named function standing alone**
+```axine
+{\forall x, :f(x) = 2*x; :f}
+```
+Output:
+```
+f
+```
+Referencing `:f` without arguments does not crash or print an opaque pointer; it returns the symbol $f$.
+
+**Example 3: Non-real radicals in the real context $\mathbb{R}$**
+```axine
+\import "lib/sqrt.ax"
+:sqrt(-4)
+```
+Output:
+```
+:sqrt(-4)
+```
+In the real field $\mathbb{R}$, $\sqrt{-4}$ does not exist. It stands unreduced as `:sqrt(-4)`.
+
+#### Common Mistake
+Expecting the runtime to synthesize heuristic approximations or guess intent. Axine enforces AGENTS.md rule: *"No symbolic simplification beyond constant folding and dropping 0/1 terms. No symbolic integration. Ever."*
+
+---
+
+### 9. Exact rationals, and when `:float()` is needed
+
+#### What it is
+Axine computes arithmetic over $\mathbb{Q}$ using exact rational fractions backed by `BigInt` numerators and denominators with Euclidean GCD canonicalization. Calculations never accumulate floating-point rounding errors. However, Taylor polynomials and iterative recurrences cause exact fraction sizes to grow exponentially. The builtin function `:float()` coerces an exact rational to a 64-bit float when decimal output is required.
+
+#### Syntax
+```axine
+:float(<expression>)
+```
+
+#### Real Examples and Output
+
+**Example 1: Exact rational arithmetic**
+```axine
+:q = 1/3 + 1/6
+:q
+:large = (1/2)^10
+:large
+```
+Output:
+```
+:q = 1/3 + 1/6  => 1D Space (q)
+:q              => 1/2
+:large = (1/2)^10 => 1/1024
+:large          => 1/1024
+```
+
+**Example 2: Decimal coercion via `:float`**
+```axine
+\import "lib/exp.ax"
+:exact_e = :exp(1)
+:exact_e
+:decimal_e = :float(:exact_e)
+:decimal_e
+```
+Output:
+```
+:exact_e        => 260412269/95800320
+:decimal_e      => 2.718282
+```
+
+#### Common Mistake
+Omitting the colon prefix when calling `:float`:
+```axine
+float(1/3)
+```
+Output:
+```
+f * l * o * a * t * (1 / 3)
+```
+`float(1/3)` parses as $f \cdot l \cdot o \cdot a \cdot t \cdot \frac{1}{3}$. Always write `:float(x)`.
+
+---
+
+### 10. Comments are `#`
+
+#### What it is
+A hash symbol `#` introduces a comment that extends to the end of the line. Comments are classified as `PROSE` and produce no computational values.
+
+#### Syntax
+```axine
+# Line comment
+<expr> # Trailing comment
+```
+
+#### Real Examples and Output
+```axine
+# Gravitational constant in m/s^2
+g = 9.8 # Earth sea-level gravity
+g
+```
+Output:
+```
+g = 9.8 # Earth sea-level gravity  => 1D Space (g)
+g                                  => 49/5
+```
+
+#### Common Mistake
+Using C-style `//` for comments:
+```axine
+// Damped oscillator parameters
+```
+In Axine, `//` is the stacked fraction operator (e.g. `a // b` parses as $\frac{a}{b}$) or the differential operator (`d//dt`). Writing `//` at line start is a syntax error.
+
+---
+
+## The Floor
+
+Axine implements a minimal seven-primitive floor in its core runtime. Everything above this floor is written in pure Axine syntax.
+
+### The Seven Primitives
+
+1. **Exact Rational Arithmetic**: Arbitrary-precision fractions ($\mathbb{Q}$) backed by `BigInt` numerators and denominators with Euclidean GCD canonicalization.
+2. **Relational Ordering & Equality**: Comparison relations ($=, \ne, <, \le, >, \ge$) and structural identity.
+3. **Syntactic Substitution & Constraint Isolation**: Equational unification ($v = c \implies v \mapsto c$) within lexical scopes.
+4. **Bounded Finite Iteration**: Step-bounded and fuel-guarded recurrence loops.
+5. **First-Class Expressions as Values**: Quoting, pattern matching, structural reconstruction, and term rewriting (`\quote`, `\unquote`, `\match`, `\build`, `\rule`).
+6. **Ordered Tuples**: Finite Cartesian products and 0-indexed element access (`t[0]`).
+7. **Structural Equality & Kind Subsumption**: Multi-kind operator dispatch and structural subtype verification.
+
+### What the Core Knows vs. What is Written in Axine
+
+The core runtime contains no implementations of square roots, trigonometric functions, logarithms, exponentials, physical formulas, or numerical integrators.
+
+- **What the core knows**: Addition, subtraction, multiplication, division, modulo, integer exponents, tuple construction, array indexing, conditional branching (`\if`), equational substitution, and level-set extraction (Marching Squares / Cubes).
+- **What is written in Axine**:
+  - `sqrt` is written in pure Axine using integer square root checks and Newton-Raphson iterations (`lib/sqrt.ax`).
+  - `exp` and `ln` are written in pure Axine via 12-term Taylor polynomials and range reduction (`lib/exp.ax`).
+  - `sin`, `cos`, and `tan` are written in pure Axine via degree-25 Taylor series and angle reduction modulo $2\pi$ (`lib/trig.ax`).
+  - Physical step integrators (Euler, Verlet, Runge-Kutta 4) are written in pure Axine (`documents/physics.ax`).
+
+### Why `sqrt` is a Library and Not a Builtin
+
+In standard programming environments, `Math.sqrt` is an opaque hardware instruction or C library routine. In Axine, host-language builtins are disqualified by design (AGENTS.md):
+> *"Math.sqrt is banned because you cannot look at it, not because it is fast. A fast sqrt written in Axine ... is legitimate no matter how fast, as long as it is readable, derivable, and \expand shows what it did."*
+
+Because `:sqrt` is written in `documents/lib/sqrt.ax`, its entire derivation—from checking for exact squares to executing Newton recurrence steps—is inspectable, step-verifiable, and derivable within Axine itself.
+
+---
+
+## Spaces and Rendering
+
+### How a Relation Becomes Geometry
+An equation $R(x_1, \dots, x_n) = 0$ is a boolean predicate defining a subset of $\mathbb{R}^n$:
+$$\mathcal{M} = \{ (x_1, \dots, x_n) \in \mathbb{R}^n \mid R(x_1, \dots, x_n) = 0 \}$$
+
+The dimension of the space is the count of unconstrained free variables in the relation:
+- **1 Free Variable**: Defines a 1D space (points on an axis, e.g. $x^2 = 4$).
+- **2 Free Variables**: Defines a 2D space (planar curve, e.g. $x^2 + y^2 = 25$).
+- **3 Free Variables**: Defines a 3D space (surface in $\mathbb{R}^3$, e.g. $x^2 + y^2 + z^2 = 25$).
+- **4+ Free Variables**: Defines a hyperspace (e.g. $a + b + c + x + y = 10$).
+
+### Slicing Above 3D
+In spaces with dimension $d > 2$, Axine projects the manifold onto the two primary active axes selected by the user (by default, the first two coordinates). The remaining $d - 2$ variables are assigned dedicated slice sliders. Moving a slider sweeps an affine hyperplane orthogonal to that coordinate, extracting and rendering the intersecting level-set cross-section in real time.
+
+### What Makes Something Render and What Does Not
+1. **Requires `\axis`**: A block must declare its coordinate axes with `\axis`.
+2. **Variable Alignment**: The free variables in the relation must match the declared axes or be explicitly aliased (e.g. `X = x`).
+3. **Without `\axis`**: The relation evaluates to a `SpaceValue` with `declaredAxes = undefined`. The engine computes its dimension and coordinates, but draws 0 entities in the viewport.
+
+---
+
+## The Standard Library
+
+Every file in `documents/lib/`, what it provides, how to import it, and a verified worked example.
+
+### 1. `lib/abs.ax`
+- **Provides**: `:abs(x)`
+- **Import**: `\import "lib/abs.ax"`
+- **Definition**: Conditional piecewise relation: $\text{if } x \ge 0 \text{ then } x \text{ else } -x$.
+- **Worked Example**:
+  ```axine
+  \import "lib/abs.ax"
+  :abs(-42)
+  :abs(-7/4)
+  ```
+  Output:
+  ```
+  :abs(-42)   => 42
+  :abs(-7/4)  => 7/4
+  ```
+
+### 2. `lib/floor.ax`
+- **Provides**: `:floor(x)`, `:round(x)`
+- **Import**: `\import "lib/floor.ax"`
+- **Definition**: Greatest integer $k \le x$ via modulo arithmetic $x - (x \% 1)$. `:round(x)` evaluates `:floor(x + 0.5)`.
+- **Worked Example**:
+  ```axine
+  \import "lib/floor.ax"
+  :floor(5.8)
+  :floor(-3.2)
+  :round(4.6)
+  ```
+  Output:
+  ```
+  :floor(5.8)   => 5
+  :floor(-3.2)  => -4
+  :round(4.6)   => 5
+  ```
+
+### 3. `lib/ceil.ax`
+- **Provides**: `:ceil(x)`
+- **Import**: `\import "lib/ceil.ax"`
+- **Definition**: Ceiling function defined via floor relation: $\text{if } \lfloor x \rfloor = x \text{ then } x \text{ else } \lfloor x \rfloor + 1$.
+- **Worked Example**:
+  ```axine
+  \import "lib/ceil.ax"
+  :ceil(5.1)
+  :ceil(-3.8)
+  ```
+  Output:
+  ```
+  :ceil(5.1)   => 6
+  :ceil(-3.8)  => -3
+  ```
+
+### 4. `lib/sqrt.ax`
+- **Provides**: `:sqrt(x)`, `:int_sqrt(x)`, `:is_perfect_square(x)`, `:idiv(a, b)`
+- **Import**: `\import "lib/sqrt.ax"`
+- **Definition**: Exact integer square root for perfect squares, standing unreduced for $x < 0$ in $\mathbb{R}$, and falling back to Newton search.
+- **Worked Example**:
+  ```axine
+  \import "lib/sqrt.ax"
+  :sqrt(25)
+  :is_perfect_square(49)
+  ```
+  Output:
+  ```
+  :sqrt(25)              => 5
+  :is_perfect_square(49) => 7
+  ```
+
+### 5. `lib/exp.ax`
+- **Provides**: `:exp(x)`, `:ln(x)`, `:log(x, b)`, `:log2(x)`, `:exp_series(x)`, `:ln_series(u)`
+- **Import**: `\import "lib/exp.ax"`
+- **Definition**: 12-term Taylor series with range reduction ($e^x = (e^{x/16})^{16}$) and natural log inverse search.
+- **Worked Example**:
+  ```axine
+  \import "lib/exp.ax"
+  :exp(0)
+  :ln(1)
+  :log2(8)
+  ```
+  Output:
+  ```
+  :exp(0)   => 1
+  :ln(1)    => 0
+  :log2(8)  => 3
+  ```
+
+### 6. `lib/newton.ax`
+- **Provides**: `:newton_sqrt(x)`, `:newton_sqrt_step(x, y)`, `:newton_sqrt_core(x)`
+- **Import**: `\import "lib/newton.ax"`
+- **Definition**: 6 unrolled Newton-Raphson steps $y_{n+1} = \frac{1}{2}(y_n + x / y_n)$ with interval scaling across powers of 4.
+- **Worked Example**:
+  ```axine
+  \import "lib/newton.ax"
+  :newton_sqrt(2)
+  ```
+  Output:
+  ```
+  4946041176255201878775086487573351061418968498177/3497379255757941172020851852070562919437964212608
+  ```
+
+### 7. `lib/bisect.ax`
+- **Provides**: `:bisect_sqrt(x)`, `:bisect_sqrt_step(x, a, b)`
+- **Import**: `\import "lib/bisect.ax"`
+- **Definition**: Interval halving root search over $[a, b]$ for $y^2 - x = 0$.
+- **Worked Example**:
+  ```axine
+  \import "lib/bisect.ax"
+  :bisect_sqrt(2)
+  :bisect_sqrt(16)
+  ```
+  Output:
+  ```
+  :bisect_sqrt(2)   => 23/16
+  :bisect_sqrt(16)  => 7/2
+  ```
+
+### 8. `lib/numbertheory.ax`
+- **Provides**: `:gcd(a, b)`, `:lcm(a, b)`, `:isprime(n)`, `:totient(n)`, `:powmod(b, e, m)`, `:binomial(n, k)`, `:nextprime(n)`, `:divisors(n)`, `:factorize(n)`
+- **Import**: `\import "lib/numbertheory.ax"`
+- **Definition**: Euclidean algorithm, trial division primality, modular exponentiation, and prime factorization.
+- **Worked Example**:
+  ```axine
+  \import "lib/numbertheory.ax"
+  :gcd(48, 18)
+  :isprime(17)
+  :totient(9)
+  :binomial(5, 2)
+  :factorize(60)
+  ```
+  Output:
+  ```
+  :gcd(48, 18)    => 6
+  :isprime(17)    => true
+  :totient(9)     => 6
+  :binomial(5, 2) => 10
+  :factorize(60)  => [(2, 2), (3, 1), (5, 1)]
+  ```
+
+### 9. `lib/trig.ax`
+- **Provides**: `:sin(x)`, `:cos(x)`, `:tan(x)`, `:asin(x)`, `:acos(x)`, `:atan(x)`, `:sinh(x)`, `:cosh(x)`, `:tanh(x)`
+- **Import**: `\import "lib/trig.ax"`
+- **Definition**: Degree-25 Taylor series with modular argument reduction to $[-\pi/2, \pi/2]$.
+- **Worked Example**:
+  ```axine
+  \import "lib/trig.ax"
+  :sin(0)
+  :cos(0)
+  :tan(0)
+  :sinh(0)
+  :cosh(0)
+  ```
+  Output:
+  ```
+  :sin(0)   => 0
+  :cos(0)   => 1
+  :tan(0)   => 0
+  :sinh(0)  => 0
+  :cosh(0)  => 1
+  ```
+
+---
+
+## Writing Something Real
+
+### 1. Numerical: Newton-Raphson Root Convergence (22 lines)
+
+This program finds the real root of the cubic polynomial $f(x) = x^3 - 2x - 5 = 0$ using Newton's method ($x_{n+1} = x_n - \frac{f(x_n)}{f'(x_n)}$) and computes exact rational residuals.
+
+```axine
+# newton_cubic.ax — Root convergence for x^3 - 2x - 5 = 0 via Newton recurrence
+\import "lib/abs.ax"
+
+# Target polynomial: f(x) = x^3 - 2x - 5
+# Derivative:        f'(x) = 3x^2 - 2
+# Newton step:       x_{n+1} = x_n - f(x_n) / f'(x_n)
+\forall x, :step(x) = x - (x^3 - 2*x - 5) / (3*x^2 - 2)
+
+:x0 = 2.0
+:x1 = :step(:x0)
+:x2 = :step(:x1)
+:x3 = :step(:x2)
+:x4 = :step(:x3)
+
+# Exact rational root after 4 iterations
+:exact_root = :x4
+
+# Decimal float approximation
+:approx_root = :float(:x4)
+
+# Verification of residual error: f(x4)
+:residual = :abs(:x4^3 - 2*:x4 - 5)
+:residual_float = :float(:residual)
+```
+
+#### Actual Output
+```
+ 2: \import "lib/abs.ax"                          => module abs { abs, :abs }
+ 7: \forall x, :step(x) = x - (x^3 - 2*x - 5) / (3*x^2 - 2) => none
+ 9: :x0 = 2.0                                     => 2
+10: :x1 = :step(:x0)                              => 21/10
+11: :x2 = :step(:x1)                              => 11761/5615
+12: :x3 = :step(:x2)                              => 4138744325037/1975957316495
+13: :x4 = :step(:x3)                              => 180361507581342374686204847776335588181/86109846986684169676738889168418120215
+16: :exact_root = :x4                             => 180361507581342374686204847776335588181/86109846986684169676738889168418120215
+19: :approx_root = :float(:x4)                    => 2.094551
+22: :residual = :abs(:x4^3 - 2*:x4 - 5)           => 97478968847293887616593624137354075403328388555575414301470152374718996497152047171163502108416/638496399387006462929790970234774267447697621088328700331993595837849311688746982375182162850458682854070800938375
+23: :residual_float = :float(:residual)           => 0
+```
+
+---
+
+### 2. Geometric: Sphere Intersected by an Inclined Plane (23 lines)
+
+This program defines a 3D spherical shell constrained by an affine slicing plane $z = 0.5x + 1$, plots the resulting cross-section in 3D and 2D, and verifies the circle's center and squared radius algebraically.
+
+```axine
+# sphere_slice.ax — Sphere intersected by an inclined plane constraint
+# 3D spherical shell constrained by an affine slicing plane
+{\axis x, y, z;
+  x^2 + y^2 + z^2 = 9
+  z = 0.5 * x + 1
+}
+
+# 2D projection on the (x, y) coordinate plane
+{\axis x, y;
+  x^2 + y^2 + (0.5 * x + 1)^2 = 9
+}
+
+# Planar intersection geometry:
+# Center of cross-section circle is at x = -0.4, z = 0.8
+:x_c = -2/5
+:z_c = 0.5 * :x_c + 1
+
+# Squared radius of cross-section disk: R^2 - d^2
+:r_sq = 9 - (:x_c^2 + :z_c^2)
+:r_sq_float = :float(:r_sq)
+
+# Point on boundary at x = 0: y^2 + 1 = 9 => y^2 = 8
+:y_sq = 9 - :z_c^2 - 0
+:y_bound = :float(:y_sq)
+```
+
+#### Actual Output
+```
+ 6: { ... }                                       => Space (x, y, z, 2 entities)
+11: { ... }                                       => Space (x, y, 1 entities)
+15: :x_c = -2/5                                   => -2/5
+16: :z_c = 0.5 * :x_c + 1                         => 4/5
+19: :r_sq = 9 - (:x_c^2 + :z_c^2)                 => 41/5
+20: :r_sq_float = :float(:r_sq)                   => 8.2
+23: :y_sq = 9 - :z_c^2 - 0                        => 209/25
+24: :y_bound = :float(:y_sq)                      => 8.36
+```
+
+#### Rendered Viewport Screenshot
+![3D Sphere Slice](assets/program2_sphere_slice.png)
+
+---
+
+### 3. Differential: Damped Harmonic Oscillator (25 lines)
+
+This program specifies the coupled first-order differential equations of motion for a damped physical oscillator ($m \ddot{x} + c \dot{x} + kx = 0$), declares the continuous trajectory manifold over coordinate time, and evaluates the state at $t = 1.0\text{ s}$.
+
+```axine
+# damped_oscillator.ax — Damped harmonic oscillator differential relation
+\import "lib/exp.ax"
+\import "lib/trig.ax"
+
+m = 1.0
+k = 9.0
+c = 0.6
+
+# System parameters:
+# omega_0 = sqrt(k/m) = 3.0
+# gamma = c / (2*m) = 0.3
+# omega_d = sqrt(3^2 - 0.3^2) = sqrt(8.91) ~= 2.984962
+:gamma = 0.3
+:omega_d = 2.984962
+:x0 = 2.0
+
+# Coupled first-order differential equations of motion
+d//d:time :x = :vx
+d//d:time :vx = -(k / m) * :x - (c / m) * :vx
+
+# Analytic position trajectory manifold over continuous time
+{\axis :time, :x;
+  :x = :x0 * :exp(-:gamma * :time) * :cos(:omega_d * :time)
+}
+
+# State evaluated at t = 1.0s
+:x_1 = :x0 * :exp(-:gamma * 1.0) * :cos(:omega_d * 1.0)
+:x_1_approx = :float(:x_1)
+```
+
+#### Actual Output
+```
+ 2: \import "lib/exp.ax"                          => module exp { exp_series, :exp_series, exp_pos, :exp_pos, exp, :exp, ln_series, :ln_series, ln_pos, :ln_pos, ln, :ln, log, :log, log2, :log2 }
+ 3: \import "lib/trig.ax"                         => module trig { sin_series, :sin_series, cos_series, :cos_series, reduce_angle, :reduce_angle, sin, :sin, cos, :cos, tan, :tan, asin, :asin, acos, :acos, atan_half, :atan_half, atan, :atan, sinh, :sinh, cosh, :cosh, tanh, :tanh }
+ 5: m = 1.0                                       => 1D Space (m)
+ 6: k = 9.0                                       => 1D Space (k)
+ 7: c = 0.6                                       => 1D Space (c)
+13: :gamma = 0.3                                  => 3/10
+14: :omega_d = 2.984962                           => 1492481/500000
+15: :x0 = 2.0                                     => 2
+18: d//d:time :x = :vx                            => 2D Space (vx, x)
+19: d//d:time :vx = -(k / m) * :x - (c / m) * :vx => 2D Space (vx, x)
+24: { ... }                                       => Space (time, x, 1 entities)
+27: :x_1 = :x0 * :exp(-:gamma * 1.0) * :cos(:omega_d * 1.0) => -1.463499
+28: :x_1_approx = :float(:x_1)                    => -1.463499
+```
+
+#### Rendered Viewport Screenshot
+![Damped Oscillator Trajectory](assets/program3_damped_oscillator.png)
+
+---
+
+## Errors
+
+The messages someone will actually hit, what each means, and what to do. The text below is pulled directly from the engine diagnostics.
+
+### 1. `Unexpected character '_' in identifier position`
+- **Exact message**: `Unexpected character '_' in identifier position`
+- **Suggestion**: `Bare '_' is not a valid variable. Multi-letter identifiers with underscores must start with ':' (e.g. ':name_...')`
+- **What it means**: An un-prefixed word contained an underscore (`omega_d = 5`). In Axine, un-prefixed words split into single-letter variable tokens; an underscore cannot serve as a bare variable name.
+- **What to do**: Add a leading colon to multi-letter names containing underscores (`:omega_d = 5`).
+
+### 2. `Function '<name>' is not defined`
+- **Exact message**: `Function '<name>' is not defined`
+- **Suggestion**: `Define <name>(x) := ... before calling it` (or import from `lib/`)
+- **What it means**: A standard library function like `:sqrt(x)`, `:sin(x)`, or `:exp(x)` was invoked without importing the module. Transcendentals are not hardcoded core builtins.
+- **What to do**: Add the required import (e.g. `\import "lib/sqrt.ax"`, `\import "lib/trig.ax"`).
+
+### 3. `Field '<field>' does not exist on record '<Record>'`
+- **Exact message**: `Field '<field>' does not exist on record '<Record>'. Available fields: <list>`
+- **What it means**: A record constructor or `\with` update specified a field name that was not declared in the `\record` schema.
+- **What to do**: Match the field names declared in the record schema.
+
+### 4. `Matrix dimension mismatch for <operation>: <dim1> <op> <dim2>`
+- **Exact message**: `Matrix dimension mismatch for addition: 2x3 + 3x2`
+- **What it means**: Matrix arithmetic was attempted on incompatible dimensions (e.g. adding matrices of different sizes, or multiplying matrices where columns of the left matrix do not equal rows of the right matrix).
+- **What to do**: Ensure matching dimensions ($m \times n$ with $m \times n$ for addition, $m \times k$ with $k \times n$ for multiplication).
+
+### 5. `Trace requires a square matrix, got <dim>` / `Determinant requires a square matrix, got <dim>`
+- **Exact message**: `Trace requires a square matrix, got 2x3`
+- **What it means**: `:trace(M)` or `:det(M)` was called on a non-square matrix ($m \ne n$).
+- **What to do**: Restrict matrix operations to $n \times n$ square matrices.
+
+### 6. `Matrix is singular and cannot be inverted`
+- **Exact message**: `Matrix is singular and cannot be inverted`
+- **What it means**: Inverting a matrix with determinant zero ($\det(M) = 0$).
+- **What to do**: Check the determinant or matrix condition before computing the inverse.
+
+### 7. `Variable '<var>' is not present in expression`
+- **Exact message**: `Variable '<var>' is not present in expression`
+- **What it means**: `d//dx` was called on an expression that does not contain variable $x$.
+- **What to do**: Verify that the differentiation variable matches the expression's variables.
+
+### 8. `Function 'abs' is non-differentiable at x = 0`
+- **Exact message**: `Function 'abs' is non-differentiable at x = 0 (corner point: left derivative -1 != right derivative +1)`
+- **What it means**: Differentiating $|x|$ at the singularity $x = 0$.
+- **What to do**: Restrict the evaluation domain away from the singularity using `\where x != 0`.
+
+### 9. `Expected '{' or '(' after \set`
+- **Exact message**: `Expected '{' or '(' after \set`
+- **What it means**: Omitting brackets when constructing a finite set (`\set 1, 2`).
+- **What to do**: Enclose elements in braces: `\set { 1, 2, 3 }`.
+
+---
+
+## What Axine Does Not Do
+
+Axine maintains strict boundaries between computation, observation, and out-of-scope behaviors. For a full breakdown, see [COVERAGE.md](../COVERAGE.md).
+
+Plainly stated:
+
+1. **No Interactive Automated Theorem Proving with Tactic Search**:
+   Axine evaluates finite computational propositions, verifies algebraic steps, and samples level sets. It does not search for formal proofs and does not replace proof assistants such as Lean, Coq, or Isabelle.
+
+2. **No Infinite-Depth Symbolic Integration**:
+   Axine does not implement full symbolic Risch integration. Symbolic integration of general elementary functions requires deciding zero-equivalence of transcendental expressions, which is undecidable in general (Richardson's theorem). Indefinite integrals without bounds must provide explicit evaluation rules.
+
+3. **No Heuristic Guessing or Implicit Type Coercion**:
+   Axine never synthesizes missing equations, guesses user intent, or silently coerces incompatible types. If an operation has no mathematical definition in the active context, it evaluates to `undefined` or stands unreduced.
+
+4. **No Opaque Host Builtins**:
+   No mathematical function is hardcoded in the core runtime as an opaque JavaScript/TypeScript function. If a function cannot be expressed as an Axine relation, series, or recurrence, it is not part of the language.
+
+---
+
+## Quick Reference
+
+### Operator Precedence Hierarchy
+
+| Prec | Level | Assoc | Operators / Syntax | Examples |
+| :---: | :--- | :--- | :--- | :--- |
+| **90** | Postfix | Left | `!`, `²`, `³`, `.`, `[i]`, `^T`, `^\dagger`, `^-1` | `5!`, `x²`, `v.x`, `M[0]`, `A^T` |
+| **80** | Exponentiation | Right | `^` | `2^3^2` = $2^{(3^2)} = 512$ |
+| **70** | Unary | Right | `+`, `-`, `\not`, `d//dx`, `\nabla`, `\laplacian`, `\star`, `|x|`, `||v||` | `-x`, `d//dx x^2`, `|x|` |
+| **60** | Implicit Mul | Left | Adjacent identifiers, numbers, parenthesized terms | `2x`, `x y`, `a(b + c)` |
+| **50** | Explicit Mul | Left | `*`, `/`, `//` (fraction), `%`, `\wedge`, `\otimes`, `\oplus` | `a * b`, `a / b`, `a // b` |
+| **40** | Bare Call | Left | Known function with unparenthesized argument | `:sin x`, `:ln x` |
+| **30** | Additive | Left | `+`, `-` | `a + b`, `a - b` |
+| **20** | Relational / Set | None | `=`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `\in`, `\notin`, `\subset`, `\equiv` | `x^2 + y^2 = 4`, `x \in S` |
+| **10** | Range | None | `..` | `1..10`, `0..N \step 2` |
+| **7** | Logical Not | Right | `\not` | `\not p` |
+| **6** | Logical And | Left | `\and`, `\land` | `p \and q` |
+| **5** | Logical Or | Left | `\or`, `\lor` | `p \or q` |
+| **4** | Domain Filter | None | `\where` | `y = :sqrt(x) \where x >= 0` |
+| **0** | Block / Top | None | Statements, blocks (`{ ... }`), declarations | `{\axis x, y; x = y}` |
+
+### Ambiguity Resolution Table
+
+| Expression | Interpretation | AST Node | Rationale |
+| :--- | :--- | :--- | :--- |
+| `2x` | Implicit multiplication | `BinaryOp('*', 2, x, isImplicit: true)` | Numerical coefficient notation $2x \equiv 2 \cdot x$ |
+| `xy` | Implicit multiplication | `BinaryOp('*', x, y, isImplicit: true)` | Bare adjacent letters multiply ($x \cdot y$) |
+| `:theta` | Single multi-letter variable | `Identifier('theta')` | Colon prefix identifies multi-letter token |
+| `a/bc` | $a / (b \cdot c)$ | `BinaryOp('/', a, BinaryOp('*', b, c))` | `bc` is the implicit product $b \cdot c$ |
+| `a / b c` | $(a / b) \cdot c$ | `BinaryOp('*', BinaryOp('/', a, b), c)` | Left-to-right explicit division followed by product |
+| `a // b` | Stacked fraction $\frac{a}{b}$ | `BinaryOp('/', a, b)` | Stacked fraction display with exact rational semantics |
+| `f(x)` | Multiplication $f \cdot x$ | `BinaryOp('*', f, x, isImplicit: true)` | Single letter followed by parenthesized term multiplies |
+| `:f(x)` | Function application $f(x)$ | `FunctionCall('f', [x])` | Colon-prefixed callee applies function |
+| `2^3^2` | $2^{(3^2)} = 2^9 = 512$ | `BinaryOp('^', 2, BinaryOp('^', 3, 2))` | Exponentiation is right-associative |
+| `-x^2` | $-(x^2)$ | `UnaryOp('-', BinaryOp('^', x, 2))` | Exponentiation binds tighter than unary negation |
+| `d//dx :f(x)` | $\frac{d}{dx}[f(x)]$ | `Diff('x', FunctionCall('f', [x]))` | Differential operator binds to immediate operand |
+| `d//dx :f(x) :g(x)` | $(\frac{d}{dx}[f(x)]) \cdot g(x)$ | `BinaryOp('*', Diff(...), FunctionCall(...))` | Differentiator acts on immediate term; trailing factors multiply |
+| `d//dx (:f(x) * :g(x))` | $\frac{d}{dx}[f(x) \cdot g(x)]$ | `Diff('x', BinaryOp('*', ...))` | Parentheses group product under derivative |
