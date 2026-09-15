@@ -1,5 +1,4 @@
 import { DocumentState, DocumentLineRecord } from './document_state';
-import { CORPUS_DOCUMENTS } from './corpus_data';
 import { Value, DerivationValue, SolveTraceValue, DescribedValue, TrajectoryValue, SpaceValue } from '../core/types';
 import { SpaceViewport } from '../plot/space_viewport';
 import { AnimationPlayer } from '../plot/animation_player';
@@ -10,7 +9,9 @@ import { ICONS } from '../styles/icons';
 import { FileManager, OpenFileResult, SaveFileResult } from './file_manager';
 import { exportToHtml, exportToMarkdown, parseFrontMatter, renderSVGSpaceToString } from './exporter';
 import { PaneContainer } from '../notebook/pane_container';
-import { TabData, updateDocumentTabTitles } from '../notebook/pane_tree';
+import { TabData, updateDocumentTabTitles, findLeaf, getAllLeaves, getAllTabs } from '../notebook/pane_tree';
+import { WorkspaceManager, Workspace, RecentWorkspace } from './workspace';
+import { WelcomeScreen } from './welcome_screen';
 
 function escapeHtml(str: string): string {
   return str
@@ -120,7 +121,7 @@ export interface DocumentSession {
 
 export class DocumentEditor {
   private container: HTMLElement;
-  private state: DocumentState;
+  private state!: DocumentState;
   private textarea!: HTMLTextAreaElement;
   private overlayEl!: HTMLElement;
   private caretEl!: HTMLElement;
@@ -144,6 +145,10 @@ export class DocumentEditor {
   private savedContent: string = '';
   private isDirty: boolean = false;
   private autosaveDebounceTimer: any = null;
+
+  private activeWorkspace: Workspace | null = null;
+  private welcomeScreen: WelcomeScreen | null = null;
+  private wsUnsubscribe?: () => void;
 
   private dockLayout: DockLayoutState = {
     edge: 'right',
@@ -170,16 +175,159 @@ export class DocumentEditor {
   private pinnedViewports: Map<number, SpaceViewport> = new Map();
   private animationPlayers: Map<number, AnimationPlayer> = new Map();
   private pinnedAnimationPlayers: Map<number, AnimationPlayer> = new Map();
+  private spaceObserver: IntersectionObserver | null = null;
+  private spaceValuesByLine: Map<number, SpaceValue> = new Map();
+  private pendingSpaceUpdates: Set<number> = new Set();
+  private prevOverlayLines: string[] = [];
+  private gutterEventsBound: boolean = false;
+  private renderedStartLine: number = 0;
+  private renderedEndLine: number = 0;
+  private cachedGutterRecords: DocumentLineRecord[] = [];
   public paneContainer?: PaneContainer;
 
   constructor(container: HTMLElement, initialText?: string) {
     this.container = container;
-    const docText = initialText ?? (CORPUS_DOCUMENTS[0]?.content || '');
-    this.currentFileName = initialText !== undefined ? 'untitled.ax' : (CORPUS_DOCUMENTS[0]?.id ? `${CORPUS_DOCUMENTS[0].id}.ax` : 'untitled.ax');
+    this.loadDockLayout();
+
+    if (initialText !== undefined) {
+      this.openInitialDocument(initialText);
+    } else {
+      const activeWsId = WorkspaceManager.getActiveWorkspaceId();
+      let loadedWs: Workspace | null = null;
+      if (activeWsId && activeWsId.startsWith('vws_')) {
+        loadedWs = WorkspaceManager.loadVirtualWorkspace(activeWsId);
+      }
+      if (loadedWs) {
+        this.openWorkspace(loadedWs);
+      } else {
+        this.showWelcomeScreen();
+      }
+    }
+  }
+
+  public showWelcomeScreen(): void {
+    if (this.welcomeScreen) {
+      this.welcomeScreen.dispose();
+    }
+    this.container.innerHTML = '';
+    this.welcomeScreen = new WelcomeScreen(this.container, {
+      onOpenFolder: async () => {
+        const ws = await WorkspaceManager.openDirectoryPicker();
+        if (ws) {
+          this.openWorkspace(ws);
+        }
+      },
+      onOpenFile: async () => {
+        await this.openDocument();
+      },
+      onNewDocument: () => {
+        const ws = WorkspaceManager.createVirtualWorkspace('Scratch', { 'untitled.ax': '' });
+        this.openWorkspace(ws, 'untitled.ax');
+      },
+      onOpenRecent: async (recent: RecentWorkspace) => {
+        if (recent.isVirtual) {
+          const ws = WorkspaceManager.loadVirtualWorkspace(recent.id);
+          if (ws) {
+            this.openWorkspace(ws);
+          }
+        } else {
+          const ws = await WorkspaceManager.openDirectoryPicker();
+          if (ws) {
+            this.openWorkspace(ws);
+          }
+        }
+      },
+    });
+    this.welcomeScreen.render();
+  }
+
+  public openWorkspace(ws: Workspace, activeFilePath?: string): void {
+    if (this.welcomeScreen) {
+      this.welcomeScreen.dispose();
+      this.welcomeScreen = null;
+    }
+    this.activeWorkspace = ws;
+    WorkspaceManager.setActiveWorkspaceId(ws.id);
+    WorkspaceManager.syncToEvaluator(ws);
+
+    this.sessions.clear();
+    this.sessionOrder = [];
+
+    // Determine initial file to open
+    let initialFileName = activeFilePath;
+    let initialFileContent = '';
+
+    if (initialFileName && ws.files.has(initialFileName)) {
+      initialFileContent = ws.files.get(initialFileName) || '';
+    } else {
+      const axFiles = Array.from(ws.files.keys()).filter(k => k.endsWith('.ax') && !k.startsWith('.'));
+      if (axFiles.length > 0) {
+        initialFileName = axFiles[0];
+        initialFileContent = ws.files.get(initialFileName) || '';
+      } else {
+        initialFileName = 'untitled.ax';
+        initialFileContent = '';
+        ws.files.set(initialFileName, initialFileContent);
+        WorkspaceManager.saveVirtualWorkspace(ws);
+      }
+    }
+
+    this.currentFileName = initialFileName;
+    this.currentFileHandle = ws.handle;
+    this.savedContent = initialFileContent;
+    this.isDirty = false;
+    this.state = new DocumentState(initialFileContent);
+
+    const initialSessionId = 'sess_' + Math.random().toString(36).substring(2, 9);
+    const initialSession: DocumentSession = {
+      id: initialSessionId,
+      name: this.currentFileName,
+      handle: ws.handle,
+      state: this.state,
+      savedContent: initialFileContent,
+      isDirty: false,
+      scrollPosition: { scrollTop: 0, scrollLeft: 0 },
+      caretPosition: { selectionStart: 0, selectionEnd: 0, selectionDirection: 'none' },
+      dockLayout: JSON.parse(JSON.stringify(this.dockLayout)),
+      activeTab: 'results',
+      pinnedLines: new Set(),
+      collapsedLines: new Set(this.collapsedLines),
+      expandedPlots: new Set(),
+    };
+    this.sessions.set(initialSessionId, initialSession);
+    this.sessionOrder.push(initialSessionId);
+    this.activeSessionId = initialSessionId;
+
+    this.buildUI(initialFileContent);
+    this.applyDockLayout();
+    this.bindTopBarAndGlobalEvents();
+    this.bindEditorSurfaceEvents();
+    this.initPaneContainer();
+
+    this.state.subscribe((records, isEvaluating) => {
+      if (this.paneContainer) {
+        this.paneContainer.updateSpaces(records);
+      } else if (this.activeSessionId === initialSessionId) {
+        this.renderWorkPanel(records, isEvaluating);
+      }
+    });
+
+    if (!this.wsUnsubscribe) {
+      this.wsUnsubscribe = WorkspaceManager.subscribe((_updatedWs) => {
+        this.paneContainer?.updateTreePanes();
+      });
+    }
+
+    this.updateSessionTabs();
+    this.state.setText(initialFileContent);
+  }
+
+  public openInitialDocument(initialText: string): void {
+    const docText = initialText;
+    this.currentFileName = 'untitled.ax';
     this.savedContent = docText;
     this.isDirty = false;
     this.state = new DocumentState(docText);
-    this.loadDockLayout();
 
     const initialSessionId = 'sess_' + Math.random().toString(36).substring(2, 9);
     const initialSession: DocumentSession = {
@@ -207,13 +355,71 @@ export class DocumentEditor {
     this.bindEditorSurfaceEvents();
     this.initPaneContainer();
     this.state.subscribe((records, isEvaluating) => {
-      if (this.activeSessionId === initialSessionId) {
+      if (this.paneContainer) {
+        this.paneContainer.updateSpaces(records);
+      } else if (this.activeSessionId === initialSessionId) {
         this.renderWorkPanel(records, isEvaluating);
       }
-      this.paneContainer?.updateSpaces(records);
     });
     this.updateSessionTabs();
     this.state.setText(docText);
+  }
+
+  public closeWorkspace(): void {
+    WorkspaceManager.clearActiveWorkspace();
+    this.activeWorkspace = null;
+    this.showWelcomeScreen();
+  }
+
+  public openWorkspaceFile(filePath: string): void {
+    for (const [sessId, sess] of this.sessions.entries()) {
+      if (sess.name === filePath) {
+        this.switchToSession(sessId);
+        if (this.paneContainer) {
+          const allTabs = getAllTabs(this.paneContainer.getLayout().root);
+          const tab = allTabs.find(t => t.documentId === sessId || (t.type === 'document' && t.title === filePath));
+          if (tab) {
+            const leaves = getAllLeaves(this.paneContainer.getLayout().root);
+            for (const leaf of leaves) {
+              if (leaf.tabs.some(t => t.id === tab.id)) {
+                leaf.activeTabId = tab.id;
+                this.paneContainer.setActivePaneId(leaf.id);
+                break;
+              }
+            }
+          }
+          this.paneContainer.render();
+        }
+        return;
+      }
+    }
+
+    const content = this.activeWorkspace?.files.get(filePath) ?? '';
+    const sess = this.createSession(filePath, content);
+    this.switchToSession(sess.id);
+
+    if (this.paneContainer) {
+      const activeLeafId = this.paneContainer.getActivePaneId();
+      const activeLeaf = findLeaf(this.paneContainer.getLayout().root, activeLeafId);
+      if (activeLeaf && activeLeaf.tabs.length === 1 && activeLeaf.tabs[0].type === 'document' && activeLeaf.tabs[0].title === 'untitled.ax' && !this.isDirty) {
+        activeLeaf.tabs[0].title = filePath;
+        activeLeaf.tabs[0].documentId = sess.id;
+        activeLeaf.activeTabId = activeLeaf.tabs[0].id;
+      } else {
+        const newTab: TabData = {
+          id: 'tab_doc_' + Math.random().toString(36).substring(2, 9),
+          type: 'document',
+          title: filePath,
+          documentId: sess.id,
+        };
+        this.paneContainer.openTab(newTab, activeLeafId || undefined);
+      }
+      this.paneContainer.render();
+    }
+  }
+
+  public getActiveWorkspace(): Workspace | null {
+    return this.activeWorkspace;
   }
 
   private loadDockLayout() {
@@ -371,7 +577,9 @@ export class DocumentEditor {
       diskFiles,
     };
     state.subscribe((records, isEvaluating) => {
-      if (this.activeSessionId === id) {
+      if (this.paneContainer) {
+        this.paneContainer.updateSpaces(records);
+      } else if (this.activeSessionId === id) {
         this.renderWorkPanel(records, isEvaluating);
       }
     });
@@ -547,6 +755,10 @@ export class DocumentEditor {
     }
   }
 
+  public getText(): string {
+    return this.textarea ? this.textarea.value : this.savedContent;
+  }
+
   public getDocumentName(): string {
     return this.currentFileName;
   }
@@ -561,7 +773,7 @@ export class DocumentEditor {
     this.updateSessionTabs();
     if (this.paneContainer) {
       const layout = this.paneContainer.getLayout();
-      updateDocumentTabTitles(layout.root, this.activeSessionId, name);
+      updateDocumentTabTitles(layout.root, this.activeSessionId, name, new Set(this.sessions.keys()));
       this.paneContainer.saveLayout();
       this.paneContainer.render();
     }
@@ -583,7 +795,18 @@ export class DocumentEditor {
     const res = await FileManager.openFile();
     if (!res) return null;
 
+    if (!this.activeWorkspace) {
+      const ws = WorkspaceManager.createSyntheticWorkspace(res.name, res.content, res.handle);
+      this.openWorkspace(ws, res.name);
+      return res;
+    }
+
+    // Active workspace exists: add file to workspace
+    this.activeWorkspace.files.set(res.name, res.content);
+    WorkspaceManager.notifyChange(this.activeWorkspace);
+
     const curr = this.sessions.get(this.activeSessionId);
+    let targetSessionId = '';
     if (curr && curr.name === 'untitled.ax' && !curr.isDirty && curr.state.getText().trim() === '') {
       curr.name = res.name;
       curr.handle = res.handle;
@@ -597,19 +820,71 @@ export class DocumentEditor {
       this.updateFileInfo();
       this.updateRecentFilesMenu();
       this.updateSessionTabs();
-      return res;
+      targetSessionId = curr.id;
+    } else {
+      const sess = this.createSession(res.name, res.content, res.handle);
+      sess.savedContent = res.recovered ? '' : res.content;
+      sess.isDirty = res.isDirty;
+      this.switchToSession(sess.id);
+      this.updateRecentFilesMenu();
+      targetSessionId = sess.id;
     }
 
-    const sess = this.createSession(res.name, res.content, res.handle);
-    sess.savedContent = res.recovered ? '' : res.content;
-    sess.isDirty = res.isDirty;
-    this.switchToSession(sess.id);
-    this.updateRecentFilesMenu();
+    if (this.welcomeScreen) {
+      this.welcomeScreen.dispose();
+      this.welcomeScreen = null;
+    }
+
+    if (this.paneContainer) {
+      const layout = this.paneContainer.getLayout();
+      const leaves = getAllLeaves(layout.root);
+      const activeLeaf = findLeaf(layout.root, layout.activePaneId) || leaves[0];
+      if (activeLeaf) {
+        const existingTab = activeLeaf.tabs.find(t => t.documentId === targetSessionId || (t.type === 'document' && t.title === 'untitled.ax'));
+        if (existingTab && curr && targetSessionId === curr.id) {
+          existingTab.title = res.name;
+          existingTab.documentId = targetSessionId;
+          activeLeaf.activeTabId = existingTab.id;
+        } else {
+          this.paneContainer.openTab({
+            id: 'tab_doc_' + Math.random().toString(36).substring(2, 9),
+            type: 'document',
+            title: res.name,
+            documentId: targetSessionId,
+          }, activeLeaf.id);
+        }
+      }
+      this.paneContainer.updateTreePanes();
+      this.paneContainer.render();
+    }
+
     return res;
   }
 
   public async saveDocument(): Promise<SaveFileResult> {
     const text = this.textarea ? this.textarea.value : this.savedContent;
+    if (this.activeWorkspace) {
+      await WorkspaceManager.writeFile(this.activeWorkspace, this.currentFileName, text);
+      this.savedContent = text;
+      this.isDirty = false;
+      const curr = this.sessions.get(this.activeSessionId);
+      if (curr) {
+        curr.savedContent = text;
+        curr.isDirty = false;
+      }
+      this.updateFileInfo();
+      this.updateRecentFilesMenu();
+      this.updateSessionTabs();
+      this.paneContainer?.render();
+      return {
+        success: true,
+        name: this.currentFileName,
+        handle: undefined,
+        isDirty: false,
+        apiUsed: 'file-system-access',
+      };
+    }
+
     const res = await FileManager.saveFile(this.currentFileName, text, this.currentFileHandle);
     if (res.success) {
       this.currentFileName = res.name;
@@ -837,7 +1112,7 @@ export class DocumentEditor {
     this.updateDirtyIndicator();
     if (this.paneContainer) {
       const layout = this.paneContainer.getLayout();
-      updateDocumentTabTitles(layout.root, this.activeSessionId, this.currentFileName);
+      updateDocumentTabTitles(layout.root, this.activeSessionId, this.currentFileName, new Set(this.sessions.keys()));
       this.paneContainer.saveLayout();
       this.paneContainer.render();
     }
@@ -899,13 +1174,12 @@ export class DocumentEditor {
   }
 
   private buildUI(initialText?: string) {
-    const rawText = initialText ?? (CORPUS_DOCUMENTS[0]?.content || '');
+    const rawText = initialText ?? '';
     this.container.innerHTML = `
       <div class="doc-app-shell">
         <header class="doc-header">
           <div class="doc-brand" title="Axine">
-            <img class="doc-logo-img doc-logo-dark" src="/logo-dark.png" alt="Axine" />
-            <img class="doc-logo-img doc-logo-light" src="/logo-light.png" alt="Axine" />
+            <img class="doc-logo-img" src="/logo.png" alt="Axine" />
           </div>
 
           <div class="doc-file-menu-wrapper">
@@ -918,8 +1192,11 @@ export class DocumentEditor {
                 <span>New file</span>
               </button>
               <button id="doc-open-file-btn" class="doc-file-menu-item">
-                <span>Open...</span>
+                <span>Open File...</span>
                 <span class="doc-file-menu-shortcut">Cmd+O</span>
+              </button>
+              <button id="doc-open-folder-btn" class="doc-file-menu-item">
+                <span>Open Folder...</span>
               </button>
               <button id="doc-save-file-btn" class="doc-file-menu-item">
                 <span>Save</span>
@@ -930,6 +1207,9 @@ export class DocumentEditor {
                 <span class="doc-file-menu-shortcut">Shift+Cmd+S</span>
               </button>
               <div class="doc-file-menu-divider"></div>
+              <button id="doc-close-workspace-btn" class="doc-file-menu-item">
+                <span>Close Workspace</span>
+              </button>
               <button id="doc-clear-file-btn" class="doc-file-menu-item">
                 <span>Clear document</span>
               </button>
@@ -1173,6 +1453,21 @@ export class DocumentEditor {
       this.openDocument();
     });
 
+    const openFolderBtn = this.container.querySelector('#doc-open-folder-btn');
+    openFolderBtn?.addEventListener('click', async () => {
+      fileDropdown?.classList.add('hidden');
+      const ws = await WorkspaceManager.openDirectoryPicker();
+      if (ws) {
+        this.openWorkspace(ws);
+      }
+    });
+
+    const closeWsBtn = this.container.querySelector('#doc-close-workspace-btn');
+    closeWsBtn?.addEventListener('click', () => {
+      fileDropdown?.classList.add('hidden');
+      this.closeWorkspace();
+    });
+
     const saveBtn = this.container.querySelector('#doc-save-file-btn');
     saveBtn?.addEventListener('click', () => {
       fileDropdown?.classList.add('hidden');
@@ -1306,10 +1601,20 @@ export class DocumentEditor {
         e.preventDefault();
         this.printPdf();
       }
-      // Cmd+B / Ctrl+B / Cmd+\ / Ctrl+\ : Toggle collapse
-      if ((e.key === 'b' || e.key === 'B' || e.key === '\\') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+      // Cmd+B / Ctrl+B : Toggle collapse
+      if ((e.key === 'b' || e.key === 'B') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
         e.preventDefault();
         this.togglePanelCollapse();
+      }
+      // Cmd+\ / Ctrl+\ : Split Active Pane Right
+      if ((e.key === '\\' || e.code === 'Backslash') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        e.preventDefault();
+        this.paneContainer?.splitActiveTab('horizontal', 'after');
+      }
+      // Cmd+Shift+\ / Ctrl+Shift+\ : Split Active Pane Down
+      if ((e.key === '\\' || e.key === '|' || e.code === 'Backslash') && (e.metaKey || e.ctrlKey) && e.shiftKey) {
+        e.preventDefault();
+        this.paneContainer?.splitActiveTab('vertical', 'after');
       }
       // Cmd+Shift+D / Ctrl+Shift+D / Alt+D : Cycle dock edge
       if ((e.key === 'd' || e.key === 'D') && ((e.metaKey && e.shiftKey) || (e.ctrlKey && e.shiftKey) || e.altKey)) {
@@ -1474,6 +1779,8 @@ export class DocumentEditor {
 
   private bindEditorSurfaceEvents() {
     if (!this.textarea) return;
+    if ((this.textarea as any).__axineEventsBound) return;
+    (this.textarea as any).__axineEventsBound = true;
 
     this.textarea.addEventListener('beforeinput', (e: InputEvent) => {
       const data = (e as any).data;
@@ -1582,7 +1889,17 @@ export class DocumentEditor {
       const scrollTop = this.textarea.scrollTop;
       const scrollLeft = this.textarea.scrollLeft;
       if (this.lineNumbersEl) this.lineNumbersEl.scrollTop = scrollTop;
-      if (this.gutterEl) this.gutterEl.scrollTop = scrollTop;
+      if (this.gutterEl) {
+        const taMaxScroll = this.textarea.scrollHeight - this.textarea.clientHeight;
+        const gutterMaxScroll = this.gutterEl.scrollHeight - this.gutterEl.clientHeight;
+        if (taMaxScroll > 0 && gutterMaxScroll > 0) {
+          const ratio = scrollTop / taMaxScroll;
+          this.gutterEl.scrollTop = ratio * gutterMaxScroll;
+        } else {
+          this.gutterEl.scrollTop = scrollTop;
+        }
+        this.renderGutterSlice();
+      }
       if (this.overlayEl) {
         this.overlayEl.scrollTop = scrollTop;
         this.overlayEl.scrollLeft = scrollLeft;
@@ -1720,9 +2037,14 @@ export class DocumentEditor {
       this.lineNumbersEl.innerHTML = lineNumsHtml;
     }
 
-    // Clean up existing viewports and animation players
-    this.lineViewports.forEach(p => p.dispose());
-    this.lineViewports.clear();
+    // Clean up viewports for lines that are no longer spaces or are collapsed
+    for (const [lineIdx, vp] of this.lineViewports.entries()) {
+      const rec = records[lineIdx];
+      if (!rec || !rec.result || rec.result.type !== 'space' || this.collapsedLines.has(lineIdx)) {
+        vp.dispose();
+        this.lineViewports.delete(lineIdx);
+      }
+    }
     this.pinnedViewports.forEach(p => p.dispose());
     this.pinnedViewports.clear();
     this.animationPlayers.forEach(p => p.dispose());
@@ -1789,142 +2111,25 @@ export class DocumentEditor {
       }
     }
 
+    // Update space values by line and track dependent modifications
+    for (let i = 0; i < records.length; i++) {
+      const rec = records[i];
+      if (rec && rec.result && rec.result.type === 'space') {
+        const spaceVal = rec.result as SpaceValue;
+        const oldSpace = this.spaceValuesByLine.get(i);
+        this.spaceValuesByLine.set(i, spaceVal);
+        if (oldSpace && oldSpace !== spaceVal && this.lineViewports.has(i)) {
+          this.pendingSpaceUpdates.add(i);
+        }
+      } else {
+        this.spaceValuesByLine.delete(i);
+        this.pendingSpaceUpdates.delete(i);
+      }
+    }
+
     if (this.gutterEl) {
-      let gutterHtml = '';
-      for (let i = 0; i < records.length; i++) {
-        const rec = records[i];
-        const isCollapsed = this.collapsedLines.has(i);
-        const isExpanded = this.expandedPlots.has(i);
-        const isPinned = this.pinnedLines.has(i);
-        gutterHtml += this.formatGutterRow(rec, isCollapsed, isExpanded, isPinned);
-      }
-      this.gutterEl.innerHTML = gutterHtml;
-
-      // Reciprocal hover highlighting between editor lines and gutter rows
-      const gutterRows = this.gutterEl.querySelectorAll('.doc-gutter-row');
-      gutterRows.forEach(row => {
-        const lineIdxStr = (row as HTMLElement).getAttribute('data-line');
-        const lineIdx = parseInt(lineIdxStr ?? '0', 10);
-        row.addEventListener('mouseenter', () => {
-          row.classList.add('hovered');
-          if (this.overlayEl) {
-            const editorLine = this.overlayEl.querySelectorAll('.doc-typeset-line')[lineIdx];
-            if (editorLine) editorLine.classList.add('hovered');
-          }
-        });
-        row.addEventListener('mouseleave', () => {
-          row.classList.remove('hovered');
-          if (this.overlayEl) {
-            const editorLine = this.overlayEl.querySelectorAll('.doc-typeset-line')[lineIdx];
-            if (editorLine) editorLine.classList.remove('hovered');
-          }
-        });
-      });
-
-      // Wire Popout (Open as Tab) buttons
-      this.gutterEl.querySelectorAll('.doc-gutter-popout-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const lineIdx = parseInt((btn as HTMLElement).getAttribute('data-line') ?? '0', 10);
-          this.openSpaceAsTab(lineIdx);
-        });
-      });
-
-      // Wire Pin buttons
-      this.gutterEl.querySelectorAll('.doc-gutter-pin-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const lineIdx = parseInt((btn as HTMLElement).getAttribute('data-line') ?? '0', 10);
-          if (this.pinnedLines.has(lineIdx)) {
-            this.pinnedLines.delete(lineIdx);
-          } else {
-            this.pinnedLines.add(lineIdx);
-          }
-          this.renderWorkPanel(this.state.getRecords(), false);
-        });
-      });
-
-      // Wire Collapse buttons
-      this.gutterEl.querySelectorAll('.doc-gutter-collapse-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const lineIdx = parseInt((btn as HTMLElement).getAttribute('data-line') ?? '0', 10);
-          if (this.collapsedLines.has(lineIdx)) {
-            this.collapsedLines.delete(lineIdx);
-          } else {
-            this.collapsedLines.add(lineIdx);
-          }
-          this.saveCollapsedLines();
-          this.renderWorkPanel(this.state.getRecords(), false);
-        });
-      });
-
-      // Wire Plot size Expand / Compact buttons
-      this.gutterEl.querySelectorAll('.doc-gutter-expand-plot-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const lineIdx = parseInt((btn as HTMLElement).getAttribute('data-line') ?? '0', 10);
-          if (this.expandedPlots.has(lineIdx)) {
-            this.expandedPlots.delete(lineIdx);
-          } else {
-            this.expandedPlots.add(lineIdx);
-          }
-          this.renderWorkPanel(this.state.getRecords(), false);
-        });
-      });
-
-      // Wire Exact rational toggle badges
-      this.gutterEl.querySelectorAll('.tm-exact-badge').forEach(badge => {
-        badge.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const container = badge.closest('.tm-large-rational');
-          if (!container) return;
-          const approx = container.querySelector('.tm-approx-val');
-          const expanded = container.querySelector('.tm-exact-expanded');
-          if (approx && expanded) {
-            const isExpanded = !expanded.classList.contains('hidden');
-            if (isExpanded) {
-              expanded.classList.add('hidden');
-              approx.classList.remove('hidden');
-              badge.textContent = '[exact]';
-            } else {
-              expanded.classList.remove('hidden');
-              approx.classList.add('hidden');
-              badge.textContent = '[approx]';
-            }
-          }
-        });
-      });
-
-      // Instantiate and render all SpaceViewports for visible space rows
-      for (let i = 0; i < records.length; i++) {
-        const rec = records[i];
-        if (rec && rec.result && rec.result.type === 'space' && !this.collapsedLines.has(i)) {
-          const spaceVal = rec.result as SpaceValue;
-          if (spaceVal.dimension > 0 || spaceVal.entities.length > 0 || (spaceVal.nestedSpaces && spaceVal.nestedSpaces.length > 0)) {
-            const container = this.gutterEl.querySelector(`.doc-space-container[data-line="${i}"]`) as HTMLElement;
-            if (container) {
-              const vp = new SpaceViewport(container, spaceVal);
-              this.lineViewports.set(i, vp);
-            }
-          }
-        }
-      }
-
-      // Instantiate and mount all animation players for visible trajectory rows
-      for (let i = 0; i < records.length; i++) {
-        const rec = records[i];
-        if (rec && rec.result && rec.result.type === 'trajectory' && !this.collapsedLines.has(i)) {
-          const container = this.gutterEl.querySelector(`.doc-inline-animation-container[data-line="${i}"]`) as HTMLElement;
-          if (container) {
-            const trajVal = rec.result as TrajectoryValue;
-            const player = new AnimationPlayer(container, trajVal, {
-              viewResolver: (state) => this.resolveViewForState(state),
-            });
-            this.animationPlayers.set(i, player);
-          }
-        }
-      }
+      this.cachedGutterRecords = records;
+      this.renderGutterSlice(true);
     }
 
     // Mount pinned animation players
@@ -1974,6 +2179,362 @@ export class DocumentEditor {
     // 6. Frames Tab
     if (this.framesPanelEl) {
       this.renderFrames();
+    }
+  }
+
+  private computeGutterRowHeights(records: DocumentLineRecord[]): number[] {
+    const N = records.length;
+    const heights = new Array<number>(N);
+    for (let i = 0; i < N; i++) {
+      const rec = records[i];
+      const isCollapsed = this.collapsedLines.has(i);
+      const isExpanded = this.expandedPlots.has(i);
+      if (rec?.result?.type === 'space') {
+        heights[i] = isCollapsed ? 29 : (isExpanded ? 360 : 210);
+      } else if (rec?.result?.type === 'trajectory') {
+        heights[i] = isCollapsed ? 29 : 180;
+      } else if (rec?.error) {
+        heights[i] = 48;
+      } else if (rec?.classification?.state === 'PROSE' && !rec.result) {
+        heights[i] = 29;
+      } else {
+        heights[i] = 34;
+      }
+    }
+    return heights;
+  }
+
+  private renderGutterSlice(force: boolean = false): void {
+    if (!this.gutterEl) return;
+    const records = this.cachedGutterRecords;
+    const N = records.length;
+    if (N === 0) {
+      this.gutterEl.innerHTML = '';
+      return;
+    }
+
+    if (this.gutterEl && !(this.gutterEl as any).__axineScrollBound) {
+      (this.gutterEl as any).__axineScrollBound = true;
+      this.gutterEl.addEventListener('scroll', () => {
+        this.renderGutterSlice();
+      });
+    }
+
+    const heights = this.computeGutterRowHeights(records);
+    const prefixOffsets = new Array<number>(N + 1);
+    prefixOffsets[0] = 0;
+    for (let i = 0; i < N; i++) {
+      prefixOffsets[i + 1] = prefixOffsets[i] + heights[i];
+    }
+    const totalHeight = prefixOffsets[N];
+
+    const isVirtualizable = N > 30 && typeof window !== 'undefined' && this.gutterEl.clientHeight > 0;
+
+    let startIdx = 0;
+    let endIdx = N - 1;
+
+    if (isVirtualizable) {
+      const scrollTop = this.gutterEl.scrollTop;
+      const viewportHeight = this.gutterEl.clientHeight || 800;
+      const overscan = 400;
+
+      const minY = Math.max(0, scrollTop - overscan);
+      const maxY = scrollTop + viewportHeight + overscan;
+
+      while (startIdx < N - 1 && prefixOffsets[startIdx + 1] < minY) {
+        startIdx++;
+      }
+      endIdx = startIdx;
+      while (endIdx < N - 1 && prefixOffsets[endIdx] < maxY) {
+        endIdx++;
+      }
+    }
+
+    if (!force && startIdx === this.renderedStartLine && endIdx === this.renderedEndLine) {
+      return;
+    }
+
+    this.renderedStartLine = startIdx;
+    this.renderedEndLine = endIdx;
+
+    const topSpacerHeight = prefixOffsets[startIdx];
+    const bottomSpacerHeight = Math.max(0, totalHeight - prefixOffsets[endIdx + 1]);
+
+    let gutterHtml = '';
+    if (topSpacerHeight > 0) {
+      gutterHtml += `<div class="doc-gutter-spacer-top" style="height: ${topSpacerHeight}px; width: 100%; flex-shrink: 0;"></div>`;
+    }
+
+    for (let i = startIdx; i <= endIdx; i++) {
+      const rec = records[i];
+      const isCollapsed = this.collapsedLines.has(i);
+      const isExpanded = this.expandedPlots.has(i);
+      const isPinned = this.pinnedLines.has(i);
+      gutterHtml += this.formatGutterRow(rec, isCollapsed, isExpanded, isPinned);
+    }
+
+    if (bottomSpacerHeight > 0) {
+      gutterHtml += `<div class="doc-gutter-spacer-bottom" style="height: ${bottomSpacerHeight}px; width: 100%; flex-shrink: 0;"></div>`;
+    }
+
+    const offscreenErrors: number[] = [];
+    for (let i = 0; i < N; i++) {
+      if ((i < startIdx || i > endIdx) && records[i]?.error) {
+        offscreenErrors.push(i);
+      }
+    }
+    if (offscreenErrors.length > 0) {
+      gutterHtml += `<div class="doc-gutter-offscreen-errors" style="display: none;">`;
+      for (const i of offscreenErrors) {
+        gutterHtml += this.formatGutterRow(records[i], this.collapsedLines.has(i), this.expandedPlots.has(i), this.pinnedLines.has(i));
+      }
+      gutterHtml += `</div>`;
+    }
+
+    this.gutterEl.innerHTML = gutterHtml;
+
+    this.attachGutterRowListeners(records);
+
+    this.setupSpaceObserver();
+
+    for (let i = startIdx; i <= endIdx; i++) {
+      const rec = records[i];
+      if (rec && rec.result && rec.result.type === 'trajectory' && !this.collapsedLines.has(i)) {
+        const container = this.gutterEl.querySelector(`.doc-inline-animation-container[data-line="${i}"]`) as HTMLElement;
+        if (container) {
+          const trajVal = rec.result as TrajectoryValue;
+          const player = new AnimationPlayer(container, trajVal, {
+            viewResolver: (state) => this.resolveViewForState(state),
+          });
+          this.animationPlayers.set(i, player);
+        }
+      }
+    }
+  }
+
+  private attachGutterRowListeners(_records?: DocumentLineRecord[]): void {
+    if (!this.gutterEl) return;
+    this.gutterEl.querySelectorAll('.doc-gutter-popout-btn').forEach(btn => {
+      btn.addEventListener('click', (e: any) => {
+        e.stopPropagation?.();
+        const lineIdx = parseInt((btn as HTMLElement).getAttribute('data-line') ?? '0', 10);
+        this.openSpaceAsTab(lineIdx);
+      });
+    });
+    this.gutterEl.querySelectorAll('.doc-gutter-pin-btn').forEach(btn => {
+      btn.addEventListener('click', (e: any) => {
+        e.stopPropagation?.();
+        const lineIdx = parseInt((btn as HTMLElement).getAttribute('data-line') ?? '0', 10);
+        if (this.pinnedLines.has(lineIdx)) {
+          this.pinnedLines.delete(lineIdx);
+        } else {
+          this.pinnedLines.add(lineIdx);
+        }
+        this.renderWorkPanel(this.state.getRecords(), false);
+      });
+    });
+    this.gutterEl.querySelectorAll('.doc-gutter-collapse-btn').forEach(btn => {
+      btn.addEventListener('click', (e: any) => {
+        e.stopPropagation?.();
+        const lineIdx = parseInt((btn as HTMLElement).getAttribute('data-line') ?? '0', 10);
+        if (this.collapsedLines.has(lineIdx)) {
+          this.collapsedLines.delete(lineIdx);
+        } else {
+          this.collapsedLines.add(lineIdx);
+        }
+        this.saveCollapsedLines();
+        this.renderWorkPanel(this.state.getRecords(), false);
+      });
+    });
+    this.gutterEl.querySelectorAll('.doc-gutter-expand-plot-btn').forEach(btn => {
+      btn.addEventListener('click', (e: any) => {
+        e.stopPropagation?.();
+        const lineIdx = parseInt((btn as HTMLElement).getAttribute('data-line') ?? '0', 10);
+        if (this.expandedPlots.has(lineIdx)) {
+          this.expandedPlots.delete(lineIdx);
+        } else {
+          this.expandedPlots.add(lineIdx);
+        }
+        this.renderWorkPanel(this.state.getRecords(), false);
+      });
+    });
+
+    this.bindGutterEventDelegation();
+  }
+
+  private bindGutterEventDelegation(): void {
+    if (!this.gutterEl || this.gutterEventsBound) return;
+    this.gutterEventsBound = true;
+
+    // Reciprocal hover highlighting between editor lines and gutter rows
+    this.gutterEl.addEventListener('mouseover', (e) => {
+      const target = e.target as HTMLElement;
+      const row = target.closest('.doc-gutter-row') as HTMLElement;
+      if (row) {
+        row.classList.add('hovered');
+        const lineIdxStr = row.getAttribute('data-line');
+        const lineIdx = parseInt(lineIdxStr ?? '-1', 10);
+        if (lineIdx >= 0 && this.overlayEl) {
+          const editorLine = this.overlayEl.querySelectorAll('.doc-typeset-line')[lineIdx];
+          if (editorLine) editorLine.classList.add('hovered');
+        }
+      }
+    });
+
+    this.gutterEl.addEventListener('mouseout', (e) => {
+      const target = e.target as HTMLElement;
+      const row = target.closest('.doc-gutter-row') as HTMLElement;
+      if (row) {
+        row.classList.remove('hovered');
+        const lineIdxStr = row.getAttribute('data-line');
+        const lineIdx = parseInt(lineIdxStr ?? '-1', 10);
+        if (lineIdx >= 0 && this.overlayEl) {
+          const editorLine = this.overlayEl.querySelectorAll('.doc-typeset-line')[lineIdx];
+          if (editorLine) editorLine.classList.remove('hovered');
+        }
+      }
+    });
+
+    // Action buttons click handling via event delegation
+    this.gutterEl.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+
+      const popoutBtn = target.closest('.doc-gutter-popout-btn') as HTMLElement;
+      if (popoutBtn) {
+        e.stopPropagation();
+        const lineIdx = parseInt(popoutBtn.getAttribute('data-line') ?? '0', 10);
+        this.openSpaceAsTab(lineIdx);
+        return;
+      }
+
+      const pinBtn = target.closest('.doc-gutter-pin-btn') as HTMLElement;
+      if (pinBtn) {
+        e.stopPropagation();
+        const lineIdx = parseInt(pinBtn.getAttribute('data-line') ?? '0', 10);
+        if (this.pinnedLines.has(lineIdx)) {
+          this.pinnedLines.delete(lineIdx);
+        } else {
+          this.pinnedLines.add(lineIdx);
+        }
+        this.renderWorkPanel(this.state.getRecords(), false);
+        return;
+      }
+
+      const collapseBtn = target.closest('.doc-gutter-collapse-btn') as HTMLElement;
+      if (collapseBtn) {
+        e.stopPropagation();
+        const lineIdx = parseInt(collapseBtn.getAttribute('data-line') ?? '0', 10);
+        if (this.collapsedLines.has(lineIdx)) {
+          this.collapsedLines.delete(lineIdx);
+        } else {
+          this.collapsedLines.add(lineIdx);
+        }
+        this.saveCollapsedLines();
+        this.renderWorkPanel(this.state.getRecords(), false);
+        return;
+      }
+
+      const expandPlotBtn = target.closest('.doc-gutter-expand-plot-btn') as HTMLElement;
+      if (expandPlotBtn) {
+        e.stopPropagation();
+        const lineIdx = parseInt(expandPlotBtn.getAttribute('data-line') ?? '0', 10);
+        if (this.expandedPlots.has(lineIdx)) {
+          this.expandedPlots.delete(lineIdx);
+        } else {
+          this.expandedPlots.add(lineIdx);
+        }
+        this.renderWorkPanel(this.state.getRecords(), false);
+        return;
+      }
+
+      const exactBadge = target.closest('.tm-exact-badge') as HTMLElement;
+      if (exactBadge) {
+        e.stopPropagation();
+        const container = exactBadge.closest('.tm-large-rational');
+        if (!container) return;
+        const approx = container.querySelector('.tm-approx-val');
+        const expanded = container.querySelector('.tm-exact-expanded');
+        if (approx && expanded) {
+          const isExpanded = !expanded.classList.contains('hidden');
+          if (isExpanded) {
+            expanded.classList.add('hidden');
+            approx.classList.remove('hidden');
+            exactBadge.textContent = '[exact]';
+          } else {
+            expanded.classList.remove('hidden');
+            approx.classList.add('hidden');
+            exactBadge.textContent = '[approx]';
+          }
+        }
+        return;
+      }
+    });
+  }
+
+  private setupSpaceObserver(): void {
+    if (!this.gutterEl) return;
+    if (this.spaceObserver) {
+      this.spaceObserver.disconnect();
+      this.spaceObserver = null;
+    }
+
+    const spaceContainers = this.gutterEl.querySelectorAll('.doc-space-container');
+    if (spaceContainers.length === 0) return;
+
+    if (typeof IntersectionObserver !== 'undefined') {
+      const scrollRoot: HTMLElement | null = this.gutterEl;
+
+      this.spaceObserver = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            const target = entry.target as HTMLElement;
+            const lineIdxStr = target.getAttribute('data-line');
+            const lineIdx = parseInt(lineIdxStr ?? '-1', 10);
+            if (lineIdx < 0) continue;
+
+            const spaceVal = this.spaceValuesByLine.get(lineIdx);
+            if (!spaceVal) continue;
+
+            let vp = this.lineViewports.get(lineIdx);
+            if (!vp || target.children.length === 0) {
+              if (vp) vp.dispose();
+              vp = new SpaceViewport(target, spaceVal);
+              this.lineViewports.set(lineIdx, vp);
+              this.pendingSpaceUpdates.delete(lineIdx);
+            } else if (this.pendingSpaceUpdates.has(lineIdx) || vp.getSpace() !== spaceVal) {
+              this.pendingSpaceUpdates.delete(lineIdx);
+              vp.updateSpace(spaceVal);
+            }
+          }
+        }
+      }, {
+        root: scrollRoot,
+        rootMargin: '250px 0px 250px 0px',
+      });
+
+      spaceContainers.forEach(container => {
+        this.spaceObserver?.observe(container);
+      });
+    } else {
+      // Fallback for test/headless environments without IntersectionObserver
+      spaceContainers.forEach(container => {
+        const target = container as HTMLElement;
+        const lineIdxStr = target.getAttribute('data-line');
+        const lineIdx = parseInt(lineIdxStr ?? '-1', 10);
+        const spaceVal = this.spaceValuesByLine.get(lineIdx);
+        if (spaceVal && (spaceVal.dimension > 0 || spaceVal.entities.length > 0 || (spaceVal.nestedSpaces && spaceVal.nestedSpaces.length > 0))) {
+          let vp = this.lineViewports.get(lineIdx);
+          if (!vp || target.children.length === 0) {
+            if (vp) vp.dispose();
+            vp = new SpaceViewport(target, spaceVal);
+            this.lineViewports.set(lineIdx, vp);
+            this.pendingSpaceUpdates.delete(lineIdx);
+          } else if (this.pendingSpaceUpdates.has(lineIdx) || vp.getSpace() !== spaceVal) {
+            this.pendingSpaceUpdates.delete(lineIdx);
+            vp.updateSpace(spaceVal);
+          }
+        }
+      });
     }
   }
 
@@ -2492,8 +3053,8 @@ export class DocumentEditor {
           const rects = range.getClientRects();
           if (rects.length > 0) {
             boxes.push({
-              left: rects[0].left - surfaceRect.left + this.overlayEl.scrollLeft,
-              right: rects[0].right - surfaceRect.left + this.overlayEl.scrollLeft,
+              left: rects[0].left - surfaceRect.left,
+              right: rects[0].right - surfaceRect.left,
               char: text[i],
             });
           } else {
@@ -2506,8 +3067,8 @@ export class DocumentEditor {
         const construct = el.getAttribute('data-construct');
         const srcLen = parseInt(el.getAttribute('data-src-len') || `${el.textContent?.length || 1}`, 10);
         const elRect = el.getBoundingClientRect();
-        const elLeft = elRect.left - surfaceRect.left + this.overlayEl.scrollLeft;
-        const elRight = elRect.right - surfaceRect.left + this.overlayEl.scrollLeft;
+        const elLeft = elRect.left - surfaceRect.left;
+        const elRight = elRect.right - surfaceRect.left;
 
         if (construct === 'sup' || construct === 'sub') {
           const opSpan = el.querySelector('.typeset-op') as HTMLElement;
@@ -2516,12 +3077,12 @@ export class DocumentEditor {
           const innerText = innerTextNode?.textContent || '';
 
           const opRect = opSpan ? opSpan.getBoundingClientRect() : elRect;
-          const opLeft = opRect.left - surfaceRect.left + this.overlayEl.scrollLeft;
-          const opRight = opRect.right - surfaceRect.left + this.overlayEl.scrollLeft;
+          const opLeft = opRect.left - surfaceRect.left;
+          const opRight = opRect.right - surfaceRect.left;
 
           const innerRect = innerSpan ? innerSpan.getBoundingClientRect() : elRect;
-          const innerLeft = innerRect.left - surfaceRect.left + this.overlayEl.scrollLeft;
-          const innerRight = innerRect.right - surfaceRect.left + this.overlayEl.scrollLeft;
+          const innerLeft = innerRect.left - surfaceRect.left;
+          const innerRight = innerRect.right - surfaceRect.left;
 
           // 1. Operator character (^ or _) has non-zero width from opLeft to opRight / innerLeft
           boxes.push({
@@ -2539,8 +3100,8 @@ export class DocumentEditor {
               const rects = range.getClientRects();
               if (rects.length > 0) {
                 boxes.push({
-                  left: rects[0].left - surfaceRect.left + this.overlayEl.scrollLeft,
-                  right: rects[0].right - surfaceRect.left + this.overlayEl.scrollLeft,
+                  left: rects[0].left - surfaceRect.left,
+                  right: rects[0].right - surfaceRect.left,
                   char: innerText[i],
                 });
               } else {
@@ -2562,8 +3123,8 @@ export class DocumentEditor {
               const rects = range.getClientRects();
               if (rects.length > 0) {
                 boxes.push({
-                  left: rects[0].left - surfaceRect.left + this.overlayEl.scrollLeft,
-                  right: rects[0].right - surfaceRect.left + this.overlayEl.scrollLeft,
+                  left: rects[0].left - surfaceRect.left,
+                  right: rects[0].right - surfaceRect.left,
                   char: text[i],
                 });
               } else {
@@ -2619,17 +3180,17 @@ export class DocumentEditor {
     const charBoxes = this.getLineCharacterBoxes(lineEl, lineStr);
 
     let caretX = 0;
-    let caretY = lineRect.top - surfaceRect.top + this.overlayEl.scrollTop;
+    let caretY = lineRect.top - surfaceRect.top;
     let caretH = 20;
 
     if (colIdx === 0) {
-      caretX = charBoxes.length > 0 ? charBoxes[0].left : (lineRect.left - surfaceRect.left + this.overlayEl.scrollLeft);
+      caretX = charBoxes.length > 0 ? charBoxes[0].left : (lineRect.left - surfaceRect.left);
     } else if (colIdx < charBoxes.length) {
       caretX = charBoxes[colIdx].left;
     } else if (charBoxes.length > 0) {
       caretX = charBoxes[charBoxes.length - 1].right;
     } else {
-      caretX = lineRect.left - surfaceRect.left + this.overlayEl.scrollLeft + colIdx * 8.429;
+      caretX = lineRect.left - surfaceRect.left + colIdx * 8.429;
     }
 
     this.caretEl.style.display = 'block';
@@ -2644,10 +3205,24 @@ export class DocumentEditor {
   }
 
   private updateTypesetOverlay() {
-    if (!this.overlayEl) return;
+    if (!this.overlayEl || !this.textarea) return;
     const lines = this.textarea.value.split('\n');
+    if (this.overlayEl.children.length === lines.length && this.prevOverlayLines.length === lines.length) {
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i] !== this.prevOverlayLines[i]) {
+          const child = this.overlayEl.children[i] as HTMLElement;
+          if (child) {
+            child.innerHTML = this.typesetLine(lines[i]);
+          }
+          this.prevOverlayLines[i] = lines[i];
+        }
+      }
+      return;
+    }
+
     const html = lines.map(line => `<div class="doc-typeset-line">${this.typesetLine(line)}</div>`).join('');
     this.overlayEl.innerHTML = html;
+    this.prevOverlayLines = [...lines];
   }
 
   private typesetLine(rawLine: string): string {
@@ -2736,6 +3311,17 @@ export class DocumentEditor {
 
     try {
       this.paneContainer = new PaneContainer(this.workspaceEl, {
+        storageKey: this.activeWorkspace ? ('axine_layout_' + this.activeWorkspace.id) : 'axine_workspace_layout_v1',
+        defaultDocName: this.currentFileName || 'untitled.ax',
+        onActivePaneChange: (paneId: string) => {
+          if (!this.paneContainer) return;
+          const leaf = findLeaf(this.paneContainer.getLayout().root, paneId);
+          if (!leaf) return;
+          const activeTab = leaf.tabs.find(t => t.id === leaf.activeTabId);
+          if (activeTab && activeTab.type === 'document' && activeTab.documentId) {
+            this.switchToSession(activeTab.documentId);
+          }
+        },
         renderDocumentView: (_leafId, tab, container) => {
           this.renderEditorOnly(container, tab.documentId);
         },
@@ -2760,6 +3346,42 @@ export class DocumentEditor {
         },
         getFramesData: () => {
           return this.frames;
+        },
+        getWorkspace: () => {
+          return this.activeWorkspace;
+        },
+        onOpenFile: (filePath: string) => {
+          this.openWorkspaceFile(filePath);
+        },
+        onNewFileInWorkspace: async (filePath: string) => {
+          if (this.activeWorkspace) {
+            await WorkspaceManager.createFile(this.activeWorkspace, filePath, '');
+            this.openWorkspaceFile(filePath);
+          }
+        },
+        onNewFolderInWorkspace: async (folderPath: string) => {
+          if (this.activeWorkspace) {
+            await WorkspaceManager.createFolder(this.activeWorkspace, folderPath);
+          }
+        },
+        onRenameFileInWorkspace: async (oldPath: string, newPath: string) => {
+          if (this.activeWorkspace) {
+            await WorkspaceManager.renameItem(this.activeWorkspace, oldPath, newPath);
+            for (const s of this.sessions.values()) {
+              if (s.name === oldPath) {
+                s.name = newPath;
+              }
+            }
+            if (this.currentFileName === oldPath) {
+              this.currentFileName = newPath;
+            }
+            this.updateSessionTabs();
+          }
+        },
+        onDeleteFileInWorkspace: async (filePath: string) => {
+          if (this.activeWorkspace) {
+            await WorkspaceManager.deleteItem(this.activeWorkspace, filePath);
+          }
         },
         onNewDocumentTab: () => {
           const sess = this.createSession('untitled.ax', '');
@@ -2787,7 +3409,7 @@ export class DocumentEditor {
 
       // Synchronize document tab titles with loaded document name
       const layout = this.paneContainer.getLayout();
-      updateDocumentTabTitles(layout.root, this.activeSessionId, this.currentFileName);
+      updateDocumentTabTitles(layout.root, this.activeSessionId, this.currentFileName, new Set(this.sessions.keys()));
       this.paneContainer.render();
       console.log('initPaneContainer: SUCCESS created paneContainer');
     } catch (err) {
@@ -2859,10 +3481,11 @@ export class DocumentEditor {
   }
 
   public renderEditorOnly(container: HTMLElement, docId?: string): void {
-    if (docId && docId !== this.activeSessionId) {
-      this.switchToSession(docId);
-    }
     container.innerHTML = '';
+
+    const session = (docId && this.sessions.get(docId)) || this.sessions.get(this.activeSessionId);
+    const targetState = session?.state || this.state;
+    const isCurrentActive = !docId || docId === this.activeSessionId || (!!docId && !this.sessions.has(docId));
 
     const paneLeft = document.createElement('div');
     paneLeft.className = 'doc-pane-left';
@@ -2874,7 +3497,9 @@ export class DocumentEditor {
     const lineNumbers = document.createElement('div');
     lineNumbers.id = 'doc-line-numbers';
     lineNumbers.className = 'doc-line-numbers';
-    this.lineNumbersEl = lineNumbers;
+    if (isCurrentActive) {
+      this.lineNumbersEl = lineNumbers;
+    }
 
     const editorSurface = document.createElement('div');
     editorSurface.className = 'doc-editor-surface';
@@ -2882,12 +3507,16 @@ export class DocumentEditor {
     const overlay = document.createElement('div');
     overlay.id = 'doc-typeset-overlay';
     overlay.className = 'doc-typeset-overlay';
-    this.overlayEl = overlay;
+    if (isCurrentActive) {
+      this.overlayEl = overlay;
+    }
 
     const caret = document.createElement('div');
     caret.id = 'doc-caret';
     caret.className = 'doc-caret';
-    this.caretEl = caret;
+    if (isCurrentActive) {
+      this.caretEl = caret;
+    }
 
     const textarea = document.createElement('textarea');
     textarea.id = 'doc-textarea';
@@ -2896,8 +3525,54 @@ export class DocumentEditor {
     textarea.spellcheck = false;
     textarea.autocomplete = 'off';
     textarea.autocapitalize = 'off';
-    textarea.value = this.state.getText();
-    this.textarea = textarea;
+    textarea.value = targetState.getText();
+    if (isCurrentActive) {
+      this.textarea = textarea;
+    }
+
+    textarea.addEventListener('focus', () => {
+      this.textarea = textarea;
+      this.overlayEl = overlay;
+      this.caretEl = caret;
+      this.lineNumbersEl = lineNumbers;
+      if (docId && docId !== this.activeSessionId && this.sessions.has(docId)) {
+        this.switchToSession(docId);
+      }
+      this.bindEditorSurfaceEvents();
+    });
+
+    textarea.addEventListener('input', () => {
+      targetState.setText(textarea.value);
+      const lines = textarea.value.split('\n');
+      overlay.innerHTML = lines.map(line => `<div class="doc-typeset-line">${this.typesetLine(line)}</div>`).join('');
+    });
+
+    textarea.addEventListener('scroll', () => {
+      const scrollTop = textarea.scrollTop;
+      const scrollLeft = textarea.scrollLeft;
+      if (lineNumbers) lineNumbers.scrollTop = scrollTop;
+      if (overlay) {
+        overlay.scrollTop = scrollTop;
+        overlay.scrollLeft = scrollLeft;
+      }
+      if (isCurrentActive && this.gutterEl) {
+        const taMaxScroll = textarea.scrollHeight - textarea.clientHeight;
+        const gutterMaxScroll = this.gutterEl.scrollHeight - this.gutterEl.clientHeight;
+        if (taMaxScroll > 0 && gutterMaxScroll > 0) {
+          const ratio = scrollTop / taMaxScroll;
+          this.gutterEl.scrollTop = ratio * gutterMaxScroll;
+        } else {
+          this.gutterEl.scrollTop = scrollTop;
+        }
+        this.renderGutterSlice();
+      }
+      if (session) {
+        session.scrollPosition = { scrollTop, scrollLeft };
+      }
+      if (isCurrentActive) {
+        this.updateCaret();
+      }
+    });
 
     editorSurface.appendChild(overlay);
     editorSurface.appendChild(caret);
@@ -2909,7 +3584,6 @@ export class DocumentEditor {
 
     container.appendChild(paneLeft);
 
-    const session = this.sessions.get(this.activeSessionId);
     if (session && session.scrollPosition) {
       textarea.scrollTop = session.scrollPosition.scrollTop;
       textarea.scrollLeft = session.scrollPosition.scrollLeft;
@@ -2918,13 +3592,39 @@ export class DocumentEditor {
       lineNumbers.scrollTop = session.scrollPosition.scrollTop;
     }
 
-    this.updateTypesetOverlay();
-    this.updateCaret();
-    this.bindEditorSurfaceEvents();
-    this.renderLineNumbers(this.state.getRecords());
+    const textLines = targetState.getText().split('\n');
+    overlay.innerHTML = textLines.map(line => `<div class="doc-typeset-line">${this.typesetLine(line)}</div>`).join('');
+    if (isCurrentActive) {
+      this.prevOverlayLines = [...textLines];
+    }
+
+    if (isCurrentActive) {
+      this.updateCaret();
+      this.bindEditorSurfaceEvents();
+      this.renderLineNumbers(targetState.getRecords());
+    } else {
+      const recs = targetState.getRecords();
+      lineNumbers.innerHTML = recs.map((_r, i) => `<div class="doc-line-num">${i + 1}</div>`).join('');
+    }
   }
 
   public jumpToLine(lineIdx: number): void {
+    if (!this.textarea || !document.body.contains(this.textarea)) {
+      const liveTa = this.container.querySelector('#doc-textarea') as HTMLTextAreaElement;
+      if (liveTa) {
+        this.textarea = liveTa;
+        this.overlayEl = this.container.querySelector('#doc-typeset-overlay') as HTMLElement;
+        this.caretEl = this.container.querySelector('#doc-caret') as HTMLElement;
+        this.lineNumbersEl = this.container.querySelector('#doc-line-numbers') as HTMLElement;
+        this.bindEditorSurfaceEvents();
+      }
+    }
+    if (!this.gutterEl || !document.body.contains(this.gutterEl)) {
+      const liveGutter = this.container.querySelector('#doc-gutter') as HTMLElement;
+      if (liveGutter) {
+        this.gutterEl = liveGutter;
+      }
+    }
     if (!this.textarea) return;
     const lines = this.state.getText().split('\n');
     let charOffset = 0;
@@ -2934,12 +3634,25 @@ export class DocumentEditor {
     const targetLine = lines[lineIdx] || '';
     this.textarea.focus();
     this.textarea.setSelectionRange(charOffset, charOffset + targetLine.length);
-    const lineHeight = 28;
-    this.textarea.scrollTop = Math.max(0, lineIdx * lineHeight - 50);
+    const lineHeight = 24.5;
+    const padTop = 10.5;
+    this.textarea.scrollTop = Math.max(0, padTop + lineIdx * lineHeight - 100);
     if (this.overlayEl) this.overlayEl.scrollTop = this.textarea.scrollTop;
     if (this.lineNumbersEl) this.lineNumbersEl.scrollTop = this.textarea.scrollTop;
-    if (this.gutterEl) this.gutterEl.scrollTop = this.textarea.scrollTop;
+    if (this.gutterEl) {
+      const records = this.cachedGutterRecords.length > 0 ? this.cachedGutterRecords : this.state.getRecords();
+      let gutterY = 0;
+      if (records.length > 0) {
+        const heights = this.computeGutterRowHeights(records);
+        for (let i = 0; i < lineIdx && i < heights.length; i++) {
+          gutterY += heights[i];
+        }
+      }
+      this.gutterEl.scrollTop = Math.max(0, gutterY > 0 ? gutterY - 100 : this.textarea.scrollTop);
+      this.renderGutterSlice();
+    }
     this.updateCaret();
+    this.textarea.dispatchEvent(new Event('scroll'));
   }
 
   public renderResultsOnly(container: HTMLElement, _docId?: string): void {
@@ -2956,6 +3669,7 @@ export class DocumentEditor {
     gutter.id = 'doc-gutter';
     gutter.className = 'doc-gutter';
     this.gutterEl = gutter;
+    this.gutterEventsBound = false;
 
     resultsPane.appendChild(pinnedVisuals);
     resultsPane.appendChild(gutter);
@@ -2983,7 +3697,8 @@ export class DocumentEditor {
     this.animationPlayers.clear();
     this.pinnedAnimationPlayers.forEach(p => p.dispose());
     this.pinnedAnimationPlayers.clear();
-    this.state.dispose();
+    this.welcomeScreen?.dispose();
+    this.state?.dispose();
   }
 }
 

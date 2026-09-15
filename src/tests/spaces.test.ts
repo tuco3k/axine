@@ -247,10 +247,32 @@ describe('Rewrite Phase 3: Spaces', () => {
       getContext() {
         return {
           save() {}, restore() {}, clearRect() {}, fillRect() {}, strokeRect() {},
-          beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, stroke() {}, fill() {},
+          beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, arc() {}, stroke() {}, fill() {},
           setLineDash() {}, fillText() {}, strokeText() {}, measureText() { return { width: 10 }; },
           scale() {}, translate() {}, rotate() {}, resetTransform() {},
         };
+      }
+
+      focus() {
+        const list = this.listeners.get('focus') || [];
+        for (const fn of list) fn({ type: 'focus', target: this });
+      }
+
+      blur() {
+        const list = this.listeners.get('blur') || [];
+        for (const fn of list) fn({ type: 'blur', target: this });
+      }
+
+      contains(node: any): boolean {
+        if (node === this) return true;
+        return this.children.some(c => c.contains(node));
+      }
+
+      dispatchEvent(event: { type: string; [key: string]: any }) {
+        const list = this.listeners.get(event.type) || [];
+        for (const fn of list) {
+          fn({ target: this, ...event });
+        }
       }
     }
 
@@ -337,6 +359,134 @@ describe('Rewrite Phase 3: Spaces', () => {
           (globalThis as any).document = origDoc;
         } else {
           delete (globalThis as any).document;
+        }
+      }
+    });
+
+    it('enforces capture and selection rules: bare clicks do not select, mouse moves camera, shift+click selects, escape releases', () => {
+      const origDoc = (globalThis as any).document;
+      const origWin = (globalThis as any).window;
+
+      const windowListeners = new Map<string, Function[]>();
+      const mockWindow = {
+        addEventListener: (event: string, fn: Function) => {
+          if (!windowListeners.has(event)) windowListeners.set(event, []);
+          windowListeners.get(event)!.push(fn);
+        },
+        removeEventListener: (event: string, fn: Function) => {
+          if (!windowListeners.has(event)) return;
+          windowListeners.set(event, windowListeners.get(event)!.filter(h => h !== fn));
+        },
+        dispatchEvent: (event: { type: string; [key: string]: any }) => {
+          const list = windowListeners.get(event.type) || [];
+          for (const fn of list) fn(event);
+        },
+      };
+
+      (globalThis as any).document = {
+        createElement: (tag: string) => new MockElement(tag),
+      };
+      (globalThis as any).window = mockWindow;
+
+      try {
+        const container = (globalThis as any).document.createElement('div');
+        const { value } = evaluate('y = x^2', env);
+        const space = value as SpaceValue;
+
+        const viewport = new SpaceViewport(container as any, space, {
+          width: 500,
+          height: 300,
+        });
+        viewport.render();
+
+        const canvas = viewport.getCanvas() as any;
+
+        // 1. Initially uncaptured
+        expect(viewport.isCaptured).toBe(false);
+        expect(viewport.getReticlePos()).toBeNull();
+        expect(viewport.getInspectionResult()).toBeNull();
+
+        // 2. First click on uncaptured space: captures, nothing selected
+        canvas.dispatchEvent({ type: 'mousedown', clientX: 250, clientY: 273, button: 0 });
+        mockWindow.dispatchEvent({ type: 'mouseup', clientX: 250, clientY: 273, button: 0, target: canvas });
+
+        expect(viewport.isCaptured).toBe(true);
+        expect(viewport.getReticlePos()).toBeNull();
+        expect(viewport.getInspectionResult()).toBeNull();
+
+        // 3. Bare click while already captured: DOES NOTHING (never selects)
+        canvas.dispatchEvent({ type: 'mousedown', clientX: 250, clientY: 273, button: 0 });
+        mockWindow.dispatchEvent({ type: 'mouseup', clientX: 250, clientY: 273, button: 0, target: canvas });
+
+        expect(viewport.isCaptured).toBe(true);
+        expect(viewport.getReticlePos()).toBeNull();
+        expect(viewport.getInspectionResult()).toBeNull();
+
+        // 4. Mouse movement while captured: pans camera without holding buttons
+        const initialBounds = { ...viewport.getCameraState().bounds2D };
+        mockWindow.dispatchEvent({ type: 'mousemove', movementX: 50, movementY: 0, clientX: 300, clientY: 273 });
+        const pannedBounds = viewport.getCameraState().bounds2D;
+        expect(pannedBounds.minX).not.toBe(initialBounds.minX);
+        expect(viewport.getReticlePos()).toBeNull(); // Still nothing selected
+
+        // 5. Shift key pressed while captured: freezes camera and enables free cursor
+        container.dispatchEvent({
+          type: 'keydown',
+          key: 'Shift',
+          preventDefault: () => {},
+          stopPropagation: () => {},
+        });
+        expect(viewport.isShiftHeld).toBe(true);
+        expect(viewport.isCameraFrozen).toBe(true);
+
+        // 6. Click while Shift is held: SELECTS POINT on geometry (geometry vertex is now at clientX: 300 after 50px pan)
+        canvas.dispatchEvent({ type: 'mousedown', clientX: 300, clientY: 273, button: 0, shiftKey: true });
+        mockWindow.dispatchEvent({ type: 'mouseup', clientX: 300, clientY: 273, button: 0, target: canvas, shiftKey: true });
+
+        expect(viewport.isCaptured).toBe(true);
+        expect(viewport.getReticlePos()).not.toBeNull();
+        expect(viewport.getInspectionResult()).not.toBeNull();
+
+        // 7. Releasing Shift: resumes flight, re-locks, and discards first frame delta
+        container.dispatchEvent({
+          type: 'keyup',
+          key: 'Shift',
+          preventDefault: () => {},
+          stopPropagation: () => {},
+        });
+        expect(viewport.isShiftHeld).toBe(false);
+        expect(viewport.isCameraFrozen).toBe(false);
+
+        // First mousemove after Shift release is discarded (no camera jump)
+        const preMoveBounds = { ...viewport.getCameraState().bounds2D };
+        mockWindow.dispatchEvent({ type: 'mousemove', movementX: 500, movementY: 500, clientX: 750, clientY: 773 });
+        const postDiscardBounds = viewport.getCameraState().bounds2D;
+        expect(postDiscardBounds.minX).toBe(preMoveBounds.minX);
+        expect(postDiscardBounds.minY).toBe(preMoveBounds.minY);
+
+        // 8. Escape releases capture and clears selection
+        container.dispatchEvent({
+          type: 'keydown',
+          key: 'Escape',
+          preventDefault: () => {},
+          stopPropagation: () => {},
+        });
+
+        expect(viewport.isCaptured).toBe(false);
+        expect(viewport.getReticlePos()).toBeNull();
+        expect(viewport.getInspectionResult()).toBeNull();
+
+        viewport.dispose();
+      } finally {
+        if (origDoc) {
+          (globalThis as any).document = origDoc;
+        } else {
+          delete (globalThis as any).document;
+        }
+        if (origWin) {
+          (globalThis as any).window = origWin;
+        } else {
+          delete (globalThis as any).window;
         }
       }
     });

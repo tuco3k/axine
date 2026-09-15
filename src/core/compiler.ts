@@ -1,7 +1,11 @@
 import { ASTNode, Environment, FunctionValue, LambdaValue, NumberLiteralNode } from './types';
 import { OPERATIONS, REAL_HELPERS_CODE } from './operations';
 
-export type NumericCompiledFn = (...args: number[]) => number;
+export type NumericCompiledFn = ((...args: number[]) => number) & {
+  batch1D?: (out: Float64Array, xMin: number, dx: number, nx: number) => void;
+  batch2D?: (out: Float64Array, xMin: number, dx: number, nx: number, yMin: number, dy: number, ny: number) => void;
+  batch3D?: (out: Float64Array, xMin: number, dx: number, nx: number, yMin: number, dy: number, ny: number, zMin: number, dz: number, nz: number) => void;
+};
 
 export interface CompileSuccess {
   success: true;
@@ -788,6 +792,36 @@ function compileFunctionCall(callee: string, args: ASTNode[], ctx: CompilerConte
   };
 }
 
+export function buildCompiledFn(vars: string[], sanitizedParams: string[], exprCode: string): NumericCompiledFn {
+  const fullCode = `${REAL_HELPERS_CODE}\nreturn (${exprCode});`;
+  const fn = new Function(...sanitizedParams, fullCode) as NumericCompiledFn;
+
+  if (vars.length === 1) {
+    const p0 = sanitizedParams[0];
+    const b1Code = `${REAL_HELPERS_CODE}\nreturn function(out, xMin, dx, nx) {\n  for (let i = 0; i < nx; i++) {\n    const ${p0} = xMin + i * dx;\n    out[i] = (${exprCode});\n  }\n};`;
+    try {
+      fn.batch1D = new Function(b1Code)();
+    } catch (_) {}
+  } else if (vars.length === 2) {
+    const p0 = sanitizedParams[0];
+    const p1 = sanitizedParams[1];
+    const b2Code = `${REAL_HELPERS_CODE}\nreturn function(out, xMin, dx, nx, yMin, dy, ny) {\n  let idx = 0;\n  for (let j = 0; j < ny; j++) {\n    const ${p1} = yMin + j * dy;\n    for (let i = 0; i < nx; i++) {\n      const ${p0} = xMin + i * dx;\n      out[idx++] = (${exprCode});\n    }\n  }\n};`;
+    try {
+      fn.batch2D = new Function(b2Code)();
+    } catch (_) {}
+  } else if (vars.length === 3) {
+    const p0 = sanitizedParams[0];
+    const p1 = sanitizedParams[1];
+    const p2 = sanitizedParams[2];
+    const b3Code = `${REAL_HELPERS_CODE}\nreturn function(out, xMin, dx, nx, yMin, dy, ny, zMin, dz, nz) {\n  let idx = 0;\n  for (let k = 0; k < nz; k++) {\n    const ${p2} = zMin + k * dz;\n    for (let j = 0; j < ny; j++) {\n      const ${p1} = yMin + j * dy;\n      for (let i = 0; i < nx; i++) {\n        const ${p0} = xMin + i * dx;\n        out[idx++] = (${exprCode});\n      }\n    }\n  }\n};`;
+    try {
+      fn.batch3D = new Function(b3Code)();
+    } catch (_) {}
+  }
+
+  return fn;
+}
+
 /**
  * Compiles an AST node into a high-throughput numeric JavaScript closure:
  *   (x1, ..., xn) => number
@@ -841,9 +875,7 @@ export function compileRelation(
   } else {
     try {
       const code = `return (${genResult.code});`;
-      const fullCode = `${REAL_HELPERS_CODE}\n${code}`;
-      // Create new Function with positional parameter arguments
-      const fn = new Function(...sanitizedParams, fullCode) as NumericCompiledFn;
+      const fn = buildCompiledFn(vars, sanitizedParams, genResult.code);
 
       result = {
         success: true,
@@ -880,6 +912,28 @@ export function rehydrateCompiledFunction(vars: string[], code: string): Numeric
     const paramId = sanitizeIdentifier(varName, i);
     sanitizedParams.push(paramId);
   }
-  const fullCode = code.includes(REAL_HELPERS_CODE) ? code : `${REAL_HELPERS_CODE}\n${code}`;
-  return new Function(...sanitizedParams, fullCode) as NumericCompiledFn;
+  let exprCode = code;
+  if (exprCode.includes(REAL_HELPERS_CODE)) {
+    exprCode = exprCode.replace(REAL_HELPERS_CODE, '');
+  }
+  exprCode = exprCode.trim();
+  if (exprCode.startsWith('return (')) {
+    exprCode = exprCode.substring(8);
+    if (exprCode.endsWith(');')) {
+      exprCode = exprCode.substring(0, exprCode.length - 2);
+    } else if (exprCode.endsWith(')')) {
+      exprCode = exprCode.substring(0, exprCode.length - 1);
+    }
+  } else if (exprCode.startsWith('return ')) {
+    exprCode = exprCode.substring(7);
+    if (exprCode.endsWith(';')) {
+      exprCode = exprCode.substring(0, exprCode.length - 1);
+    }
+  }
+  try {
+    return buildCompiledFn(vars, sanitizedParams, exprCode);
+  } catch (_) {
+    const fullCode = code.includes(REAL_HELPERS_CODE) ? code : `${REAL_HELPERS_CODE}\n${code}`;
+    return new Function(...sanitizedParams, fullCode) as NumericCompiledFn;
+  }
 }

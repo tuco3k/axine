@@ -127,10 +127,10 @@ export class Tokenizer {
         continue;
       }
 
-      if (char === ':' && this.isIdentStart(this.peek(1))) {
+      if (char === ':' && (this.isIdentStart(this.peek(1)) || this.peek(1) === '_')) {
         this.advance(); // consume ':'
         let name = '';
-        while (this.pos < this.source.length && this.isIdentPart(this.source[this.pos])) {
+        while (this.pos < this.source.length && this.isColonIdentPart(this.source[this.pos])) {
           name += this.source[this.pos];
           this.advance();
         }
@@ -939,6 +939,40 @@ export class Tokenizer {
           this.advance();
           tokens.push(this.makeToken('DOT', '.', startPos, startLine, startCol, leadingWhitespace));
           break;
+        case '_': {
+          const lastToken = tokens.length > 0 ? tokens[tokens.length - 1] : undefined;
+          const isAllowedSpecial = !!lastToken && (
+            lastToken.type === 'DOUBLE_INTEGRAL' ||
+            lastToken.type === 'TRIPLE_INTEGRAL' ||
+            lastToken.type === 'CONTOUR_INTEGRAL' ||
+            lastToken.type === 'INTEGRAL' ||
+            lastToken.type === 'SIGMA' ||
+            lastToken.type === 'PI_PROD' ||
+            lastToken.type === 'CASE'
+          );
+
+          if (isAllowedSpecial) {
+            this.advance();
+            tokens.push(this.makeToken('IDENTIFIER', '_', startPos, startLine, startCol, leadingWhitespace));
+            break;
+          }
+
+          const span: Span = {
+            start: startPos,
+            end: startPos + 1,
+            line: startLine,
+            col: startCol,
+          };
+          throw createError(
+            `Unexpected character '_' in identifier position`,
+            span,
+            {
+              expected: "colon prefix for identifier, e.g. ':name_with_underscore'",
+              suggestion: "Bare '_' is not a valid identifier. Underscores are only permitted within colon-prefixed identifiers (e.g. ':identifier_name').",
+              source: this.source,
+            }
+          );
+        }
         default:
           if (this.isIdentStart(char)) {
             const wordTokens = this.readWordOrSplit(startPos, startLine, startCol, leadingWhitespace);
@@ -1061,6 +1095,24 @@ export class Tokenizer {
       this.advance();
     }
 
+    if (this.pos < this.source.length && this.source[this.pos] === '_') {
+      const span: Span = {
+        start: startPos,
+        end: this.pos + 1,
+        line: startLine,
+        col: startCol,
+      };
+      throw createError(
+        `Unexpected character '_' in identifier position`,
+        span,
+        {
+          expected: `colon prefix for multi-letter identifier, e.g. ':${name}_...'`,
+          suggestion: `Bare '_' is not a valid variable. Multi-letter identifiers with underscores must start with ':' (e.g. ':${name}_...')`,
+          source: this.source,
+        }
+      );
+    }
+
     const result: Token[] = [];
         let curPos = startPos;
         let curCol = startCol;
@@ -1152,7 +1204,7 @@ export class Tokenizer {
 
   private isIdentStart(char: string): boolean {
     return (
-      /^[a-zA-Z_]$/.test(char) ||
+      /^[a-zA-Z]$/.test(char) ||
       (char >= '\u0370' && char <= '\u03ff') || // Greek letters
       char === '\u211d' || // R
       char === '\u2102' || // C
@@ -1165,7 +1217,7 @@ export class Tokenizer {
 
   private isIdentPart(char: string): boolean {
     return (
-      /^[a-zA-Z0-9_]$/.test(char) ||
+      /^[a-zA-Z0-9]$/.test(char) ||
       (char >= '\u0370' && char <= '\u03ff') || // Greek letters
       char === '\u0304' || // combining macron / overline
       char === '\u0302' || // combining circumflex / hat
@@ -1179,6 +1231,10 @@ export class Tokenizer {
       char === "'" ||
       char === '\u2032'
     );
+  }
+
+  private isColonIdentPart(char: string): boolean {
+    return this.isIdentPart(char) || char === '_';
   }
 
   private isCombiningDiacritic(char: string): boolean {

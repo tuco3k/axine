@@ -11,7 +11,7 @@ The Axine visual identity is derived directly from the settled brand mark: a dee
 4. **Typography establishes mathematical credibility**: Mathematical notation is rendered in a dedicated serif face with proper italicization of variables, lining figures for numbers, upright function names, and TeXbook spacing around operators and relation anchors.
 
 ### 1.2 Brand Assets
-- **Header Mark & Favicon**: Currently deployed as transparent, anti-aliased high-resolution raster assets (`public/logo-dark.png`, `public/logo-light.png`, `public/favicon.ico`, `public/favicon.png`).
+- **Header Mark & Favicon**: Currently deployed as transparent, anti-aliased high-resolution raster assets (`public/logo.png`, `public/favicon.ico`, `public/favicon.png`).
 - **Future Vector Conversion Note**: A flat, precision SVG vector trace of the mark is planned and wanted eventually to replace raster assets.
 
 ### 1.3 The Single Focused Accent: Amber

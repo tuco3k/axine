@@ -100,10 +100,39 @@ export class DocumentState {
     return () => this.listeners.delete(listener);
   }
 
+  private notifyRafId: any = null;
+
   private notify() {
     for (const listener of this.listeners) {
       listener(this.records, this.isEvaluating || this.isInvokedRunning);
     }
+  }
+
+  private scheduleBatchedNotify() {
+    if (this.notifyRafId !== null) return;
+    if (typeof requestAnimationFrame !== 'undefined') {
+      this.notifyRafId = requestAnimationFrame(() => {
+        this.notifyRafId = null;
+        this.notify();
+      });
+    } else {
+      this.notifyRafId = setTimeout(() => {
+        this.notifyRafId = null;
+        this.notify();
+      }, 16);
+    }
+  }
+
+  private flushNotify() {
+    if (this.notifyRafId !== null) {
+      if (typeof cancelAnimationFrame !== 'undefined' && typeof requestAnimationFrame !== 'undefined') {
+        cancelAnimationFrame(this.notifyRafId);
+      } else {
+        clearTimeout(this.notifyRafId);
+      }
+      this.notifyRafId = null;
+    }
+    this.notify();
   }
 
   public setText(newText: string) {
@@ -190,7 +219,7 @@ export class DocumentState {
       if (this.currentAmbientEvalId === evalId) {
         this.isEvaluating = false;
         this.lastEvaluationDuration = Date.now() - this.evaluationStartTime;
-        this.notify();
+        this.flushNotify();
       }
     }
   }
@@ -228,7 +257,7 @@ export class DocumentState {
       if (this.currentInvokedEvalId === evalId) {
         this.isInvokedRunning = false;
         this.lastEvaluationDuration = Date.now() - this.evaluationStartTime;
-        this.notify();
+        this.flushNotify();
       }
     }
   }
@@ -247,7 +276,7 @@ export class DocumentState {
     this.isInvokedRunning = false;
     this.initWorkers();
     const durationMs = performance.now() - t0;
-    this.notify();
+    this.flushNotify();
     return { durationMs };
   }
 
@@ -261,7 +290,7 @@ export class DocumentState {
     } else if (msg.type === 'COMPLETE') {
       this.isEvaluating = false;
       this.lastEvaluationDuration = msg.totalDurationMs;
-      this.notify();
+      this.flushNotify();
     }
   }
 
@@ -275,7 +304,7 @@ export class DocumentState {
     } else if (msg.type === 'COMPLETE') {
       this.isInvokedRunning = false;
       this.lastEvaluationDuration = msg.totalDurationMs;
-      this.notify();
+      this.flushNotify();
     }
   }
 
@@ -292,12 +321,20 @@ export class DocumentState {
         durationMs: msg.durationMs,
         isEvaluating: false,
       };
-      this.notify();
+      this.scheduleBatchedNotify();
     }
   }
 
   public dispose() {
     this.stop();
+    if (this.notifyRafId !== null) {
+      if (typeof cancelAnimationFrame !== 'undefined' && typeof requestAnimationFrame !== 'undefined') {
+        cancelAnimationFrame(this.notifyRafId);
+      } else {
+        clearTimeout(this.notifyRafId);
+      }
+      this.notifyRafId = null;
+    }
     this.listeners.clear();
   }
 }

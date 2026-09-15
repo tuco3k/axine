@@ -178,6 +178,7 @@ export class BudgetTracker {
 }
 
 export interface ModuleResolutionFailure {
+  workspaceSearched: string[];
   diskSearched: string[];
   stdlibSearched: string[];
   searchedPaths: string[];
@@ -185,18 +186,73 @@ export interface ModuleResolutionFailure {
 
 export function resolveModuleCode(
   importPath: string,
-  baseDir: string = Evaluator.currentBaseDir
+  baseDir: string = Evaluator.currentBaseDir,
+  workspaceRoot: string = Evaluator.currentWorkspaceRoot
 ): { code: string; canonicalPath: string } | ModuleResolutionFailure {
   const normPath = importPath.replace(/\\/g, '/');
   const cleanPath = normPath.replace(/^(\.\/|\/)/, '');
   const fileName = cleanPath.replace(/^.*[\\/]/, '');
   const withAx = (p: string) => (p.endsWith('.ax') ? p : p + '.ax');
 
+  const workspaceSearched: string[] = [];
   const diskSearched: string[] = [];
   const stdlibSearched: string[] = [];
 
   // =========================================================================
-  // STEP 1: Relative to the current file's directory (disk)
+  // STEP 1: Workspace root (relative to workspace root)
+  // =========================================================================
+  if (Evaluator.workspaceFiles.size > 0 || (workspaceRoot && workspaceRoot.trim().length > 0)) {
+    const workspaceCandidates = [
+      importPath,
+      normPath,
+      cleanPath,
+      withAx(importPath),
+      withAx(normPath),
+      withAx(cleanPath),
+      ...(baseDir ? [
+        `${baseDir.replace(/^\/+|\/+$/g, '')}/${importPath}`,
+        `${baseDir.replace(/^\/+|\/+$/g, '')}/${cleanPath}`,
+        `${baseDir.replace(/^\/+|\/+$/g, '')}/${withAx(importPath)}`,
+        `${baseDir.replace(/^\/+|\/+$/g, '')}/${withAx(cleanPath)}`,
+      ] : []),
+      fileName,
+      withAx(fileName),
+    ];
+
+    for (const wc of workspaceCandidates) {
+      if (!workspaceSearched.includes(wc)) workspaceSearched.push(wc);
+      if (Evaluator.workspaceFiles.has(wc)) {
+        return { code: Evaluator.workspaceFiles.get(wc)!, canonicalPath: withAx(wc) };
+      }
+    }
+
+    // If running in Node environment with a workspaceRoot directory
+    if (workspaceRoot && typeof process !== 'undefined' && (process.versions as any)?.node) {
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const wsFsPaths = [
+          path.resolve(workspaceRoot, importPath),
+          path.resolve(workspaceRoot, withAx(importPath)),
+          path.resolve(workspaceRoot, cleanPath),
+          path.resolve(workspaceRoot, withAx(cleanPath)),
+        ];
+        for (const fp of wsFsPaths) {
+          const normFp = fp.replace(/\\/g, '/');
+          if (!workspaceSearched.includes(normFp)) {
+            workspaceSearched.push(normFp);
+          }
+          if (fs.existsSync(fp) && fs.statSync(fp).isFile()) {
+            const code = fs.readFileSync(fp, 'utf-8');
+            return { code, canonicalPath: withAx(cleanPath) };
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // =========================================================================
+  // STEP 2: Relative to the current file's directory (disk)
   // =========================================================================
   const diskCandidates = [
     importPath,
@@ -250,7 +306,7 @@ export function resolveModuleCode(
   }
 
   // =========================================================================
-  // STEP 2: The bundled virtual filesystem (stdlib)
+  // STEP 3: The bundled virtual filesystem (stdlib)
   // =========================================================================
   const stdlibCandidates = [
     withAx(fileName),
@@ -275,14 +331,16 @@ export function resolveModuleCode(
   }
 
   // =========================================================================
-  // STEP 3: Fail, listing every path searched
+  // STEP 4: Fail, listing every path searched
   // =========================================================================
   const searchedPaths = [
+    ...workspaceSearched.map(p => `[workspace] ${p}`),
     ...diskSearched.map(p => `[disk] ${p}`),
     ...stdlibSearched.map(p => `[stdlib] ${p}`),
   ];
 
   return {
+    workspaceSearched,
     diskSearched,
     stdlibSearched,
     searchedPaths,
@@ -449,10 +507,35 @@ export function substituteAliases(ast: ASTNode, aliasMap: Record<string, string>
 export class Evaluator {
   public static virtualFiles: Map<string, string> = new Map();
   public static diskFiles: Map<string, string> = new Map();
+  public static workspaceFiles: Map<string, string> = new Map();
   public static currentBaseDir: string = '';
+  public static currentWorkspaceRoot: string = '';
 
   public static setBaseDir(dir: string): void {
     Evaluator.currentBaseDir = dir;
+  }
+
+  public static setWorkspaceRoot(dir: string): void {
+    Evaluator.currentWorkspaceRoot = dir;
+  }
+
+  public static setWorkspaceFiles(files: Map<string, string> | Record<string, string>, rootDir: string = ''): void {
+    Evaluator.workspaceFiles.clear();
+    Evaluator.currentWorkspaceRoot = rootDir;
+    if (files instanceof Map) {
+      for (const [k, v] of files.entries()) {
+        Evaluator.workspaceFiles.set(k, v);
+      }
+    } else if (typeof files === 'object') {
+      for (const [k, v] of Object.entries(files)) {
+        Evaluator.workspaceFiles.set(k, v);
+      }
+    }
+  }
+
+  public static clearWorkspaceFiles(): void {
+    Evaluator.workspaceFiles.clear();
+    Evaluator.currentWorkspaceRoot = '';
   }
 
   public static setDiskFiles(files: Map<string, string> | Record<string, string>): void {
@@ -488,7 +571,9 @@ export class Evaluator {
   public static resetVirtualFiles(): void {
     Evaluator.virtualFiles.clear();
     Evaluator.diskFiles.clear();
+    Evaluator.workspaceFiles.clear();
     Evaluator.currentBaseDir = '';
+    Evaluator.currentWorkspaceRoot = '';
     Evaluator.initVirtualFiles();
   }
 
@@ -5033,14 +5118,19 @@ export class Evaluator {
         .filter(k => k.endsWith('.ax'))
         .sort();
 
+      const wsList = (resolved.workspaceSearched || []).map(p => `'${p}'`).join(', ');
       const diskList = resolved.diskSearched.map(p => `'${p}'`).join(', ');
       const stdlibList = resolved.stdlibSearched.map(p => `'${p}'`).join(', ');
 
+      const wsLine = wsList ? `\n  1. Workspace root: ${wsList}` : '';
+      const diskNum = wsList ? '2' : '1';
+      const stdlibNum = wsList ? '3' : '2';
+
       throw createError(
-        `Cannot find module '${importPath}'. Looked for: ${resolved.searchedPaths.map(p => `'${p}'`).join(', ')}\nResolution failed:\n  1. Disk (relative to file directory): ${diskList}\n  2. Stdlib (bundled virtual filesystem): ${stdlibList}`,
+        `Cannot find module '${importPath}'. Looked for: ${resolved.searchedPaths.map(p => `'${p}'`).join(', ')}\nResolution failed:${wsLine}\n  ${diskNum}. Disk (relative to file directory): ${diskList}\n  ${stdlibNum}. Stdlib (bundled virtual filesystem): ${stdlibList}`,
         node.span,
         {
-          expected: 'an existing .ax module on disk or in the bundled stdlib',
+          expected: 'an existing .ax module in the workspace, on disk, or in the bundled stdlib',
           suggestion: `Available stdlib modules: ${availableStdlib.join(', ') || '(none)'}`,
           source: this.source,
         }
@@ -5093,12 +5183,22 @@ export class Evaluator {
       this.evalNode(stmt, modEnv);
     };
 
-    if (parsedAST.type === 'Block') {
-      for (const stmt of parsedAST.statements) {
-        evalModStmt(stmt);
+    const prevBaseDir = Evaluator.currentBaseDir;
+    const modDir = canonicalPath.includes('/') ? canonicalPath.substring(0, canonicalPath.lastIndexOf('/')) : '';
+    if (modDir) {
+      Evaluator.currentBaseDir = modDir;
+    }
+
+    try {
+      if (parsedAST.type === 'Block') {
+        for (const stmt of parsedAST.statements) {
+          evalModStmt(stmt);
+        }
+      } else {
+        evalModStmt(parsedAST);
       }
-    } else {
-      evalModStmt(parsedAST);
+    } finally {
+      Evaluator.currentBaseDir = prevBaseDir;
     }
 
     // Collect exported symbols

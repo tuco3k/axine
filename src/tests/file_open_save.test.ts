@@ -171,6 +171,10 @@ class MockElement {
     return true;
   }
 
+  click() {
+    this.dispatchEvent({ type: 'click' });
+  }
+
   querySelector(selector: string): MockElement | null {
     const all = this.querySelectorAll(selector);
     return all.length > 0 ? all[0] : null;
@@ -411,5 +415,107 @@ describe('Phase 13 Part B: File Open, Save, Save As & Autosave Backstop', () => 
     expect(editor.getIsDirty()).toBe(false);
     expect(dirtyBadge?.classList.contains('hidden')).toBe(true);
     expect(editor.getDocumentName()).toBe('test_doc.ax');
+  });
+
+  it('strictly filters open file picker to .ax and nothing else', async () => {
+    let capturedOptions: any = null;
+    const mockFile = {
+      name: 'model.ax',
+      lastModified: Date.now(),
+      text: async () => ':x = 42\n',
+    };
+    const mockHandle = {
+      name: 'model.ax',
+      getFile: async () => mockFile,
+    };
+
+    (globalThis.window as any).showOpenFilePicker = async (opts: any) => {
+      capturedOptions = opts;
+      return [mockHandle];
+    };
+
+    const res = await FileManager.openFile();
+    expect(res).not.toBeNull();
+    expect(capturedOptions).toBeDefined();
+    expect(capturedOptions.types).toBeDefined();
+    expect(capturedOptions.types.length).toBe(1);
+
+    const typeDef = capturedOptions.types[0];
+    expect(typeDef.description).toContain('.ax');
+    expect(typeDef.accept).toBeDefined();
+
+    // Check that ALL accepted extensions are strictly .ax
+    const allAcceptedExts: string[] = [];
+    Object.values(typeDef.accept).forEach((exts: any) => {
+      allAcceptedExts.push(...exts);
+    });
+    expect(allAcceptedExts.length).toBeGreaterThan(0);
+    allAcceptedExts.forEach(ext => {
+      expect(ext).toBe('.ax');
+    });
+
+    // Test fallback input accepts strictly .ax
+    const origShow = (globalThis.window as any).showOpenFilePicker;
+    delete (globalThis.window as any).showOpenFilePicker;
+    let fallbackInput: any = null;
+    const origCreateElement = document.createElement.bind(document);
+    document.createElement = (tag: string) => {
+      const el = origCreateElement(tag);
+      if (tag.toLowerCase() === 'input') {
+        fallbackInput = el;
+      }
+      return el;
+    };
+
+    // Trigger fallback open
+    const openPromise = FileManager.openFile();
+    expect(fallbackInput).not.toBeNull();
+    expect(fallbackInput.accept).toBe('.ax');
+    if (fallbackInput.oncancel) fallbackInput.oncancel();
+    await openPromise;
+
+    // Restore
+    document.createElement = origCreateElement;
+    (globalThis.window as any).showOpenFilePicker = origShow;
+  });
+
+  it('creates a synthetic single-file workspace when opening a loose .ax file', async () => {
+    const fileContent = '# Loose File Model\n:a = 100\n';
+    const mockFile = {
+      name: 'physics_sample.ax',
+      lastModified: Date.now(),
+      text: async () => fileContent,
+    };
+    let savedContent = '';
+    const mockHandle: any = {
+      name: 'physics_sample.ax',
+      getFile: async () => mockFile,
+      createWritable: async () => ({
+        write: async (t: string) => { savedContent = t; },
+        close: async () => {},
+      }),
+    };
+
+    (globalThis.window as any).showOpenFilePicker = async () => [mockHandle];
+
+    const container = document.createElement('div');
+    const editor = new DocumentEditor(container as any, '');
+
+    await editor.openDocument();
+
+    expect(editor.getDocumentName()).toBe('physics_sample.ax');
+    expect(editor.getText()).toBe(fileContent);
+
+    const ws = editor.getActiveWorkspace();
+    expect(ws).not.toBeNull();
+    expect(ws?.files.size).toBe(1);
+    expect(ws?.files.get('physics_sample.ax')).toBe(fileContent);
+    // Rooted at parent directory name
+    expect(ws?.name).toContain('physics_sample');
+
+    // Saving writes back through the single code path
+    const saveRes = await editor.saveDocument();
+    expect(saveRes.success).toBe(true);
+    expect(savedContent).toBe(fileContent);
   });
 });

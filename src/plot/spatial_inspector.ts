@@ -567,6 +567,25 @@ export class SpatialInspector {
       }
     });
 
+    // Ray-sphere intersection test for discrete point primitives
+    if (space.primitives && space.primitives.length > 0) {
+      const rPoint = Math.max(0.08, spanX * 0.02);
+      for (let pIdx = 0; pIdx < space.primitives.length; pIdx++) {
+        const prim = space.primitives[pIdx];
+        if (prim.primitive === 'point' && Array.isArray(prim.params?.position)) {
+          const px = prim.params.position[0];
+          const py = prim.params.position[1];
+          const sRes = rayIntersectsSphere(rayOrig, rayDir, [px, py, 0], rPoint);
+          if (sRes.hit && sRes.t < bestT) {
+            bestT = sRes.t;
+            snappedX = px;
+            snappedY = py;
+            isSnapped = true;
+          }
+        }
+      }
+    }
+
     const inspectedEntities: InspectedEntityRecord[] = [];
     const evalX = isSnapped ? snappedX : rawWorldX;
     const evalY = isSnapped ? snappedY : rawWorldY;
@@ -637,6 +656,25 @@ export class SpatialInspector {
       });
     });
 
+    if (space.entities.length === 0 && isSnapped) {
+      inspectedEntities.push({
+        entityIndex: 0,
+        relationExpr: `Point (${evalX.toFixed(3)}, ${evalY.toFixed(3)})`,
+        valueAtPoint: 0,
+        residual: 0,
+        holds: true,
+        isSnapped: true,
+        reductionSteps: [
+          {
+            label: 'Discrete Coordinate Position',
+            equation: `(${evalX.toFixed(3)}, ${evalY.toFixed(3)})`,
+            detail: 'Discrete coordinate tuple in point cloud with no defining relation.',
+          },
+        ],
+        toleranceDescription: 'exact discrete position',
+      });
+    }
+
     return {
       dimension: 2,
       worldCoord: { x: evalX, y: evalY },
@@ -670,36 +708,27 @@ export class SpatialInspector {
     const centerY = height * 0.5 + camera.pan3DY;
     const scale3D = (Math.min(width, height) / 3.8) * camera.zoom3D;
 
-    // Camera ray direction in world space
+    // Camera orthonormal basis vectors in world space
     const cosAz = Math.cos(camera.angleZ);
     const sinAz = Math.sin(camera.angleZ);
     const cosEl = Math.cos(camera.angleX);
     const sinEl = Math.sin(camera.angleX);
 
-    // Eye vector from center
-    const eyeDist = 10.0;
-    const rayOrig: Point3D = [
-      eyeDist * cosEl * sinAz,
-      eyeDist * cosEl * cosAz,
-      eyeDist * sinEl,
-    ];
-
-    // Screen pixel offset relative to center
+    // Screen pixel offset relative to center in world units
     const ndcX = (clickScreenX - centerX) / scale3D;
     const ndcY = (centerY - clickScreenY) / scale3D;
 
-    // View direction vector
     const rightVec: Point3D = [cosAz, -sinAz, 0];
-    const upVec: Point3D = [-sinEl * sinAz, -sinEl * cosAz, cosEl];
-    const forwardVec: Point3D = [-cosEl * sinAz, -cosEl * cosAz, -sinEl];
+    const upVec: Point3D = [sinEl * sinAz, sinEl * cosAz, cosEl];
+    const viewDir: Point3D = [cosEl * sinAz, cosEl * cosAz, -sinEl];
 
-    const rayDirNorm: Point3D = [
-      forwardVec[0] * eyeDist + rightVec[0] * ndcX + upVec[0] * ndcY,
-      forwardVec[1] * eyeDist + rightVec[1] * ndcX + upVec[1] * ndcY,
-      forwardVec[2] * eyeDist + rightVec[2] * ndcX + upVec[2] * ndcY,
+    const eyeDist = 100.0;
+    const rayOrig: Point3D = [
+      ndcX * rightVec[0] + ndcY * upVec[0] - eyeDist * viewDir[0],
+      ndcX * rightVec[1] + ndcY * upVec[1] - eyeDist * viewDir[1],
+      ndcX * rightVec[2] + ndcY * upVec[2] - eyeDist * viewDir[2],
     ];
-    const len = Math.hypot(rayDirNorm[0], rayDirNorm[1], rayDirNorm[2]) || 1;
-    const rayDir: Point3D = [rayDirNorm[0] / len, rayDirNorm[1] / len, rayDirNorm[2] / len];
+    const rayDir: Point3D = viewDir;
 
     let minT = Infinity;
     let hitWorldPt: Point3D | null = null;
@@ -738,6 +767,24 @@ export class SpatialInspector {
         }
       }
     });
+
+    // 2. Ray-primitive intersection test across discrete points / primitives
+    if (space.primitives && space.primitives.length > 0) {
+      const rPoint = 0.25;
+      for (let pIdx = 0; pIdx < space.primitives.length; pIdx++) {
+        const prim = space.primitives[pIdx];
+        if (prim.primitive === 'point' && Array.isArray(prim.params?.position)) {
+          const pos = prim.params.position;
+          const px = pos[0], py = pos[1], pz = pos.length >= 3 ? pos[2] : 0;
+          const sRes = rayIntersectsSphere(rayOrig, rayDir, [px, py, pz], rPoint);
+          if (sRes.hit && sRes.t > 0 && sRes.t < minT) {
+            minT = sRes.t;
+            hitWorldPt = [px, py, pz];
+            hitEntityIdx = pIdx;
+          }
+        }
+      }
+    }
 
     const isHit = hitEntityIdx !== -1 && hitWorldPt !== null;
     // If no geometry hit, unproject ray to z=0 or closest point
@@ -810,6 +857,26 @@ export class SpatialInspector {
         toleranceDescription: toleranceDesc,
       });
     });
+
+    if (space.entities.length === 0 && isHit && hitWorldPt) {
+      const px = hitWorldPt[0], py = hitWorldPt[1], pz = hitWorldPt[2];
+      inspectedEntities.push({
+        entityIndex: 0,
+        relationExpr: `Point (${px.toFixed(3)}, ${py.toFixed(3)}, ${pz.toFixed(3)})`,
+        valueAtPoint: 0,
+        residual: 0,
+        holds: true,
+        isSnapped: true,
+        reductionSteps: [
+          {
+            label: 'Discrete Coordinate Position',
+            equation: `(${px.toFixed(3)}, ${py.toFixed(3)}, ${pz.toFixed(3)})`,
+            detail: 'Discrete coordinate tuple in point cloud with no defining relation.',
+          },
+        ],
+        toleranceDescription: 'exact discrete position',
+      });
+    }
 
     return {
       dimension: 3,

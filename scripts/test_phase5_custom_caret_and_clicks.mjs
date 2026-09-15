@@ -11,8 +11,12 @@ async function runFullVerification() {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
 
-  console.log('Navigating to http://localhost:5173...');
   await page.goto('http://localhost:5173');
+  await page.waitForTimeout(200);
+  const welcomeBtn = await page.$('#welcome-new-doc-btn');
+  if (welcomeBtn) {
+    await welcomeBtn.click();
+  }
   await page.waitForSelector('#doc-textarea');
 
   const textarea = await page.$('#doc-textarea');
@@ -45,6 +49,7 @@ async function runFullVerification() {
       let maxErr = 0;
       let isMonotonic = true;
       let nonMonotonicOffsets = [];
+      ta.focus();
 
       for (let offset = 0; offset <= lineStr.length; offset++) {
         ta.setSelectionRange(offset, offset);

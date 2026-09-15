@@ -506,8 +506,8 @@ describe('Top-Bar Control Responsiveness & Live Handlers after Typing', () => {
     expect(items.some(t => t.includes('Trace'))).toBe(true);
     expect(items.some(t => t.includes('Frames'))).toBe(true);
     expect(items.some(t => t.includes('L2:'))).toBe(true);
-    expect(items.some(t => t.includes('Split pane right'))).toBe(true);
-    expect(items.some(t => t.includes('Split pane down'))).toBe(true);
+    expect(items.some(t => t.includes('Split Right'))).toBe(true);
+    expect(items.some(t => t.includes('Split Down'))).toBe(true);
     expect(items.some(t => t.includes('Close tab'))).toBe(true);
   });
 });

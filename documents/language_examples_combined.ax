@@ -1,0 +1,287 @@
+# --- Example Block 1 ---
+<expression> = <expression>
+
+# --- Example Block 2 ---
+:r = 5
+:area = 3.14159 * :r^2
+:area
+
+# --- Example Block 3 ---
+{\axis x; x^2 = 4}
+{\axis x; x = 1; x = 2}
+
+# --- Example Block 4 ---
+x = 5
+x = x + 1
+
+# --- Example Block 5 ---
+:identifier_name
+
+# --- Example Block 6 ---
+a = 2
+b = 3
+c = 4
+abc
+
+# --- Example Block 7 ---
+:speed = 100
+:speed
+
+# --- Example Block 8 ---
+mass = 10
+
+# --- Example Block 9 ---
+omega_d = 5
+
+# --- Example Block 10 ---
+\if 1 < 2 \then 42 \else 99
+
+# --- Example Block 11 ---
+\set { 1, 2, 3, 4 }
+\fold (+) \over \set { 1, 2, 3, 4 } \from 0
+
+# --- Example Block 12 ---
+if x < 2 then 42 else 99
+
+# --- Example Block 13 ---
+{\axis x, y; <relations>}
+{\axis x, y, z; <relations>}
+
+# --- Example Block 14 ---
+{\axis x, y; x^2 + y^2 = 25}
+
+# --- Example Block 15 ---
+{x^2 + y^2 = 25}
+
+# --- Example Block 16 ---
+{\axis X, Y; y = x^2}
+
+# --- Example Block 17 ---
+{
+  <statement 1>
+  <statement 2>
+  <result_expression>
+}
+
+# --- Example Block 18 ---
+:base = 10
+{
+  :base = 20
+  :inner = :base * 2
+  :inner
+}
+:base
+
+# --- Example Block 19 ---
+{
+  x = 3
+  y = 4
+  x^2 + y^2
+}
+
+# --- Example Block 20 ---
+{
+  :temp = 42
+}
+:temp
+
+# --- Example Block 21 ---
+\forall <arg1>, <arg2>, ..., :name(<arg1>, <arg2>, ...) = <expression>
+
+# --- Example Block 22 ---
+\forall x, :sq(x) = x^2
+:sq(5)
+
+# --- Example Block 23 ---
+\import "lib/sqrt.ax"
+\forall a, b, :hypot(a, b) = :sqrt(a^2 + b^2)
+:hypot(3, 4)
+
+# --- Example Block 24 ---
+:sq(x) = x^2
+
+# --- Example Block 25 ---
+\import "lib/abs.ax"
+:abs(-42)
+
+# --- Example Block 26 ---
+\from "lib/floor.ax" \import :floor
+:floor(3.8)
+
+# --- Example Block 27 ---
+\import lib/abs.ax
+
+# --- Example Block 28 ---
+a + b
+x^2 + 1
+
+# --- Example Block 29 ---
+{\forall x, :f(x) = 2*x; :f}
+
+# --- Example Block 30 ---
+\import "lib/sqrt.ax"
+:sqrt(-4)
+
+# --- Example Block 31 ---
+:float(<expression>)
+
+# --- Example Block 32 ---
+:q = 1/3 + 1/6
+:q
+:large = (1/2)^10
+:large
+
+# --- Example Block 33 ---
+\import "lib/exp.ax"
+:exact_e = :exp(1)
+:exact_e
+:decimal_e = :float(:exact_e)
+:decimal_e
+
+# --- Example Block 34 ---
+float(1/3)
+
+# --- Example Block 35 ---
+# Line comment
+<expr> # Trailing comment
+
+# --- Example Block 36 ---
+# Gravitational constant in m/s^2
+g = 9.8 # Earth sea-level gravity
+g
+
+# --- Example Block 37 ---
+// Damped oscillator parameters
+
+# --- Example Block 38 ---
+\import "lib/abs.ax"
+  :abs(-42)
+  :abs(-7/4)
+
+# --- Example Block 39 ---
+\import "lib/floor.ax"
+  :floor(5.8)
+  :floor(-3.2)
+  :round(4.6)
+
+# --- Example Block 40 ---
+\import "lib/ceil.ax"
+  :ceil(5.1)
+  :ceil(-3.8)
+
+# --- Example Block 41 ---
+\import "lib/sqrt.ax"
+  :sqrt(25)
+  :is_perfect_square(49)
+
+# --- Example Block 42 ---
+\import "lib/exp.ax"
+  :exp(0)
+  :ln(1)
+  :log2(8)
+
+# --- Example Block 43 ---
+\import "lib/newton.ax"
+  :newton_sqrt(2)
+
+# --- Example Block 44 ---
+\import "lib/bisect.ax"
+  :bisect_sqrt(2)
+  :bisect_sqrt(16)
+
+# --- Example Block 45 ---
+\import "lib/numbertheory.ax"
+  :gcd(48, 18)
+  :isprime(17)
+  :totient(9)
+  :binomial(5, 2)
+  :factorize(60)
+
+# --- Example Block 46 ---
+\import "lib/trig.ax"
+  :sin(0)
+  :cos(0)
+  :tan(0)
+  :sinh(0)
+  :cosh(0)
+
+# --- Example Block 47 ---
+# newton_cubic.ax — Root convergence for x^3 - 2x - 5 = 0 via Newton recurrence
+\import "lib/abs.ax"
+
+# Target polynomial: f(x) = x^3 - 2x - 5
+# Derivative:        f'(x) = 3x^2 - 2
+# Newton step:       x_{n+1} = x_n - f(x_n) / f'(x_n)
+\forall x, :step(x) = x - (x^3 - 2*x - 5) / (3*x^2 - 2)
+
+:x0 = 2.0
+:x1 = :step(:x0)
+:x2 = :step(:x1)
+:x3 = :step(:x2)
+:x4 = :step(:x3)
+
+# Exact rational root after 4 iterations
+:exact_root = :x4
+
+# Decimal float approximation
+:approx_root = :float(:x4)
+
+# Verification of residual error: f(x4)
+:residual = :abs(:x4^3 - 2*:x4 - 5)
+:residual_float = :float(:residual)
+
+# --- Example Block 48 ---
+# sphere_slice.ax — Sphere intersected by an inclined plane constraint
+# 3D spherical shell constrained by an affine slicing plane
+{\axis x, y, z;
+  x^2 + y^2 + z^2 = 9
+  z = 0.5 * x + 1
+}
+
+# 2D projection on the (x, y) coordinate plane
+{\axis x, y;
+  x^2 + y^2 + (0.5 * x + 1)^2 = 9
+}
+
+# Planar intersection geometry:
+# Center of cross-section circle is at x = -0.4, z = 0.8
+:x_c = -2/5
+:z_c = 0.5 * :x_c + 1
+
+# Squared radius of cross-section disk: R^2 - d^2
+:r_sq = 9 - (:x_c^2 + :z_c^2)
+:r_sq_float = :float(:r_sq)
+
+# Point on boundary at x = 0: y^2 + 1 = 9 => y^2 = 8
+:y_sq = 9 - :z_c^2 - 0
+:y_bound = :float(:y_sq)
+
+# --- Example Block 49 ---
+# damped_oscillator.ax — Damped harmonic oscillator differential relation
+\import "lib/exp.ax"
+\import "lib/trig.ax"
+
+m = 1.0
+k = 9.0
+c = 0.6
+
+# System parameters:
+# omega_0 = sqrt(k/m) = 3.0
+# gamma = c / (2*m) = 0.3
+# omega_d = sqrt(3^2 - 0.3^2) = sqrt(8.91) ~= 2.984962
+:gamma = 0.3
+:omega_d = 2.984962
+:x0 = 2.0
+
+# Coupled first-order differential equations of motion
+d//d:time :x = :vx
+d//d:time :vx = -(k / m) * :x - (c / m) * :vx
+
+# Analytic position trajectory manifold over continuous time
+{\axis :time, :x;
+  :x = :x0 * :exp(-:gamma * :time) * :cos(:omega_d * :time)
+}
+
+# State evaluated at t = 1.0s
+:x_1 = :x0 * :exp(-:gamma * 1.0) * :cos(:omega_d * 1.0)
+:x_1_approx = :float(:x_1)

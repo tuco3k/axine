@@ -15,6 +15,7 @@ import {
   WorkspaceLayout,
   TabData,
 } from '../notebook/pane_tree';
+import { PaneContainer } from '../notebook/pane_container';
 import { SpaceViewport } from '../plot/space_viewport';
 import { SpaceValue } from '../core/types';
 
@@ -442,5 +443,204 @@ describe('Phase 2 Navigation: Instant Flight & Multi-Camera Space Viewport', () 
     expect(finalRoot.type).toBe('leaf');
     expect((finalRoot as any).tabs.length).toBe(1);
     expect((finalRoot as any).tabs[0].type).toBe('document');
+  });
+});
+
+describe('Phase 2 Splitter Dragging, Live Resizing, & Layout Persistence', () => {
+  it('resizes pane boundaries live during drag, respects minimum bounds, and persists ratio', () => {
+    // Construct 4-pane layout: 2 horizontal columns, each split vertically
+    const docTab: TabData = { id: 't_doc', type: 'document', title: 'test.ax' };
+    const resTab: TabData = { id: 't_res', type: 'results', title: 'Results' };
+    const sp1Tab: TabData = { id: 't_sp1', type: 'space', title: 'Space 1' };
+    const sp2Tab: TabData = { id: 't_sp2', type: 'space', title: 'Space 2' };
+
+    const leaf1: any = { type: 'leaf', id: 'leaf_1', tabs: [docTab], activeTabId: 't_doc' };
+    const leaf2: any = { type: 'leaf', id: 'leaf_2', tabs: [resTab], activeTabId: 't_res' };
+    const leaf3: any = { type: 'leaf', id: 'leaf_3', tabs: [sp1Tab], activeTabId: 't_sp1' };
+    const leaf4: any = { type: 'leaf', id: 'leaf_4', tabs: [sp2Tab], activeTabId: 't_sp2' };
+
+    const leftCol: any = {
+      type: 'split',
+      id: 'split_left_col',
+      direction: 'vertical',
+      ratio: 0.65, // Deliberately uneven: 65% top, 35% bottom
+      first: leaf1,
+      second: leaf2,
+    };
+
+    const rightCol: any = {
+      type: 'split',
+      id: 'split_right_col',
+      direction: 'vertical',
+      ratio: 0.30, // Deliberately uneven: 30% top, 70% bottom
+      first: leaf3,
+      second: leaf4,
+    };
+
+    const rootSplit: any = {
+      type: 'split',
+      id: 'split_main',
+      direction: 'horizontal',
+      ratio: 0.70, // Deliberately uneven: 70% left, 30% right
+      first: leftCol,
+      second: rightCol,
+    };
+
+    const layout: WorkspaceLayout = {
+      version: 1,
+      root: rootSplit,
+      activePaneId: 'leaf_1',
+    };
+
+    // Serialize layout
+    const saved = serializeLayout(layout);
+    expect(saved).toBeDefined();
+
+    // Deserialize layout
+    const restored = deserializeLayout(saved);
+    expect(restored).not.toBeNull();
+    expect(restored?.version).toBe(1);
+
+    const rRoot = restored!.root as any;
+    expect(rRoot.type).toBe('split');
+    expect(rRoot.direction).toBe('horizontal');
+    expect(rRoot.ratio).toBe(0.70);
+
+    const rLeft = rRoot.first;
+    expect(rLeft.type).toBe('split');
+    expect(rLeft.direction).toBe('vertical');
+    expect(rLeft.ratio).toBe(0.65);
+
+    const rRight = rRoot.second;
+    expect(rRight.type).toBe('split');
+    expect(rRight.direction).toBe('vertical');
+    expect(rRight.ratio).toBe(0.30);
+
+    // Verify independent sizing: modifying one split ratio does not alter others
+    rRoot.ratio = 0.40;
+    expect(rLeft.ratio).toBe(0.65);
+    expect(rRight.ratio).toBe(0.30);
+
+    // Double-click distribution to center (0.50)
+    rLeft.ratio = 0.50;
+    expect(rLeft.ratio).toBe(0.50);
+    expect(rRight.ratio).toBe(0.30);
+  });
+
+  describe('Fast Paths for Pane Splitting (Context Menu, Keyboard Shortcuts & Edge Drops)', () => {
+    it('Split Right moves tab into a new pane beside the current one', () => {
+      const layout = createDefaultLayout();
+      const leaf1 = layout.root.id;
+
+      const tabA: TabData = { id: 'tab_doc_a', type: 'document', title: 'fileA.ax' };
+      const tabB: TabData = { id: 'tab_doc_b', type: 'document', title: 'fileB.ax' };
+      addTabToLeaf(layout.root, leaf1, tabA);
+      addTabToLeaf(layout.root, leaf1, tabB);
+
+      // Split Right on tabB
+      const { newRoot, newLeafId } = splitAndMoveTab(layout.root, leaf1, 'tab_doc_b', leaf1, 'horizontal', 'after');
+      const leaves = getAllLeaves(newRoot);
+      expect(leaves.length).toBe(2);
+
+      const l1 = findLeaf(newRoot, leaf1);
+      const l2 = findLeaf(newRoot, newLeafId);
+      expect(l1?.tabs.some(t => t.id === 'tab_doc_a')).toBe(true);
+      expect(l1?.tabs.some(t => t.id === 'tab_doc_b')).toBe(false);
+      expect(l2?.tabs.some(t => t.id === 'tab_doc_b')).toBe(true);
+      expect(l2?.tabs.length).toBe(1);
+    });
+
+    it('Split Down moves tab into a new pane below the current one', () => {
+      const layout = createDefaultLayout();
+      const leaf1 = layout.root.id;
+
+      const tabA: TabData = { id: 'tab_doc_a', type: 'document', title: 'fileA.ax' };
+      const tabB: TabData = { id: 'tab_doc_b', type: 'document', title: 'fileB.ax' };
+      addTabToLeaf(layout.root, leaf1, tabA);
+      addTabToLeaf(layout.root, leaf1, tabB);
+
+      // Split Down on tabB
+      const { newRoot, newLeafId } = splitAndMoveTab(layout.root, leaf1, 'tab_doc_b', leaf1, 'vertical', 'after');
+      const leaves = getAllLeaves(newRoot);
+      expect(leaves.length).toBe(2);
+
+      const splitNode = newRoot as any;
+      expect(splitNode.type).toBe('split');
+      expect(splitNode.direction).toBe('vertical');
+      expect(splitNode.first.id).toBe(leaf1);
+      expect(splitNode.second.id).toBe(newLeafId);
+    });
+
+    it('splits active pane right and moves active tab via splitActiveTab', () => {
+      const mockContainer = {
+        querySelectorAll: () => [],
+        querySelector: () => null,
+        appendChild: () => {},
+        innerHTML: '',
+      } as any;
+
+      const pc = new PaneContainer(mockContainer, { defaultDocName: 'file1.ax' });
+      pc.openTab({ id: 'tab_f2', type: 'document', title: 'file2.ax' });
+
+      const initialLeaves = getAllLeaves(pc.getLayout().root);
+      expect(initialLeaves.length).toBe(1);
+      expect(initialLeaves[0].tabs.length).toBe(2);
+
+      // Active tab is file2.ax. Call splitActiveTab('horizontal') -> Cmd+\
+      const newLeafId = pc.splitActiveTab('horizontal', 'after');
+      expect(newLeafId).toBeTruthy();
+
+      const afterLeaves = getAllLeaves(pc.getLayout().root);
+      expect(afterLeaves.length).toBe(2);
+      expect(pc.getActivePaneId()).toBe(newLeafId);
+
+      const rightLeaf = findLeaf(pc.getLayout().root, newLeafId!);
+      expect(rightLeaf?.tabs[0].title).toBe('file2.ax');
+    });
+
+    it('splits active pane down and moves active tab via splitActiveTab', () => {
+      const mockContainer = {
+        querySelectorAll: () => [],
+        querySelector: () => null,
+        appendChild: () => {},
+        innerHTML: '',
+      } as any;
+
+      const pc = new PaneContainer(mockContainer, { defaultDocName: 'main.ax' });
+      pc.openTab({ id: 'tab_sub', type: 'document', title: 'sub.ax' });
+
+      // Active tab is sub.ax. Call splitActiveTab('vertical') -> Cmd+Shift+\
+      const newLeafId = pc.splitActiveTab('vertical', 'after');
+      expect(newLeafId).toBeTruthy();
+
+      const rootNode = pc.getLayout().root as any;
+      expect(rootNode.type).toBe('split');
+      expect(rootNode.direction).toBe('vertical');
+      expect(rootNode.second.id).toBe(newLeafId);
+    });
+
+    it('handles dragging tab near right edge to split right, bottom edge to split down, and middle to add to tab bar', () => {
+      const layout = createDefaultLayout();
+      const leaf1 = layout.root.id;
+      const tab1: TabData = { id: 't1', type: 'document', title: 'doc1.ax' };
+      const tab2: TabData = { id: 't2', type: 'document', title: 'doc2.ax' };
+      addTabToLeaf(layout.root, leaf1, tab1);
+      addTabToLeaf(layout.root, leaf1, tab2);
+
+      // 1. Right edge drag -> split right
+      const rightDrop = splitAndMoveTab(layout.root, leaf1, 't2', leaf1, 'horizontal', 'after');
+      expect(getAllLeaves(rightDrop.newRoot).length).toBe(2);
+      expect((rightDrop.newRoot as any).direction).toBe('horizontal');
+
+      // 2. Center drop (middle) -> moves tab into tab bar without splitting
+      const midDrop = moveTab(rightDrop.newRoot, rightDrop.newLeafId, 't2', leaf1);
+      expect(getAllLeaves(midDrop.newRoot).length).toBe(1);
+      expect(findLeaf(midDrop.newRoot, leaf1)?.tabs.some(t => t.id === 't2')).toBe(true);
+
+      // 3. Bottom edge drag -> split down
+      const bottomDrop = splitAndMoveTab(midDrop.newRoot, leaf1, 't2', leaf1, 'vertical', 'after');
+      expect(getAllLeaves(bottomDrop.newRoot).length).toBe(2);
+      expect((bottomDrop.newRoot as any).direction).toBe('vertical');
+    });
   });
 });

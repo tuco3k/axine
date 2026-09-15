@@ -118,7 +118,7 @@ describe('Phase 1: Relation Compiler', () => {
     });
 
     it('returns failure marker for unbound identifiers', () => {
-      const ast = parse('x + unknown_var');
+      const ast = parse('x + :unknown_var');
       const res = compileRelation(ast, ['x']);
       expect(res.success).toBe(false);
       if (!res.success) {

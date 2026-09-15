@@ -67,8 +67,6 @@ export class SpaceViewport {
   public isCaptured: boolean = false;
   private isFocused: boolean = false;
   private isFullscreen: boolean = false;
-  private isDragging: boolean = false;
-  private isPanning3D: boolean = false;
   private lastMouseX: number = 0;
   private lastMouseY: number = 0;
   public isShiftHeld: boolean = false;
@@ -150,7 +148,11 @@ export class SpaceViewport {
 
     // Setup DOM Structure
     this.container.innerHTML = '';
-    this.container.className = 'space-viewport-container';
+    if (this.container.classList) {
+      this.container.classList.add('space-viewport-container');
+    } else {
+      this.container.className = 'space-viewport-container';
+    }
     this.container.tabIndex = 0;
 
     this.buildUI();
@@ -213,15 +215,17 @@ export class SpaceViewport {
     const hudEl = targetEl || (this.container.querySelector('.space-flight-hud') as HTMLElement);
     if (!hudEl) return;
     if (this.viewMode === '1d') {
-      hudEl.textContent = 'Pan A/D / Drag • Zoom +/- / Wheel • [I] Inspect • Esc Exit';
+      hudEl.textContent = this.isShiftHeld
+        ? '[Shift] Camera Frozen • Click to Select • Release Shift to Pan'
+        : 'Mouse Pan • Wheel Zoom • Hold Shift to Select • Esc Exit';
     } else if (this.viewMode === '2d') {
-      hudEl.textContent = 'Pan WASD / Drag • Zoom +/- / Wheel • [I] Inspect • Esc Exit';
+      hudEl.textContent = this.isShiftHeld
+        ? '[Shift] Camera Frozen • Click to Select • Release Shift to Pan'
+        : 'Mouse / WASD Pan • Wheel Zoom • Hold Shift to Select • Esc Exit';
     } else {
-      if (this.isShiftHeld) {
-        hudEl.textContent = '[SHIFT HELD] Cursor Active • Camera Frozen • Click to Select • Release Shift to Fly';
-      } else {
-        hudEl.textContent = 'WASD Fly • Mouse Look • Hold Shift for Cursor • [I] Inspect • Esc Exit';
-      }
+      hudEl.textContent = this.isShiftHeld
+        ? '[Shift] Camera Frozen • Click to Select • Release Shift to Look'
+        : 'Mouse Look • WASD Move • Wheel Zoom • Hold Shift to Select • Esc Exit';
     }
   }
 
@@ -630,44 +634,25 @@ export class SpaceViewport {
 
   private setupEvents(): void {
     // Focus & Capture management
-    const hudEl = this.container.querySelector('.space-flight-hud') as HTMLElement;
     const focusHandler = () => {
       if (!this.isCaptured) {
-        this.isCaptured = true;
-        this.isFocused = true;
-        this.container.focus?.();
-        this.container.classList?.add('focused', 'captured');
-        this.updateHUD(hudEl);
-        hudEl?.classList.remove('hidden');
-        if (this.options.onFocusChange) this.options.onFocusChange(true);
+        this.capture();
       }
     };
     this.container.addEventListener?.('click', () => {
-      this.container.focus?.();
-      focusHandler();
+      if (!this.isCaptured) {
+        this.capture();
+      }
     });
     this.container.addEventListener?.('focus', focusHandler);
     this.canvas.addEventListener?.('click', () => {
-      this.container.focus?.();
-      focusHandler();
+      if (!this.isCaptured) {
+        this.capture();
+      }
     });
 
     const blurHandler = () => {
-      if (this.isCaptured || this.isFocused) {
-        this.isCaptured = false;
-        this.isFocused = false;
-        this.isShiftHeld = false;
-        this.isCameraFrozen = false;
-        this.canvas.classList?.remove('shift-cursor');
-        if (typeof document !== 'undefined' && document.pointerLockElement === this.canvas) {
-          document.exitPointerLock?.();
-        }
-        this.container.classList?.remove('focused', 'captured');
-        this.pressedKeys.clear();
-        this.stopAnimationLoop();
-        hudEl?.classList.add('hidden');
-        if (this.options.onFocusChange) this.options.onFocusChange(false);
-      }
+      this.releaseCapture();
     };
     this.container.addEventListener?.('blur', blurHandler);
 
@@ -704,27 +689,7 @@ export class SpaceViewport {
       if (e.key === 'Escape') {
         e.preventDefault?.();
         e.stopPropagation?.();
-        if (this.inspectorPanelEl) {
-          this.closeInspection();
-        }
-        if (typeof document !== 'undefined' && document.pointerLockElement === this.canvas) {
-          document.exitPointerLock?.();
-        }
-        if (this.isFullscreen) {
-          this.toggleFullscreen();
-        }
-        this.isCaptured = false;
-        this.isFocused = false;
-        this.isShiftHeld = false;
-        this.isCameraFrozen = false;
-        this.canvas.classList?.remove('shift-cursor');
-        this.container.classList?.remove('focused', 'captured');
-        this.pressedKeys.clear();
-        this.stopAnimationLoop();
-        hudEl?.classList.add('hidden');
-        this.container.blur?.();
-        if (this.options.onFocusChange) this.options.onFocusChange(false);
-        this.render();
+        this.releaseCapture();
         return;
       }
 
@@ -818,13 +783,13 @@ export class SpaceViewport {
       }
     };
     const keyupHandler = (e: KeyboardEvent) => {
-      // Releasing Shift immediately re-locks and resumes camera control
+      // Releasing Shift immediately re-locks and resumes camera control, discarding first frame delta
       if (e.key === 'Shift') {
         this.isShiftHeld = false;
         this.isCameraFrozen = false;
         this.canvas.classList?.remove('shift-cursor');
-        if (this.isCaptured && this.viewMode === '3d') {
-          this.discardNextMouseDelta = true; // Discard first frame mouse delta after re-lock
+        if (this.isCaptured) {
+          this.discardNextMouseDelta = true; // Discard first frame mouse delta after re-lock so camera does not jump
           try {
             this.canvas.requestPointerLock?.();
           } catch {}
@@ -861,37 +826,34 @@ export class SpaceViewport {
       window.addEventListener?.('keyup', globalKeyup);
     }
 
-    // Mouse interaction: rotation driven from per-frame delta (velocity) without drift
-    let mouseDownPos = { x: 0, y: 0 };
+    // Mouse interaction
+    let wasCapturedOnMouseDown = false;
     const mousedownHandler = (e: MouseEvent) => {
       if (e.target !== this.canvas) return;
-      focusHandler();
-      this.isDragging = true;
-      this.isPanning3D = e.button === 2;
+      wasCapturedOnMouseDown = this.isCaptured;
+      if (!this.isCaptured) {
+        this.capture();
+        return;
+      }
       this.lastMouseX = e.clientX;
       this.lastMouseY = e.clientY;
-      mouseDownPos = { x: e.clientX, y: e.clientY };
-
-      if (!this.isShiftHeld && this.viewMode === '3d' && e.button === 0) {
-        try {
-          this.canvas.requestPointerLock?.();
-        } catch {}
-      }
     };
     this.canvas.addEventListener?.('mousedown', mousedownHandler as any);
 
     const mousemoveHandler = (e: MouseEvent) => {
-      // If not captured, hovering does nothing
+      // 1. Uncaptured: hover does nothing.
       if (!this.isCaptured) {
         return;
       }
 
-      // If Shift is held, camera is frozen (free cursor)
-      if (this.isShiftHeld) {
+      // 2. Shift held: camera is frozen (free cursor for selection).
+      if (this.isShiftHeld || this.isCameraFrozen) {
+        this.lastMouseX = e.clientX;
+        this.lastMouseY = e.clientY;
         return;
       }
 
-      // Discard first frame mouse delta after re-lock to prevent camera jump
+      // 3. Discard first frame mouse delta after capture or re-lock to prevent camera jump.
       if (this.discardNextMouseDelta) {
         this.discardNextMouseDelta = false;
         this.lastMouseX = e.clientX;
@@ -899,33 +861,33 @@ export class SpaceViewport {
         return;
       }
 
-      if (!this.isDragging && !this.isPointerLocked) return;
-
-      const dx = this.isPointerLocked && typeof e.movementX === 'number' && e.movementX !== 0 ? e.movementX : e.clientX - this.lastMouseX;
-      const dy = this.isPointerLocked && typeof e.movementY === 'number' && e.movementY !== 0 ? e.movementY : e.clientY - this.lastMouseY;
+      const dx = (this.isPointerLocked || (typeof e.movementX === 'number' && e.movementX !== 0))
+        ? (e.movementX || 0)
+        : (e.clientX - this.lastMouseX);
+      const dy = (this.isPointerLocked || (typeof e.movementY === 'number' && e.movementY !== 0))
+        ? (e.movementY || 0)
+        : (e.clientY - this.lastMouseY);
       this.lastMouseX = e.clientX;
       this.lastMouseY = e.clientY;
 
+      if (dx === 0 && dy === 0) return;
+
       if (this.viewMode === '3d') {
-        if (this.isPanning3D) {
-          this.pan3DX += dx;
-          this.pan3DY += dy;
-        } else {
-          // Instant velocity-driven rotation without floating drift
-          this.angleZ += dx * 0.005;
-          this.angleX = Math.max(0.05, Math.min(Math.PI / 2 - 0.05, this.angleX - dy * 0.005));
-        }
+        // Mouse movement looks around — no button held, no dragging
+        this.angleZ += dx * 0.005;
+        this.angleX = Math.max(0.05, Math.min(Math.PI / 2 - 0.05, this.angleX - dy * 0.005));
       } else if (this.viewMode === '1d') {
+        // Mouse movement pans along the axis
         const spanX = this.bounds2D.maxX - this.bounds2D.minX;
         const width = this.canvas.clientWidth || 600;
         const worldDx = -(dx / width) * spanX;
         this.pan2D(worldDx, 0);
       } else {
+        // Mouse movement pans the view — camera follows pointer direction, as though dragging world
         const spanX = this.bounds2D.maxX - this.bounds2D.minX;
         const spanY = this.bounds2D.maxY - this.bounds2D.minY;
         const width = this.canvas.clientWidth || 600;
         const height = this.canvas.clientHeight || 300;
-
         const worldDx = -(dx / width) * spanX;
         const worldDy = (dy / height) * spanY;
         this.pan2D(worldDx, worldDy);
@@ -937,17 +899,23 @@ export class SpaceViewport {
     if (typeof window !== 'undefined') window.addEventListener?.('mousemove', mousemoveHandler);
 
     const mouseupHandler = (e: MouseEvent) => {
-      const dist = Math.hypot(e.clientX - mouseDownPos.x, e.clientY - mouseDownPos.y);
-      this.isDragging = false;
-      this.isPanning3D = false;
+      // Rule:
+      // First click on uncaptured space ONLY captures it. Nothing is selected.
+      // Selection is always Shift-then-click. A bare click never selects — it either captures an uncaptured space or does nothing in a captured one.
+      if (!wasCapturedOnMouseDown) {
+        return;
+      }
 
-      // Click (not drag) -> select point without moving camera and without auto-opening inspector
-      if (dist < 6 && (e.target === this.canvas || this.container.contains(e.target as Node))) {
+      // If Shift was held during click (or e.shiftKey / this.isShiftHeld):
+      if (this.isShiftHeld || e.shiftKey) {
         const rect = this.canvas.getBoundingClientRect();
         const clickX = e.clientX - rect.left;
         const clickY = e.clientY - rect.top;
         const width = this.canvas.clientWidth || rect.width || 600;
         const height = this.canvas.clientHeight || rect.height || 300;
+        const isInside = (e.target === this.canvas || this.container.contains(e.target as Node)) ||
+          (clickX >= 0 && clickX <= width && clickY >= 0 && clickY <= height);
+        if (!isInside) return;
 
         let res: SpatialInspectionResult;
         if (this.viewMode === '1d') {
@@ -969,7 +937,6 @@ export class SpaceViewport {
           this.reticlePos = { ...res.worldCoord };
           this.showReticle = true;
 
-          // If inspector is already open by user, update it live; otherwise do NOT auto-open
           if (this.inspectorPanelEl) {
             this.showInspection(res);
           } else {
@@ -985,6 +952,7 @@ export class SpaceViewport {
           }
         }
       }
+      // Bare click in captured space: does nothing.
     };
     if (typeof window !== 'undefined') window.addEventListener?.('mouseup', mouseupHandler);
 
@@ -1132,10 +1100,14 @@ export class SpaceViewport {
   }
 
   public releaseCapture(): void {
+    if (!this.isCaptured && !this.isFocused) return;
     this.isCaptured = false;
     this.isFocused = false;
     this.isShiftHeld = false;
     this.isCameraFrozen = false;
+    this.showReticle = false;
+    this.reticlePos = null;
+    this.inspectionResult = null;
     this.canvas.classList?.remove('shift-cursor');
     if (typeof document !== 'undefined' && document.pointerLockElement === this.canvas) {
       document.exitPointerLock?.();
@@ -1145,7 +1117,9 @@ export class SpaceViewport {
     this.stopAnimationLoop();
     const hudEl = this.container.querySelector('.space-flight-hud') as HTMLElement;
     hudEl?.classList.add('hidden');
-    this.container.blur?.();
+    if (this.inspectorPanelEl) {
+      this.closeInspection();
+    }
     if (this.options.onFocusChange) this.options.onFocusChange(false);
     this.render();
   }
@@ -1243,6 +1217,10 @@ export class SpaceViewport {
       }
     }
     return false;
+  }
+
+  public getSpace(): SpaceValue {
+    return this.space;
   }
 
   public updateSpace(newSpace: SpaceValue): void {
@@ -1866,6 +1844,56 @@ export class SpaceViewport {
       }
     }
 
+    // Render 3D Primitives (Points / Point Clouds, Segments, Arrows, Paths)
+    if (this.space.primitives && this.space.primitives.length > 0) {
+      const pointsByColor = new Map<string, Array<{ x: number; y: number; r: number; depth: number }>>();
+
+      for (let pIdx = 0; pIdx < this.space.primitives.length; pIdx++) {
+        const prim = this.space.primitives[pIdx];
+        const color = prim.params?.color || ENTITY_PALETTE[pIdx % ENTITY_PALETTE.length];
+
+        if (prim.primitive === 'point' && Array.isArray(prim.params?.position)) {
+          const pos = prim.params.position;
+          const px = pos[0], py = pos[1], pz = pos.length >= 3 ? pos[2] : 0;
+          const p2D = project3D(px, py, pz);
+          const depthScale = Math.max(0.4, Math.min(1.8, 1.0 - p2D[2] * 0.05));
+          const ptR = (Number(prim.params?.radius) || 3.0) * depthScale;
+
+          let group = pointsByColor.get(color);
+          if (!group) {
+            group = [];
+            pointsByColor.set(color, group);
+          }
+          group.push({ x: p2D[0], y: p2D[1], r: ptR, depth: p2D[2] });
+        } else if (prim.primitive === 'segment' || prim.primitive === 'arrow') {
+          const p1 = this.toCoord3D(prim.params?.start || prim.params?.from);
+          const p2 = this.toCoord3D(prim.params?.end || prim.params?.to);
+          if (p1 && p2) {
+            const sp1 = project3D(p1[0], p1[1], p1[2]);
+            const sp2 = project3D(p2[0], p2[1], p2[2]);
+            this.ctx.strokeStyle = color;
+            this.ctx.lineWidth = Number(prim.params?.width) || 1.5;
+            this.ctx.beginPath();
+            this.ctx.moveTo(sp1[0], sp1[1]);
+            this.ctx.lineTo(sp2[0], sp2[1]);
+            this.ctx.stroke();
+          }
+        }
+      }
+
+      // Fast batch draw of all 3D points by color
+      for (const [color, pts] of pointsByColor.entries()) {
+        this.ctx.fillStyle = color;
+        this.ctx.beginPath();
+        for (let i = 0; i < pts.length; i++) {
+          const pt = pts[i];
+          this.ctx.moveTo(pt.x + pt.r, pt.y);
+          this.ctx.arc(pt.x, pt.y, pt.r, 0, 2 * Math.PI);
+        }
+        this.ctx.fill();
+      }
+    }
+
     // Draw inspection reticle in 3D
     if (this.showReticle && this.reticlePos) {
       const rx = this.reticlePos.x;
@@ -1906,37 +1934,42 @@ export class SpaceViewport {
 
     const allX: number[] = [];
     const allY: number[] = [];
+    const allZ: number[] = [];
     for (const prim of this.space.primitives) {
       if (prim.primitive === 'point' && Array.isArray(prim.params?.position)) {
         allX.push(prim.params.position[0]);
         allY.push(prim.params.position[1]);
+        if (prim.params.position.length >= 3) allZ.push(prim.params.position[2]);
       } else if (prim.primitive === 'circle' && Array.isArray(prim.params?.center)) {
         const r = Number(prim.params.radius) || 1;
         allX.push(prim.params.center[0] - r, prim.params.center[0] + r);
         allY.push(prim.params.center[1] - r, prim.params.center[1] + r);
       } else if (prim.primitive === 'arrow' || prim.primitive === 'segment') {
-        if (Array.isArray(prim.params?.start)) {
-          allX.push(prim.params.start[0]);
-          allY.push(prim.params.start[1]);
+        const p1 = this.toCoord3D(prim.params?.start || prim.params?.from);
+        const p2 = this.toCoord3D(prim.params?.end || prim.params?.to);
+        if (p1) {
+          allX.push(p1[0]);
+          allY.push(p1[1]);
+          allZ.push(p1[2]);
         }
-        if (Array.isArray(prim.params?.end)) {
-          allX.push(prim.params.end[0]);
-          allY.push(prim.params.end[1]);
-        }
-        if (Array.isArray(prim.params?.vector) && Array.isArray(prim.params?.start)) {
-          allX.push(prim.params.start[0] + prim.params.vector[0]);
-          allY.push(prim.params.start[1] + prim.params.vector[1]);
+        if (p2) {
+          allX.push(p2[0]);
+          allY.push(p2[1]);
+          allZ.push(p2[2]);
         }
       } else if ((prim.primitive === 'polygon' || prim.primitive === 'path') && Array.isArray(prim.params?.points)) {
         for (const pt of prim.params.points) {
-          if (Array.isArray(pt)) {
-            allX.push(pt[0]);
-            allY.push(pt[1]);
+          const cp = this.toCoord3D(pt);
+          if (cp) {
+            allX.push(cp[0]);
+            allY.push(cp[1]);
+            allZ.push(cp[2]);
           }
         }
       } else if (prim.primitive === 'label' && Array.isArray(prim.params?.position)) {
         allX.push(prim.params.position[0]);
         allY.push(prim.params.position[1]);
+        if (prim.params.position.length >= 3) allZ.push(prim.params.position[2]);
       }
     }
 
@@ -1954,6 +1987,19 @@ export class SpaceViewport {
       this.bounds2D.minY = minY - padY;
       this.bounds2D.maxY = maxY + padY;
       this.defaultBounds2D = { ...this.bounds2D };
+
+      if (allZ.length > 0) {
+        const minZ = Math.min(...allZ);
+        const maxZ = Math.max(...allZ);
+        const spanZ = Math.max(0.1, maxZ - minZ);
+        const padZ = Math.max(1, spanZ * 0.25);
+        this.bounds3D.minX = minX - padX;
+        this.bounds3D.maxX = maxX + padX;
+        this.bounds3D.minY = minY - padY;
+        this.bounds3D.maxY = maxY + padY;
+        this.bounds3D.minZ = minZ - padZ;
+        this.bounds3D.maxZ = maxZ + padZ;
+      }
     }
   }
 
@@ -1987,6 +2033,36 @@ export class SpaceViewport {
         const x = this.toScalar(xVal);
         const y = this.toScalar(yVal);
         if (x !== null && y !== null) return [x, y];
+      }
+    }
+    return null;
+  }
+
+  private toCoord3D(v: any): [number, number, number] | null {
+    if (v === undefined || v === null) return null;
+    if (Array.isArray(v)) {
+      const x = this.toScalar(v[0]);
+      const y = this.toScalar(v[1]);
+      const z = v.length >= 3 ? this.toScalar(v[2]) : 0;
+      return (x !== null && y !== null && z !== null) ? [x, y, z] : null;
+    }
+    if (v.type === 'tuple' || v.type === 'list') {
+      if (v.elements.length >= 2) {
+        const x = this.toScalar(v.elements[0]);
+        const y = this.toScalar(v.elements[1]);
+        const z = v.elements.length >= 3 ? this.toScalar(v.elements[2]) : 0;
+        return (x !== null && y !== null && z !== null) ? [x, y, z] : null;
+      }
+    }
+    if (v.type === 'record' && v.fields) {
+      const xVal = v.fields.x || v.fields[':x'] || v.fields.re || v.fields[':re'];
+      const yVal = v.fields.y || v.fields[':y'] || v.fields.im || v.fields[':im'];
+      const zVal = v.fields.z || v.fields[':z'];
+      if (xVal && yVal) {
+        const x = this.toScalar(xVal);
+        const y = this.toScalar(yVal);
+        const z = zVal ? this.toScalar(zVal) : 0;
+        if (x !== null && y !== null && z !== null) return [x, y, z];
       }
     }
     return null;

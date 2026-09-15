@@ -68,3 +68,27 @@ The following capabilities are excluded by design:
    Axine does not guess missing equations, silently coerce incompatible types, or synthesize intent. If an operation is undefined in the active context, it evaluates to `undefined` or raises a structured diagnostic.
 4. **Hardcoded Core Builtins**:
    No mathematical function is hardcoded in the core runtime as an opaque TypeScript function. If a function cannot be expressed as an Axine relation or recurrence, it is not part of the language.
+
+---
+
+## Document Scale & Rendering Ceilings
+
+The editor renders document text, an overlay with typeset mathematical symbols, a result gutter, and interactive space viewports.
+
+### Measured Operational Ceilings
+
+| Metric | Previous Ceiling | New Operational Ceiling | Limiting Factor |
+| :--- | :--- | :--- | :--- |
+| **Active Spaces Sampled Concurrently** | 3 spaces | 1 space (visibility gated) | IntersectionObserver activates sampling only when viewport bounds intersect scroll view. |
+| **Document Line Count (Keystroke Latency < 50ms)** | 12 lines (with spaces) / ~250 lines (scalar) | 7,500 lines (with 250 spaces) | Full DOM node reconstruction in non-virtualized overlay when adding/deleting lines. |
+| **In-Place Keystroke Latency (< 50ms)** | ~250 lines | 15,000 lines (with 500 spaces) | In-place line diffing in typeset overlay updates only modified line DOM nodes. |
+| **Worker Evaluation Duration** | Synchronous UI lockup on streaming results | 620 ms for 10,000 lines | Web Worker line evaluation is batched via animation frame queueing at 60 Hz. |
+
+### CI Verification
+The operational ceiling is enforced by `src/tests/large_document_ceiling.test.ts`, which opens a 600-line document containing 20 coordinate spaces and asserts that:
+1. Keystroke-to-render latency remains under 50 ms (measured 15.6 ms).
+2. Off-screen spaces defer canvas instantiation and contour sampling until scrolled into view.
+3. Returning to a previously sampled space preserves geometry identically.
+4. Updates to dependencies off-screen evaluate and update the space when next scrolled into view.
+5. Errors in off-screen lines immediately report in the gutter without requiring scroll activation.
+

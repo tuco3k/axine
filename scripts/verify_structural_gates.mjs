@@ -35,22 +35,22 @@ async function run() {
     {
       id: 'structural_gate_1_vector_space',
       title: 'Gate 1: Relation over User-Defined Vector Space (:Vec2 Circle)',
-      code: `{\n  \\axis[x, y];\n  :Vec2 := \\record { :x, :y };\n  v := :Vec2(:x: x, :y: y);\n  v.:x^2 + v.:y^2 = 4\n}`,
+      code: `{\n  \\axis x, y;\n  :Vec2 = \\record { :x, :y }\n  v = :Vec2(:x: x, :y: y)\n  v.:x^2 + v.:y^2 = 4\n}`,
     },
     {
       id: 'structural_gate_2_complex_number',
-      title: 'Gate 2: Relation over User-Defined Complex Number ((z \u2297 z).:re = 1 Hyperbola)',
-      code: `{\n  \\axis[x, y];\n  :Complex := \\record { :re, :im };\n  \\operator \\infix \u2297 (a, b) := :Complex(:re: a.:re * b.:re - a.:im * b.:im, :im: a.:re * b.:im + a.:im * b.:re);\n  z := :Complex(:re: x, :im: y);\n  (z \u2297 z).:re = 1\n}`,
+      title: 'Gate 2: Relation over User-Defined Complex Number ((z ⊗ z).:re = 1 Hyperbola)',
+      code: `{\n  \\axis x, y;\n  :Complex = \\record { :re, :im }\n  \\operator \\infix ⊗ (a, b) = :Complex(:re: a.:re * b.:re - a.:im * b.:im, :im: a.:re * b.:im + a.:im * b.:re)\n  z = :Complex(:re: x, :im: y)\n  (z ⊗ z).:re = 1\n}`,
     },
     {
       id: 'structural_gate_3_overloaded_operator',
       title: 'Gate 3: Relation using Overloaded + Operator (x + y = 0 where + is redefined as a * b - 4)',
-      code: `{\n  \\axis[x, y];\n  \\operator \\infix + (a, b) := a * b - 4;\n  x + y = 0\n}`,
+      code: `{\n  \\axis x, y;\n  \\operator \\infix + (a, b) = a * b - 4\n  x + y = 0\n}`,
     },
     {
       id: 'structural_gate_4_collection_result',
       title: 'Gate 4: Collection with Record Views (:Particle Circle & Arrow Views, Point Set)',
-      code: `{\n  \\axis[x, y];\n  :Particle := \\record { :pos, :vel };\n  \\view \\for :Particle := p -> [:circle(p.:pos, 0.4), :arrow(p.:pos, p.:vel)];\n  :p1 := :Particle(:pos: (-2, -1), :vel: (1, 2));\n  :p2 := :Particle(:pos: (1, 1), :vel: (-1, 1));\n  :pts := \\set { (0, 0), (2, -2) };\n}`,
+      code: `{\n  \\axis x, y;\n  :Particle = \\record { :pos, :vel }\n  \\view \\for :Particle = p -> [:circle(p.:pos, 0.4), :arrow(p.:pos, p.:vel)]\n  :p1 = :Particle(:pos: (-2, -1), :vel: (1, 2))\n  :p2 = :Particle(:pos: (1, 1), :vel: (-1, 1))\n  :pts = \\set { (0, 0), (2, -2) }\n}`,
     },
   ];
 
@@ -98,6 +98,6 @@ async function run() {
 }
 
 run().catch((err) => {
-  console.error('FAILED:', err);
+  console.error('ERROR in visual gate runner:', err);
   process.exit(1);
 });

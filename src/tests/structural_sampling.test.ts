@@ -205,5 +205,31 @@ describe('Phase 2.2: Structural Sampling & Non-Scalar Relations', () => {
     expect(timeStruct).toBeLessThan(50); // Under 50ms for 40,000 points
     expect(timeComplex).toBeLessThan(50);
   });
+
+  it('7. verifies robustness: structural relation near singularity produces zero phantom geometry', () => {
+    const env = createInitialEnvironment();
+    const code = `
+      {
+        \\axis x, y;
+        :Vec2 = \\record { :x, :y };
+        v = :Vec2(:x: x, :y: y);
+        y = 1 / (v.:x)
+      }
+    `;
+    const { value } = evaluate(code, env);
+    expect(value.type).toBe('space');
+    const space = value as SpaceValue;
+    const entity = space.entities[space.entities.length - 1];
+    const contour = sample2D(entity.compiledFn, [-4, 4], [-4, 4], 200);
+
+    // Must produce exactly 2 distinct hyperbolic branches, not 3 (zero bridge lines across x=0)
+    expect(contour.polylines).toHaveLength(2);
+
+    for (const poly of contour.polylines) {
+      const isLeftBranch = poly.points.every(([x]) => x < 0.001);
+      const isRightBranch = poly.points.every(([x]) => x > -0.001);
+      expect(isLeftBranch || isRightBranch).toBe(true);
+    }
+  });
 });
 

@@ -28,6 +28,8 @@ import {
 import { SpaceViewport } from '../plot/space_viewport';
 import { DocumentLineRecord } from '../document/document_state';
 import { SpaceValue } from '../core/types';
+import { WorkspaceManager, Workspace, WorkspaceFileItem } from '../document/workspace';
+import { ICONS } from '../styles/icons';
 
 function escapeHtml(str: string): string {
   return str
@@ -50,6 +52,12 @@ export interface PaneContainerOptions {
   getScopeData?: () => Map<string, { type: string; value: string; line: number; isShadowed?: boolean }>;
   getTraceData?: () => { durationMs: number; lineCount: number; status: string };
   getFramesData?: () => { id: number; line: number; type: string; summary: string; timestamp: number }[];
+  getWorkspace?: () => Workspace | null;
+  onOpenFile?: (filePath: string) => void;
+  onNewFileInWorkspace?: (filePath: string) => Promise<void> | void;
+  onNewFolderInWorkspace?: (folderPath: string) => Promise<void> | void;
+  onRenameFileInWorkspace?: (oldPath: string, newPath: string) => Promise<void> | void;
+  onDeleteFileInWorkspace?: (filePath: string) => Promise<void> | void;
   onNewDocumentTab?: () => TabData;
   onOpenDocument?: () => void;
   isDocumentDirty?: (docId?: string) => boolean;
@@ -68,6 +76,9 @@ export class PaneContainer {
   // Drag-and-drop state
   private draggingTab: { tabId: string; sourceLeafId: string } | null = null;
 
+  // Cleanup callbacks for window event listeners
+  private cleanups: (() => void)[] = [];
+
   constructor(container: HTMLElement, options: PaneContainerOptions = {}) {
     this.container = container;
     this.options = options;
@@ -75,8 +86,9 @@ export class PaneContainer {
 
     // Load persisted layout or create default
     const loaded = this.loadPersistedLayout();
-    this.layout = loaded ? { ...loaded, root: pruneEmptyPanes(loaded.root, options.defaultDocName || 'thrown_ball.ax') } : createDefaultLayout(undefined, options.defaultDocName || 'thrown_ball.ax');
+    this.layout = loaded ? { ...loaded, root: pruneEmptyPanes(loaded.root, options.defaultDocName || 'untitled.ax') } : createDefaultLayout(undefined, options.defaultDocName || 'untitled.ax');
 
+    this.bindKeyboardShortcuts();
     this.render();
   }
 
@@ -137,8 +149,8 @@ export class PaneContainer {
       this.spaceViewports.delete(tabId);
     }
 
-    const { newRoot, removedLeafId } = removeTabFromLeaf(this.layout.root, leafId, tabId, this.options.defaultDocName || 'thrown_ball.ax');
-    this.layout.root = pruneEmptyPanes(newRoot, this.options.defaultDocName || 'thrown_ball.ax');
+    const { newRoot, removedLeafId } = removeTabFromLeaf(this.layout.root, leafId, tabId, this.options.defaultDocName || 'untitled.ax');
+    this.layout.root = pruneEmptyPanes(newRoot, this.options.defaultDocName || 'untitled.ax');
 
     if ((removedLeafId && this.layout.activePaneId === removedLeafId) || !findLeaf(this.layout.root, this.layout.activePaneId)) {
       const remainingLeaves = getAllLeaves(this.layout.root);
@@ -159,6 +171,81 @@ export class PaneContainer {
     this.saveLayout();
     this.render();
     return newLeafId;
+  }
+
+  /**
+   * Splits a tab out of a leaf pane into a new pane beside or below it.
+   */
+  public splitTab(
+    leafId: string,
+    tabId: string,
+    direction: 'horizontal' | 'vertical',
+    position: 'before' | 'after' = 'after'
+  ): string | null {
+    const leaf = findLeaf(this.layout.root, leafId);
+    if (!leaf) return null;
+    const tab = leaf.tabs.find(t => t.id === tabId);
+    if (!tab) return null;
+
+    const { newRoot, newLeafId } = splitAndMoveTab(
+      this.layout.root,
+      leafId,
+      tabId,
+      leafId,
+      direction,
+      position
+    );
+    this.layout.root = newRoot;
+    if (newLeafId) {
+      this.layout.activePaneId = newLeafId;
+    }
+    this.saveLayout();
+    this.render();
+    return newLeafId || null;
+  }
+
+  /**
+   * Fast-path split for the currently active pane and its active tab.
+   * Cmd/Ctrl + \ (horizontal / right) or Cmd/Ctrl + Shift + \ (vertical / down).
+   */
+  public splitActiveTab(
+    direction: 'horizontal' | 'vertical',
+    position: 'before' | 'after' = 'after'
+  ): string | null {
+    let activeLeaf = findLeaf(this.layout.root, this.layout.activePaneId);
+    if (!activeLeaf) {
+      const leaves = getAllLeaves(this.layout.root);
+      if (leaves.length === 0) return null;
+      activeLeaf = leaves[0];
+    }
+    const activeTab = activeLeaf.tabs.find(t => t.id === activeLeaf.activeTabId) || activeLeaf.tabs[0];
+    if (!activeTab) return null;
+
+    return this.splitTab(activeLeaf.id, activeTab.id, direction, position);
+  }
+
+  private bindKeyboardShortcuts(): void {
+    if (typeof window === 'undefined') return;
+
+    const keydownHandler = (e: KeyboardEvent) => {
+      const isCmdOrCtrl = e.metaKey || e.ctrlKey;
+      const isBackslash = e.key === '\\' || e.key === '|' || e.code === 'Backslash';
+      if (!isCmdOrCtrl || !isBackslash) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (e.shiftKey) {
+        // Cmd/Ctrl + Shift + \ : split down
+        this.splitActiveTab('vertical', 'after');
+      } else {
+        // Cmd/Ctrl + \ : split right
+        this.splitActiveTab('horizontal', 'after');
+      }
+    };
+
+    window.addEventListener('keydown', keydownHandler);
+    this.cleanups.push(() => window.removeEventListener('keydown', keydownHandler));
   }
 
   /**
@@ -255,6 +342,10 @@ export class PaneContainer {
    * Main render loop building the DOM structure for the pane tree.
    */
   public render(): void {
+    if (typeof document === 'undefined') return;
+    this.cleanups.forEach(fn => fn());
+    this.cleanups = [];
+
     this.container.innerHTML = '';
     this.container.className = 'doc-pane-tree-root';
 
@@ -282,26 +373,34 @@ export class PaneContainer {
     const secondPct = ((1 - split.ratio) * 100).toFixed(2);
 
     if (split.direction === 'horizontal') {
-      firstWrapper.style.width = `${firstPct}%`;
+      firstWrapper.style.flex = `0 0 calc(${firstPct}% - 2px)`;
+      firstWrapper.style.width = `calc(${firstPct}% - 2px)`;
+      firstWrapper.style.height = '100%';
     } else {
-      firstWrapper.style.height = `${firstPct}%`;
+      firstWrapper.style.flex = `0 0 calc(${firstPct}% - 2px)`;
+      firstWrapper.style.height = `calc(${firstPct}% - 2px)`;
+      firstWrapper.style.width = '100%';
     }
     firstWrapper.appendChild(this.renderNode(split.first));
 
     const divider = document.createElement('div');
     divider.className = `pane-divider pane-divider-${split.direction}`;
-    divider.setAttribute('title', 'Drag to resize panes');
+    divider.setAttribute('title', 'Drag to resize panes (double-click to reset)');
 
     const secondWrapper = document.createElement('div');
     secondWrapper.className = 'pane-split-child pane-split-second';
     if (split.direction === 'horizontal') {
-      secondWrapper.style.width = `${secondPct}%`;
+      secondWrapper.style.flex = `0 0 calc(${secondPct}% - 2px)`;
+      secondWrapper.style.width = `calc(${secondPct}% - 2px)`;
+      secondWrapper.style.height = '100%';
     } else {
-      secondWrapper.style.height = `${secondPct}%`;
+      secondWrapper.style.flex = `0 0 calc(${secondPct}% - 2px)`;
+      secondWrapper.style.height = `calc(${secondPct}% - 2px)`;
+      secondWrapper.style.width = '100%';
     }
     secondWrapper.appendChild(this.renderNode(split.second));
 
-    // Wire splitter drag
+    // Wire splitter drag & double-click
     this.bindSplitter(divider, split, firstWrapper, secondWrapper, splitEl);
 
     splitEl.appendChild(firstWrapper);
@@ -319,54 +418,94 @@ export class PaneContainer {
   ): void {
     let isDragging = false;
 
-    divider.addEventListener('mousedown', (e: MouseEvent) => {
-      e.preventDefault();
-      isDragging = true;
-      document.body.style.cursor = split.direction === 'horizontal' ? 'col-resize' : 'row-resize';
-      document.body.style.userSelect = 'none';
-    });
-
-    const mousemoveHandler = (e: MouseEvent) => {
-      if (!isDragging) return;
-      const rect = parentContainer.getBoundingClientRect();
-
-      let newRatio = 0.5;
-      const minDimensionPx = 200;
+    const updateSizes = (ratio: number) => {
+      const firstPct = (ratio * 100).toFixed(2);
+      const secondPct = ((1 - ratio) * 100).toFixed(2);
       if (split.direction === 'horizontal') {
-        const totalW = rect.width;
-        const minRatio = totalW > 0 ? Math.min(0.5, minDimensionPx / totalW) : 0.2;
-        const maxRatio = totalW > 0 ? Math.max(0.5, (totalW - minDimensionPx) / totalW) : 0.8;
-        const offset = e.clientX - rect.left;
-        newRatio = Math.max(minRatio, Math.min(maxRatio, offset / totalW));
-        firstChild.style.width = `${(newRatio * 100).toFixed(2)}%`;
-        secondChild.style.width = `${((1 - newRatio) * 100).toFixed(2)}%`;
+        firstChild.style.flex = `0 0 calc(${firstPct}% - 2px)`;
+        firstChild.style.width = `calc(${firstPct}% - 2px)`;
+        secondChild.style.flex = `0 0 calc(${secondPct}% - 2px)`;
+        secondChild.style.width = `calc(${secondPct}% - 2px)`;
       } else {
-        const totalH = rect.height;
-        const minRatio = totalH > 0 ? Math.min(0.5, minDimensionPx / totalH) : 0.2;
-        const maxRatio = totalH > 0 ? Math.max(0.5, (totalH - minDimensionPx) / totalH) : 0.8;
-        const offset = e.clientY - rect.top;
-        newRatio = Math.max(minRatio, Math.min(maxRatio, offset / totalH));
-        firstChild.style.height = `${(newRatio * 100).toFixed(2)}%`;
-        secondChild.style.height = `${((1 - newRatio) * 100).toFixed(2)}%`;
+        firstChild.style.flex = `0 0 calc(${firstPct}% - 2px)`;
+        firstChild.style.height = `calc(${firstPct}% - 2px)`;
+        secondChild.style.flex = `0 0 calc(${secondPct}% - 2px)`;
+        secondChild.style.height = `calc(${secondPct}% - 2px)`;
       }
-
-      split.ratio = newRatio;
-
-      // Trigger redraw of active space viewports in children
+      split.ratio = ratio;
       this.spaceViewports.forEach(vp => vp.render());
     };
 
-    const mouseupHandler = () => {
+    // Double-click boundary to distribute evenly (50%/50%)
+    const onDblClick = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      updateSizes(0.5);
+      this.saveLayout();
+    };
+    divider.addEventListener('dblclick', onDblClick);
+
+    // Mouse down starts dragging
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      isDragging = true;
+      document.body.style.cursor = split.direction === 'horizontal' ? 'col-resize' : 'row-resize';
+      document.body.style.userSelect = 'none';
+      divider.classList.add('active');
+    };
+    divider.addEventListener('mousedown', onMouseDown);
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return;
+      const rect = parentContainer.getBoundingClientRect();
+
+      const minDimensionPx = 60; // Minimum pane size to prevent collapsing to unusable
+      let newRatio = 0.5;
+
+      if (split.direction === 'horizontal') {
+        const totalW = rect.width;
+        if (totalW > 0) {
+          const minRatio = Math.min(0.45, Math.max(0.05, minDimensionPx / totalW));
+          const maxRatio = Math.max(0.55, Math.min(0.95, (totalW - minDimensionPx) / totalW));
+          const offset = e.clientX - rect.left;
+          newRatio = Math.max(minRatio, Math.min(maxRatio, offset / totalW));
+        }
+      } else {
+        const totalH = rect.height;
+        if (totalH > 0) {
+          const minRatio = Math.min(0.45, Math.max(0.05, minDimensionPx / totalH));
+          const maxRatio = Math.max(0.55, Math.min(0.95, (totalH - minDimensionPx) / totalH));
+          const offset = e.clientY - rect.top;
+          newRatio = Math.max(minRatio, Math.min(maxRatio, offset / totalH));
+        }
+      }
+
+      updateSizes(newRatio);
+    };
+
+    const onMouseUp = () => {
       if (isDragging) {
         isDragging = false;
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
+        divider.classList.remove('active');
         this.saveLayout();
       }
     };
 
-    window.addEventListener('mousemove', mousemoveHandler);
-    window.addEventListener('mouseup', mouseupHandler);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+
+      this.cleanups.push(() => {
+        divider.removeEventListener('dblclick', onDblClick);
+        divider.removeEventListener('mousedown', onMouseDown);
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+      });
+    }
   }
 
   private renderLeaf(leaf: PaneLeaf): HTMLElement {
@@ -466,14 +605,17 @@ export class PaneContainer {
       this.renderTabContent(body, leaf.id, activeTab);
     }
 
+    leafEl.appendChild(body);
+
     // 3. Drop Zone Overlay for Splitting
     const dropOverlay = document.createElement('div');
     dropOverlay.className = 'pane-drop-overlay hidden';
+    const dropLabel = document.createElement('div');
+    dropLabel.className = 'pane-drop-label';
+    dropOverlay.appendChild(dropLabel);
     leafEl.appendChild(dropOverlay);
 
-    this.bindPaneDropZones(leafEl, dropOverlay, leaf.id);
-
-    leafEl.appendChild(body);
+    this.bindPaneDropZones(leafEl, dropOverlay, dropLabel, leaf.id);
     return leafEl;
   }
 
@@ -629,22 +771,22 @@ export class PaneContainer {
       menu.appendChild(div);
     }
 
-    // Pane operations
+    // Split operations on this tab
     const splitRightItem = document.createElement('button');
     splitRightItem.className = 'pane-dropdown-item';
-    splitRightItem.innerHTML = `<span>Split pane right</span>`;
+    splitRightItem.innerHTML = `<span>Split Right</span>`;
     splitRightItem.addEventListener('click', () => {
       menu.remove();
-      this.split(leafId, 'horizontal', 'after');
+      this.splitTab(leafId, tab.id, 'horizontal', 'after');
     });
     menu.appendChild(splitRightItem);
 
     const splitDownItem = document.createElement('button');
     splitDownItem.className = 'pane-dropdown-item';
-    splitDownItem.innerHTML = `<span>Split pane down</span>`;
+    splitDownItem.innerHTML = `<span>Split Down</span>`;
     splitDownItem.addEventListener('click', () => {
       menu.remove();
-      this.split(leafId, 'vertical', 'after');
+      this.splitTab(leafId, tab.id, 'vertical', 'after');
     });
     menu.appendChild(splitDownItem);
 
@@ -805,6 +947,29 @@ export class PaneContainer {
       }, leafId || undefined);
     };
     dropdown.appendChild(framesItem);
+
+    // 4. Workspace & Files section
+    const divider3 = document.createElement('div');
+    divider3.className = 'doc-file-menu-divider';
+    dropdown.appendChild(divider3);
+
+    const wsSection = document.createElement('div');
+    wsSection.className = 'doc-file-menu-section-title';
+    wsSection.textContent = 'Workspace';
+    dropdown.appendChild(wsSection);
+
+    const fileTreeItem = document.createElement('button');
+    fileTreeItem.className = 'doc-file-menu-item';
+    fileTreeItem.innerHTML = '<span>Files</span>';
+    fileTreeItem.onclick = () => {
+      dropdown.classList.add('hidden');
+      this.openTab({
+        id: 'tab_tree_' + Math.random().toString(36).substring(2, 9),
+        type: 'tree',
+        title: 'Files',
+      }, leafId || undefined);
+    };
+    dropdown.appendChild(fileTreeItem);
   }
 
   private renderTabContent(body: HTMLElement, leafId: string, tab: TabData): void {
@@ -878,6 +1043,176 @@ export class PaneContainer {
       this.renderFramesView(body);
       return;
     }
+
+    if (tab.type === 'tree') {
+      this.renderTreeView(body);
+      return;
+    }
+  }
+
+  public updateTreePanes(): void {
+    const leaves = getAllLeaves(this.layout.root);
+    leaves.forEach(leaf => {
+      const activeTab = leaf.tabs.find(t => t.id === leaf.activeTabId);
+      if (!activeTab || activeTab.type !== 'tree') return;
+
+      const paneEl = this.container.querySelector(`.pane-leaf-container[data-leaf-id="${leaf.id}"]`);
+      const bodyEl = paneEl?.querySelector('.pane-body') as HTMLElement;
+      if (!bodyEl) return;
+
+      this.renderTreeView(bodyEl);
+    });
+  }
+
+  private renderTreeView(container: HTMLElement): void {
+    container.innerHTML = '';
+    const treeWrapper = document.createElement('div');
+    treeWrapper.className = 'pane-tree-view';
+
+    // Header / Toolbar
+    const header = document.createElement('div');
+    header.className = 'pane-tree-header';
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'pane-tree-title';
+    titleSpan.textContent = 'Files';
+    header.appendChild(titleSpan);
+
+    const actionsBar = document.createElement('div');
+    actionsBar.className = 'pane-tree-actions';
+
+    const newFileBtn = document.createElement('button');
+    newFileBtn.className = 'pane-tree-btn';
+    newFileBtn.title = 'New file';
+    newFileBtn.innerHTML = `${ICONS.newFile || ''}<span>File</span>`;
+    newFileBtn.onclick = async (e) => {
+      e.stopPropagation();
+      const fileName = typeof window !== 'undefined' ? window.prompt('New file name (e.g. model.ax):', 'model.ax') : 'model.ax';
+      if (fileName) {
+        const cleanName = fileName.endsWith('.ax') ? fileName : fileName + '.ax';
+        await this.options.onNewFileInWorkspace?.(cleanName);
+        this.renderTreeView(container);
+      }
+    };
+    actionsBar.appendChild(newFileBtn);
+
+    const newFolderBtn = document.createElement('button');
+    newFolderBtn.className = 'pane-tree-btn';
+    newFolderBtn.title = 'New folder';
+    newFolderBtn.innerHTML = `${ICONS.newFolder || ''}<span>Folder</span>`;
+    newFolderBtn.onclick = async (e) => {
+      e.stopPropagation();
+      const folderName = typeof window !== 'undefined' ? window.prompt('New folder name:', 'lib') : 'lib';
+      if (folderName) {
+        await this.options.onNewFolderInWorkspace?.(folderName);
+        this.renderTreeView(container);
+      }
+    };
+    actionsBar.appendChild(newFolderBtn);
+
+    header.appendChild(actionsBar);
+    treeWrapper.appendChild(header);
+
+    // Tree Body
+    const treeBody = document.createElement('div');
+    treeBody.className = 'pane-tree-body';
+
+    const workspace = this.options.getWorkspace?.();
+    const filesMap: Map<string, string> = workspace?.files || new Map();
+    const treeItems = WorkspaceManager.buildFileTree(filesMap);
+
+    if (treeItems.length === 0) {
+      const emptyDiv = document.createElement('div');
+      emptyDiv.className = 'pane-tree-empty';
+      emptyDiv.textContent = 'No files in workspace';
+      treeBody.appendChild(emptyDiv);
+    } else {
+      const renderNodes = (nodes: WorkspaceFileItem[], parentEl: HTMLElement, level: number = 0) => {
+        nodes.forEach(node => {
+          if (node.name === '.keep') return;
+
+          const row = document.createElement('div');
+          row.className = `pane-tree-row ${node.isDirectory ? 'is-directory' : 'is-file'}`;
+          row.style.paddingLeft = `${10 + level * 14}px`;
+
+          const labelContainer = document.createElement('div');
+          labelContainer.className = 'pane-tree-label-container';
+
+          const iconSpan = document.createElement('span');
+          iconSpan.className = 'pane-tree-icon';
+          iconSpan.innerHTML = node.isDirectory ? ICONS.folder : ICONS.file;
+          labelContainer.appendChild(iconSpan);
+
+          const nameSpan = document.createElement('span');
+          nameSpan.className = 'pane-tree-name';
+          nameSpan.textContent = node.name;
+          labelContainer.appendChild(nameSpan);
+
+          row.appendChild(labelContainer);
+
+          // Actions
+          const rowActions = document.createElement('div');
+          rowActions.className = 'pane-tree-row-actions';
+
+          const renameBtn = document.createElement('button');
+          renameBtn.className = 'pane-tree-row-btn';
+          renameBtn.title = 'Rename';
+          renameBtn.textContent = 'Rename';
+          renameBtn.onclick = async (e) => {
+            e.stopPropagation();
+            const newName = typeof window !== 'undefined' ? window.prompt('Rename to:', node.name) : '';
+            if (newName && newName !== node.name) {
+              const parts = node.path.split('/');
+              parts[parts.length - 1] = newName;
+              const newPath = parts.join('/');
+              await this.options.onRenameFileInWorkspace?.(node.path, newPath);
+              this.renderTreeView(container);
+            }
+          };
+          rowActions.appendChild(renameBtn);
+
+          const deleteBtn = document.createElement('button');
+          deleteBtn.className = 'pane-tree-row-btn delete-btn';
+          deleteBtn.title = 'Delete';
+          deleteBtn.textContent = 'Delete';
+          deleteBtn.onclick = async (e) => {
+            e.stopPropagation();
+            const confirmed = typeof window !== 'undefined' ? window.confirm(`Delete ${node.name}?`) : true;
+            if (confirmed) {
+              await this.options.onDeleteFileInWorkspace?.(node.path);
+              this.renderTreeView(container);
+            }
+          };
+          rowActions.appendChild(deleteBtn);
+
+          row.appendChild(rowActions);
+
+          if (!node.isDirectory) {
+            row.onclick = () => {
+              this.options.onOpenFile?.(node.path);
+            };
+          }
+
+          parentEl.appendChild(row);
+
+          if (node.isDirectory && node.children && node.children.length > 0) {
+            const childContainer = document.createElement('div');
+            childContainer.className = 'pane-tree-children';
+            renderNodes(node.children, childContainer, level + 1);
+            parentEl.appendChild(childContainer);
+
+            labelContainer.onclick = () => {
+              childContainer.classList.toggle('collapsed');
+            };
+          }
+        });
+      };
+
+      renderNodes(treeItems, treeBody, 0);
+    }
+
+    treeWrapper.appendChild(treeBody);
+    container.appendChild(treeWrapper);
   }
 
   private renderScopeView(container: HTMLElement): void {
@@ -999,30 +1334,62 @@ export class PaneContainer {
     });
   }
 
-  private bindPaneDropZones(leafEl: HTMLElement, dropOverlay: HTMLElement, leafId: string): void {
+  private bindPaneDropZones(
+    leafEl: HTMLElement,
+    dropOverlay: HTMLElement,
+    dropLabel: HTMLElement,
+    leafId: string
+  ): void {
     leafEl.addEventListener('dragover', (e: DragEvent) => {
+      if (!this.draggingTab) {
+        const data = e.dataTransfer?.getData('text/plain');
+        if (data) {
+          try {
+            this.draggingTab = JSON.parse(data);
+          } catch {}
+        }
+      }
       if (!this.draggingTab) return;
+
       e.preventDefault();
       if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
 
       const rect = leafEl.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
-      const relX = x / rect.width;
-      const relY = y / rect.height;
+      const relX = Math.max(0, Math.min(1, x / rect.width));
+      const relY = Math.max(0, Math.min(1, y / rect.height));
+
+      // Distance to four edges
+      const distLeft = relX;
+      const distRight = 1 - relX;
+      const distTop = relY;
+      const distBottom = 1 - relY;
+      const minDist = Math.min(distLeft, distRight, distTop, distBottom);
 
       dropOverlay.classList.remove('hidden');
 
-      if (relX < 0.25) {
-        dropOverlay.setAttribute('data-zone', 'left');
-      } else if (relX > 0.75) {
-        dropOverlay.setAttribute('data-zone', 'right');
-      } else if (relY < 0.25) {
-        dropOverlay.setAttribute('data-zone', 'top');
-      } else if (relY > 0.75) {
-        dropOverlay.setAttribute('data-zone', 'bottom');
+      // Edge threshold: within 25% of any boundary triggers edge split
+      if (minDist < 0.25) {
+        if (minDist === distRight) {
+          dropOverlay.setAttribute('data-zone', 'right');
+          dropLabel.textContent = 'Split Right';
+        } else if (minDist === distBottom) {
+          dropOverlay.setAttribute('data-zone', 'bottom');
+          dropLabel.textContent = 'Split Down';
+        } else if (minDist === distLeft) {
+          dropOverlay.setAttribute('data-zone', 'left');
+          dropLabel.textContent = 'Split Left';
+        } else {
+          dropOverlay.setAttribute('data-zone', 'top');
+          dropLabel.textContent = 'Split Up';
+        }
       } else {
+        // In the middle: adds to this pane's tab bar
         dropOverlay.setAttribute('data-zone', 'center');
+        dropLabel.textContent = 'Add to Tab Bar';
       }
     });
 
@@ -1033,32 +1400,51 @@ export class PaneContainer {
     });
 
     leafEl.addEventListener('drop', (e: DragEvent) => {
+      if (!this.draggingTab) {
+        const data = e.dataTransfer?.getData('text/plain');
+        if (data) {
+          try {
+            this.draggingTab = JSON.parse(data);
+          } catch {}
+        }
+      }
       if (!this.draggingTab) return;
+
       e.preventDefault();
       e.stopPropagation();
       dropOverlay.classList.add('hidden');
 
-      const zone = dropOverlay.getAttribute('data-zone');
+      const zone = dropOverlay.getAttribute('data-zone') || 'center';
       const { tabId, sourceLeafId } = this.draggingTab;
 
+      let newLeafId: string | undefined;
+
       if (zone === 'left') {
-        const { newRoot } = splitAndMoveTab(this.layout.root, sourceLeafId, tabId, leafId, 'horizontal', 'before');
-        this.layout.root = newRoot;
+        const res = splitAndMoveTab(this.layout.root, sourceLeafId, tabId, leafId, 'horizontal', 'before');
+        this.layout.root = res.newRoot;
+        newLeafId = res.newLeafId;
       } else if (zone === 'right') {
-        const { newRoot } = splitAndMoveTab(this.layout.root, sourceLeafId, tabId, leafId, 'horizontal', 'after');
-        this.layout.root = newRoot;
+        const res = splitAndMoveTab(this.layout.root, sourceLeafId, tabId, leafId, 'horizontal', 'after');
+        this.layout.root = res.newRoot;
+        newLeafId = res.newLeafId;
       } else if (zone === 'top') {
-        const { newRoot } = splitAndMoveTab(this.layout.root, sourceLeafId, tabId, leafId, 'vertical', 'before');
-        this.layout.root = newRoot;
+        const res = splitAndMoveTab(this.layout.root, sourceLeafId, tabId, leafId, 'vertical', 'before');
+        this.layout.root = res.newRoot;
+        newLeafId = res.newLeafId;
       } else if (zone === 'bottom') {
-        const { newRoot } = splitAndMoveTab(this.layout.root, sourceLeafId, tabId, leafId, 'vertical', 'after');
-        this.layout.root = newRoot;
+        const res = splitAndMoveTab(this.layout.root, sourceLeafId, tabId, leafId, 'vertical', 'after');
+        this.layout.root = res.newRoot;
+        newLeafId = res.newLeafId;
       } else {
-        // Center: append to tabs in leaf
-        const { newRoot } = moveTab(this.layout.root, sourceLeafId, tabId, leafId);
-        this.layout.root = newRoot;
+        // Middle: append to tabs in leaf
+        const res = moveTab(this.layout.root, sourceLeafId, tabId, leafId);
+        this.layout.root = res.newRoot;
+        newLeafId = leafId;
       }
 
+      if (newLeafId) {
+        this.layout.activePaneId = newLeafId;
+      }
       this.saveLayout();
       this.render();
     });
@@ -1078,6 +1464,8 @@ export class PaneContainer {
   }
 
   public dispose(): void {
+    this.cleanups.forEach(fn => fn());
+    this.cleanups = [];
     this.spaceViewports.forEach(vp => vp.dispose());
     this.spaceViewports.clear();
     this.container.innerHTML = '';

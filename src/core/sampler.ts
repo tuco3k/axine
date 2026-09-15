@@ -110,44 +110,57 @@ export function sample2D(
   const dx = (xR.max - xR.min) / (nx - 1);
   const dy = (yR.max - yR.min) / (ny - 1);
 
-  // Pre-allocate and sample grid using warm-start search with residual validation
+  // Pre-allocate and sample grid using batch evaluation or warm-start search
   const grid = new Float64Array(nx * ny);
   let allPositive = true;
   let allNegative = true;
   let hasValidFinite = false;
   let fallbackCount = 0;
-  let lastVal: number | undefined = undefined;
 
-  for (let j = 0; j < ny; j++) {
-    const y = yR.min + j * dy;
-    const rowOffset = j * nx;
-    for (let i = 0; i < nx; i++) {
-      const x = xR.min + i * dx;
-      let val: number;
-
-      if (lastVal !== undefined && Number.isFinite(lastVal)) {
-        // Try warm-start with previous grid point's converged result as seed
-        val = (fn as any)(x, y, lastVal);
-        // Residual check: if result is non-finite or invalid, fallback to cold start
-        if (!Number.isFinite(val)) {
-          val = fn(x, y);
-          fallbackCount++;
-        }
-      } else {
-        // Cold start (initial point or after discontinuity)
-        val = fn(x, y);
-      }
-
-      if (!Number.isFinite(val)) {
-        val = Number.NaN;
-        lastVal = undefined; // reset seed on discontinuity
-      } else {
+  if (typeof (fn as NumericCompiledFn).batch2D === 'function') {
+    (fn as NumericCompiledFn).batch2D!(grid, xR.min, dx, nx, yR.min, dy, ny);
+    const total = nx * ny;
+    for (let i = 0; i < total; i++) {
+      const val = grid[i];
+      if (Number.isFinite(val)) {
         hasValidFinite = true;
         if (val < 0) allPositive = false;
         if (val > 0) allNegative = false;
-        lastVal = val;
       }
-      grid[rowOffset + i] = val;
+    }
+  } else {
+    let lastVal: number | undefined = undefined;
+    for (let j = 0; j < ny; j++) {
+      const y = yR.min + j * dy;
+      const rowOffset = j * nx;
+      for (let i = 0; i < nx; i++) {
+        const x = xR.min + i * dx;
+        let val: number;
+
+        if (lastVal !== undefined && Number.isFinite(lastVal)) {
+          // Try warm-start with previous grid point's converged result as seed
+          val = (fn as any)(x, y, lastVal);
+          // Residual check: if result is non-finite or invalid, fallback to cold start
+          if (!Number.isFinite(val)) {
+            val = fn(x, y);
+            fallbackCount++;
+          }
+        } else {
+          // Cold start (initial point or after discontinuity)
+          val = fn(x, y);
+        }
+
+        if (!Number.isFinite(val)) {
+          val = Number.NaN;
+          lastVal = undefined; // reset seed on discontinuity
+        } else {
+          hasValidFinite = true;
+          if (val < 0) allPositive = false;
+          if (val > 0) allNegative = false;
+          lastVal = val;
+        }
+        grid[rowOffset + i] = val;
+      }
     }
   }
 
@@ -599,38 +612,50 @@ export function sample3D(
   let allNegative = true;
   let hasValidFinite = false;
   let fallbackCount = 0;
-  let lastVal: number | undefined = undefined;
 
-  for (let k = 0; k < nz; k++) {
-    const z = zR.min + k * dz;
-    const sliceOffset = k * ny * nx;
-    for (let j = 0; j < ny; j++) {
-      const y = yR.min + j * dy;
-      const rowOffset = sliceOffset + j * nx;
-      for (let i = 0; i < nx; i++) {
-        const x = xR.min + i * dx;
-        let val: number;
+  if (typeof (fn as NumericCompiledFn).batch3D === 'function') {
+    (fn as NumericCompiledFn).batch3D!(grid, xR.min, dx, nx, yR.min, dy, ny, zR.min, dz, nz);
+    for (let i = 0; i < totalSamples; i++) {
+      const val = grid[i];
+      if (Number.isFinite(val)) {
+        hasValidFinite = true;
+        if (val < 0) allPositive = false;
+        if (val > 0) allNegative = false;
+      }
+    }
+  } else {
+    let lastVal: number | undefined = undefined;
+    for (let k = 0; k < nz; k++) {
+      const z = zR.min + k * dz;
+      const sliceOffset = k * ny * nx;
+      for (let j = 0; j < ny; j++) {
+        const y = yR.min + j * dy;
+        const rowOffset = sliceOffset + j * nx;
+        for (let i = 0; i < nx; i++) {
+          const x = xR.min + i * dx;
+          let val: number;
 
-        if (lastVal !== undefined && Number.isFinite(lastVal)) {
-          val = (fn as any)(x, y, z, lastVal);
-          if (!Number.isFinite(val)) {
+          if (lastVal !== undefined && Number.isFinite(lastVal)) {
+            val = (fn as any)(x, y, z, lastVal);
+            if (!Number.isFinite(val)) {
+              val = fn(x, y, z);
+              fallbackCount++;
+            }
+          } else {
             val = fn(x, y, z);
-            fallbackCount++;
           }
-        } else {
-          val = fn(x, y, z);
-        }
 
-        if (!Number.isFinite(val)) {
-          val = Number.NaN;
-          lastVal = undefined;
-        } else {
-          hasValidFinite = true;
-          if (val < 0) allPositive = false;
-          if (val > 0) allNegative = false;
-          lastVal = val;
+          if (!Number.isFinite(val)) {
+            val = Number.NaN;
+            lastVal = undefined;
+          } else {
+            hasValidFinite = true;
+            if (val < 0) allPositive = false;
+            if (val > 0) allNegative = false;
+            lastVal = val;
+          }
+          grid[rowOffset + i] = val;
         }
-        grid[rowOffset + i] = val;
       }
     }
   }
@@ -1248,7 +1273,8 @@ export function findBounds1D(
  * This runs independently of any camera viewport.
  */
 export function populateSpaceGeometry(space: SpaceValue): void {
-  if (!space || !space.entities || space.entities.length === 0) return;
+  if (!space) return;
+  if ((!space.entities || space.entities.length === 0) && (!space.primitives || space.primitives.length === 0)) return;
 
   const dim = space.dimension;
   const coords = space.coordinates.length > 0 ? space.coordinates : ['x', 'y'];
@@ -1267,7 +1293,7 @@ export function populateSpaceGeometry(space: SpaceValue): void {
     if (b0 && b1 && b2) {
       extent3D = { minX: b0[0], maxX: b0[1], minY: b1[0], maxY: b1[1], minZ: b2[0], maxZ: b2[1] };
     }
-  } else {
+  } else if (space.entities && space.entities.length > 0) {
     // Discover domain from primary entity
     const primary = space.entities[0];
     if (typeof primary?.compiledFn === 'function') {
@@ -1283,10 +1309,49 @@ export function populateSpaceGeometry(space: SpaceValue): void {
         }
       }
     }
+  } else if (space.primitives && space.primitives.length > 0) {
+    // Discover domain from discrete point primitives
+    const allX: number[] = [];
+    const allY: number[] = [];
+    const allZ: number[] = [];
+    for (const prim of space.primitives) {
+      if (prim.primitive === 'point' && Array.isArray(prim.params?.position)) {
+        allX.push(prim.params.position[0]);
+        allY.push(prim.params.position[1]);
+        if (prim.params.position.length >= 3) allZ.push(prim.params.position[2]);
+      }
+    }
+    if (allX.length > 0 && allY.length > 0) {
+      const minX = Math.min(...allX);
+      const maxX = Math.max(...allX);
+      const minY = Math.min(...allY);
+      const maxY = Math.max(...allY);
+      const spanX = Math.max(0.1, maxX - minX);
+      const spanY = Math.max(0.1, maxY - minY);
+      const padX = Math.max(1, spanX * 0.25);
+      const padY = Math.max(1, spanY * 0.25);
+      extent2D = { minX: minX - padX, maxX: maxX + padX, minY: minY - padY, maxY: maxY + padY };
+      if (allZ.length > 0) {
+        const minZ = Math.min(...allZ);
+        const maxZ = Math.max(...allZ);
+        const spanZ = Math.max(0.1, maxZ - minZ);
+        const padZ = Math.max(1, spanZ * 0.25);
+        extent3D = {
+          minX: minX - padX,
+          maxX: maxX + padX,
+          minY: minY - padY,
+          maxY: maxY + padY,
+          minZ: minZ - padZ,
+          maxZ: maxZ + padZ,
+        };
+      }
+    }
   }
 
   space.extent2D = extent2D;
   space.extent3D = extent3D;
+
+  if (!space.entities || space.entities.length === 0) return;
 
   // 2. Pre-sample geometry for all entities over the space's extent
   for (const ent of space.entities) {

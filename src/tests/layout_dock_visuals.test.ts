@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { DocumentEditor } from '../document/editor';
-import { CORPUS_DOCUMENTS } from '../document/corpus_data';
 
 // Robust recursive/stack-based DOM Mock for Node Vitest runner
 class MockClassList {
@@ -26,8 +25,18 @@ class MockClassList {
 class MockElement {
   public tagName: string;
   public id: string = '';
-  public className: string = '';
+  private _className: string = '';
   public classList: MockClassList = new MockClassList();
+  get className(): string {
+    return this._className;
+  }
+  set className(val: string) {
+    this._className = val;
+    this.classList = new MockClassList();
+    if (val) {
+      val.split(/\s+/).forEach(c => { if (c) this.classList.add(c); });
+    }
+  }
   public style: Record<string, string> = {};
   public attributes: Map<string, string> = new Map();
   public children: MockElement[] = [];
@@ -523,19 +532,19 @@ describe('Layout, Multi-Edge Docking, and Inline Visuals', () => {
     expect(textarea?.value.split('\n').length).toBe(7);
   });
 
-  it('asserts default startup without args initializes line count to CORPUS_DOCUMENTS[0] line count', () => {
-    // Mount editor with no initialText (simulating page launch)
+  it('asserts default startup without args initializes welcome screen', () => {
+    localStorage.clear();
+    // Mount editor with no initialText (simulating page launch without active workspace)
     editor = new DocumentEditor(container as any);
 
-    const expectedLineCount = CORPUS_DOCUMENTS[0].content.split('\n').length;
-    const lineNumElements = container.querySelectorAll('.doc-line-num');
-    expect(lineNumElements.length).toBe(expectedLineCount);
+    const welcomeScreenEl = container.querySelector('.axine-welcome-screen');
+    expect(welcomeScreenEl).not.toBeNull();
 
-    const statsBadge = container.querySelector('#doc-stats-badge');
-    expect(statsBadge?.textContent).toContain(`${expectedLineCount} lines`);
+    const openFolderBtn = container.querySelector('#welcome-open-folder-btn');
+    expect(openFolderBtn).not.toBeNull();
 
-    const textarea = container.querySelector('#doc-textarea') as any;
-    expect(textarea?.value.split('\n').length).toBe(expectedLineCount);
+    const newDocBtn = container.querySelector('#welcome-new-doc-btn');
+    expect(newDocBtn).not.toBeNull();
   });
 
   it('asserts dock menu dropdown toggles and selects dock edges', () => {

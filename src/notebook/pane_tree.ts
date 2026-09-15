@@ -5,7 +5,7 @@
  * Every view is an equal tab: .ax document, space, scope, trace, frames.
  */
 
-export type PaneViewType = 'document' | 'results' | 'space' | 'scope' | 'trace' | 'frames';
+export type PaneViewType = 'document' | 'results' | 'space' | 'scope' | 'trace' | 'frames' | 'tree';
 
 export interface CameraState {
   viewMode: '1d' | '2d' | '3d';
@@ -166,7 +166,7 @@ export function addTabToLeaf(root: PaneNode, leafId: string, tab: TabData, atInd
  * Recursively prunes empty leaf panes from the tree, promoting sibling panes.
  * If the root is a single empty leaf, initializes a default document tab.
  */
-export function pruneEmptyPanes(node: PaneNode, defaultDocName: string = 'thrown_ball.ax'): PaneNode {
+export function pruneEmptyPanes(node: PaneNode, defaultDocName: string = 'untitled.ax'): PaneNode {
   if (node.type === 'leaf') {
     if (node.tabs.length === 0) {
       const defaultTab: TabData = {
@@ -211,7 +211,7 @@ export function removeTabFromLeaf(
   root: PaneNode,
   leafId: string,
   tabId: string,
-  defaultDocName: string = 'thrown_ball.ax'
+  defaultDocName: string = 'untitled.ax'
 ): { newRoot: PaneNode; removedLeafId?: string } {
   const leaf = findLeaf(root, leafId);
   if (!leaf) {
@@ -295,7 +295,7 @@ export function splitPane(
   const complementaryType: PaneViewType = targetFirstTab?.type === 'document' ? 'results' : 'document';
   const complementaryTitle = complementaryType === 'results'
     ? (targetFirstTab?.title ? `${targetFirstTab.title.replace(/\.ax$/, '')} — Results` : 'Results')
-    : (targetFirstTab?.documentId ? `${targetFirstTab.documentId}.ax` : 'thrown_ball.ax');
+    : (targetFirstTab?.documentId ? `${targetFirstTab.documentId}.ax` : 'untitled.ax');
 
   const initialTabs = newTab ? [newTab] : (targetLeaf.tabs.length > 1
     ? [targetLeaf.tabs.pop()!]
@@ -394,12 +394,12 @@ export function splitAndMoveTab(
   targetLeafId: string,
   direction: 'horizontal' | 'vertical',
   position: 'before' | 'after'
-): { newRoot: PaneNode } {
+): { newRoot: PaneNode; newLeafId: string } {
   const sourceLeaf = findLeaf(root, sourceLeafId);
-  if (!sourceLeaf) return { newRoot: root };
+  if (!sourceLeaf) return { newRoot: root, newLeafId: '' };
 
   const tabIdx = sourceLeaf.tabs.findIndex(t => t.id === tabId);
-  if (tabIdx === -1) return { newRoot: root };
+  if (tabIdx === -1) return { newRoot: root, newLeafId: '' };
 
   const [tab] = sourceLeaf.tabs.splice(tabIdx, 1);
 
@@ -413,7 +413,7 @@ export function splitAndMoveTab(
     const complementaryType: PaneViewType = tab.type === 'document' ? 'results' : 'document';
     const complementaryTitle = complementaryType === 'results'
       ? (tab.title ? `${tab.title.replace(/\.ax$/, '')} — Results` : 'Results')
-      : (tab.documentId ? `${tab.documentId}.ax` : 'thrown_ball.ax');
+      : (tab.documentId ? `${tab.documentId}.ax` : 'untitled.ax');
     const compTab: TabData = {
       id: 'tab_' + Math.random().toString(36).substring(2, 9),
       type: complementaryType,
@@ -430,10 +430,10 @@ export function splitAndMoveTab(
   // If source leaf became empty, prune it and promote sibling
   if (sourceLeaf.tabs.length === 0 && sourceLeafId !== targetLeafId) {
     const collapsed = removeTabFromLeaf(splitRes.newRoot, sourceLeafId, '__noop__');
-    return { newRoot: pruneEmptyPanes(collapsed.newRoot) };
+    return { newRoot: pruneEmptyPanes(collapsed.newRoot), newLeafId: splitRes.newLeafId };
   }
 
-  return { newRoot: pruneEmptyPanes(splitRes.newRoot) };
+  return { newRoot: pruneEmptyPanes(splitRes.newRoot), newLeafId: splitRes.newLeafId };
 }
 
 /**
@@ -485,11 +485,17 @@ export function deserializeLayout(json: string): WorkspaceLayout | null {
 /**
  * Synchronizes tab titles for a document and its results tabs across the tree.
  */
-export function updateDocumentTabTitles(root: PaneNode, docId: string, newDocName: string): void {
+export function updateDocumentTabTitles(
+  root: PaneNode,
+  docId: string,
+  newDocName: string,
+  validDocIds?: Set<string>
+): void {
   const tabs = getAllTabs(root);
   const baseName = newDocName.replace(/\.ax$/, '');
   tabs.forEach(tab => {
-    if (tab.documentId === docId || !tab.documentId) {
+    const isStale = !!(validDocIds && tab.documentId && !validDocIds.has(tab.documentId));
+    if (tab.documentId === docId || !tab.documentId || isStale) {
       if (tab.type === 'document') {
         tab.title = newDocName;
         tab.documentId = docId;
@@ -500,3 +506,4 @@ export function updateDocumentTabTitles(root: PaneNode, docId: string, newDocNam
     }
   });
 }
+

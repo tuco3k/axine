@@ -111,4 +111,49 @@ b := :Body(:mass: 2, :position: (0, 0), :velocity: (10, 0))
     expect(env['res'] || env[':res']).toBeDefined();
     expect(valueToNumber(env['res'] || env[':res'])).toBe(49);
   });
+
+  it('empirically resolves \\import "lib/sqrt.ax" to bundled stdlib when directory has no lib/ beside it', () => {
+    // Directory on disk with NO lib/ directory beside it
+    const noLibDir = path.join(testDir, 'isolated_dir_no_lib');
+    fs.mkdirSync(noLibDir, { recursive: true });
+    expect(fs.existsSync(path.join(noLibDir, 'lib'))).toBe(false);
+
+    const docPath = path.join(noLibDir, 'test_calc.ax');
+    const docContent = `
+\\import "lib/sqrt.ax"
+:val = :sqrt(16)
+`;
+    fs.writeFileSync(docPath, docContent, 'utf-8');
+
+    Evaluator.setBaseDir(noLibDir);
+    const env = evalDocument(docContent);
+    expect(env['val'] || env[':val']).toBeDefined();
+    expect(valueToNumber(env['val'] || env[':val'])).toBe(4);
+  });
+
+  it('empirically resolves \\import "lib/sqrt.ax" to sibling lib/ when directory DOES have lib/ beside it', () => {
+    // Directory on disk WITH sibling lib/ directory containing custom sqrt.ax
+    const withLibDir = path.join(testDir, 'dir_with_lib');
+    const siblingLib = path.join(withLibDir, 'lib');
+    fs.mkdirSync(siblingLib, { recursive: true });
+
+    const customSqrtContent = `
+# Custom override sqrt in sibling lib
+\\forall x, :sqrt(x) = 9999
+\\export :sqrt
+`;
+    fs.writeFileSync(path.join(siblingLib, 'sqrt.ax'), customSqrtContent, 'utf-8');
+
+    const docPath = path.join(withLibDir, 'test_override.ax');
+    const docContent = `
+\\import "lib/sqrt.ax"
+:val = :sqrt(16)
+`;
+    fs.writeFileSync(docPath, docContent, 'utf-8');
+
+    Evaluator.setBaseDir(withLibDir);
+    const env = evalDocument(docContent);
+    expect(env['val'] || env[':val']).toBeDefined();
+    expect(valueToNumber(env['val'] || env[':val'])).toBe(9999);
+  });
 });

@@ -136,7 +136,8 @@ export class FileManager {
           {
             description: 'Axine Document (*.ax)',
             accept: {
-              'text/plain': ['.ax', '.axine', '.math', '.txt'],
+              'text/plain': ['.ax'],
+              'application/octet-stream': ['.ax'],
             },
           },
         ],
@@ -192,7 +193,7 @@ export class FileManager {
 
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = '.ax,.axine,.math,.txt';
+      input.accept = '.ax';
       input.style.display = 'none';
 
       input.onchange = async () => {
@@ -232,6 +233,7 @@ export class FileManager {
         reader.onerror = () => resolve(null);
         reader.readAsText(file);
       };
+      input.oncancel = () => resolve(null);
 
       document.body.appendChild(input);
       input.click();
