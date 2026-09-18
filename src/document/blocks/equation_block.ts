@@ -229,6 +229,10 @@ export class EquationBlockComponent {
     return this.isSelected;
   }
 
+  public getAutocomplete(): AutocompleteController | null {
+    return this.autocomplete;
+  }
+
   public dispose() {
     if (this.autocomplete) {
       this.autocomplete.dispose();

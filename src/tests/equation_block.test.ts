@@ -77,19 +77,47 @@ describe("Stage 4 Gate: Atomic In-Flow Equation Block Component", () => {
       eq.el.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp" }));
       const afterStepPrev = stepPrev;
 
-      // 4. Double click -> enters edit mode
+      // 4. Measure typeset view before entering edit mode
+      const typesetRect = typesetView.getBoundingClientRect();
+
+      // Double click -> enters edit mode
       eq.el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
       const isEditingNow = eq.getIsEditing();
       const editorVisible = !editorView.classList.contains("hidden") && typesetView.classList.contains("hidden");
       const textarea = eq.el.querySelector("textarea") as HTMLTextAreaElement;
       const textareaHasSource = textarea?.value === "x^2 + y^2 = 4";
+      const textareaRect = textarea.getBoundingClientRect();
 
-      // 5. Edit text inside buffer
-      if (textarea) {
-        textarea.value = "x^2 + y^2 = 9";
+      // Caret alignment gate while inside: 0px vertical jump between typeset math and editing buffer
+      const verticalDiff = Math.abs(textareaRect.top - typesetRect.top);
+
+      // Caret subpixel click-to-offset resolution inside equation buffer
+      const lineStr = textarea.value;
+      const charWidth = textareaRect.width / Math.max(1, lineStr.length);
+      const testPositions: { charIdx: number; resolvedOffset: number }[] = [];
+      for (let c = 0; c < lineStr.length; c++) {
+        const clickX = textareaRect.left + c * charWidth + charWidth * 0.25;
+        const relativeX = clickX - textareaRect.left;
+        const resolved = Math.floor(relativeX / charWidth);
+        testPositions.push({ charIdx: c, resolvedOffset: resolved });
       }
+      const allOffsetsMatch = testPositions.every(p => p.charIdx === p.resolvedOffset);
 
-      // 6. Escape -> commits changes and returns to atomic rendered view
+      // Incomplete command stays literal and opens autocomplete suggestion
+      textarea.value = "x^2 + y^2 = 9 + \\fo";
+      textarea.dispatchEvent(new Event("input"));
+      const incompleteStaysLiteral = textarea.value.includes("\\fo");
+      const autocompleteOpened = eq.getAutocomplete()?.getIsOpen() === true;
+
+      // First Escape closes autocomplete suggestion popover
+      textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+      const autocompleteClosed = eq.getAutocomplete()?.getIsOpen() === false;
+      const stillEditingAfterPopoverClosed = eq.getIsEditing();
+
+      // 5. Edit text inside buffer to final equation
+      textarea.value = "x^2 + y^2 = 9";
+
+      // 6. Second Escape -> commits changes and returns to atomic rendered view
       textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
       const exitedEditing = !eq.getIsEditing();
       const restoredRenderedVisible = !typesetView.classList.contains("hidden") && editorView.classList.contains("hidden");
@@ -106,12 +134,19 @@ describe("Stage 4 Gate: Atomic In-Flow Equation Block Component", () => {
         isEditingNow,
         editorVisible,
         textareaHasSource,
+        verticalDiff,
+        allOffsetsMatch,
+        incompleteStaysLiteral,
+        autocompleteOpened,
+        autocompleteClosed,
+        stillEditingAfterPopoverClosed,
         exitedEditing,
         restoredRenderedVisible,
         afterCommit,
       };
     });
 
+    console.log(`[Stage 4 Gate] equation edit verticalDiff: ${result.verticalDiff.toFixed(4)}px (limit: 1.0px), allOffsetsMatch: ${result.allOffsetsMatch}`);
     expect(result.initialRenderedVisible).toBe(true);
     expect(result.initialHasTypesetContent).toBe(true);
     expect(result.afterClickSelected).toBe(true);
@@ -121,6 +156,12 @@ describe("Stage 4 Gate: Atomic In-Flow Equation Block Component", () => {
     expect(result.isEditingNow).toBe(true);
     expect(result.editorVisible).toBe(true);
     expect(result.textareaHasSource).toBe(true);
+    expect(result.verticalDiff).toBeLessThanOrEqual(1.0);
+    expect(result.allOffsetsMatch).toBe(true);
+    expect(result.incompleteStaysLiteral).toBe(true);
+    expect(result.autocompleteOpened).toBe(true);
+    expect(result.autocompleteClosed).toBe(true);
+    expect(result.stillEditingAfterPopoverClosed).toBe(true);
     expect(result.exitedEditing).toBe(true);
     expect(result.restoredRenderedVisible).toBe(true);
     expect(result.afterCommit).toBe(true);
