@@ -109,7 +109,9 @@ describe('Large Document Ceiling & Visibility-Gated Sampling Test', () => {
 
     const text = lines.join('\n');
     await page.evaluate(({ text }) => {
-      (window as any).editor.openInitialDocument(text);
+      const ed = (window as any).editor;
+      ed.openInitialDocument(text);
+      ed.setEditorMode('classic');
     }, { text });
 
     await page.waitForFunction(() => !(window as any).editor.state.getIsEvaluating(), { timeout: 10000 });

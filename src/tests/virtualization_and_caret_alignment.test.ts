@@ -46,6 +46,7 @@ describe("Virtualization Scrolling & 5,000-Line Caret Alignment Test", () => {
     await page.evaluate(({ text }) => {
       const ed = (window as any).editor;
       ed.openInitialDocument(text);
+      ed.setEditorMode("classic");
       const pc = ed.paneContainer;
       const rootLeafId = pc.getLayout().root.id;
       pc.split(rootLeafId, "horizontal", "after", {
@@ -141,6 +142,7 @@ describe("Virtualization Scrolling & 5,000-Line Caret Alignment Test", () => {
     await page.evaluate(({ text }) => {
       const ed = (window as any).editor;
       ed.openInitialDocument(text);
+      ed.setEditorMode("classic");
     }, { text: docText });
 
     await page.waitForFunction(() => !(window as any).editor.state.getIsEvaluating(), { timeout: 15000 });

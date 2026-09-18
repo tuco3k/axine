@@ -11,86 +11,87 @@ export interface AutocompleteItem {
   command: string;
   glyph?: string;
   label: string;
-  category: "math" | "keyword" | "construct";
+  description: string;
+  category: "math" | "greek" | "keyword" | "construct";
 }
 
 export const AUTOCOMPLETE_COMMANDS: AutocompleteItem[] = [
   // Logic & Sets
-  { command: "\\forall", glyph: "\u2200", label: "for all", category: "math" },
-  { command: "\\exists", glyph: "\u2203", label: "there exists", category: "math" },
-  { command: "\\in", glyph: "\u2208", label: "element of", category: "math" },
-  { command: "\\notin", glyph: "\u2209", label: "not element of", category: "math" },
-  { command: "\\subset", glyph: "\u2282", label: "subset", category: "math" },
-  { command: "\\subseteq", glyph: "\u2286", label: "subset or equal", category: "math" },
-  { command: "\\cup", glyph: "\u222a", label: "union", category: "math" },
-  { command: "\\cap", glyph: "\u2229", label: "intersection", category: "math" },
-  { command: "\\set", label: "set builder", category: "construct" },
+  { command: "\\forall", glyph: "\u2200", label: "for all", description: "Universal quantifier: asserts predicate holds across domain", category: "math" },
+  { command: "\\exists", glyph: "\u2203", label: "there exists", description: "Existential quantifier: asserts at least one satisfying element", category: "math" },
+  { command: "\\in", glyph: "\u2208", label: "element of", description: "Set membership: tests if element belongs to set or list", category: "math" },
+  { command: "\\notin", glyph: "\u2209", label: "not element of", description: "Non-membership: tests if element does not belong to set", category: "math" },
+  { command: "\\subset", glyph: "\u2282", label: "subset", description: "Strict subset: elements strictly contained in target set", category: "math" },
+  { command: "\\subseteq", glyph: "\u2286", label: "subset or equal", description: "Subset or equal: elements contained in or equal to target set", category: "math" },
+  { command: "\\cup", glyph: "\u222a", label: "union", description: "Set union: combines elements from both collections", category: "math" },
+  { command: "\\cap", glyph: "\u2229", label: "intersection", description: "Set intersection: common elements across both collections", category: "math" },
+  { command: "\\set", label: "set builder", description: "Set builder: constructs mathematical set from predicate", category: "construct" },
 
   // Relations & Comparison
-  { command: "\\le", glyph: "\u2264", label: "less than or equal", category: "math" },
-  { command: "\\ge", glyph: "\u2265", label: "greater than or equal", category: "math" },
-  { command: "\\ne", glyph: "\u2260", label: "not equal", category: "math" },
-  { command: "\\approx", glyph: "\u2248", label: "approximately", category: "math" },
-  { command: "\\propto", glyph: "\u221d", label: "proportional to", category: "math" },
+  { command: "\\le", glyph: "\u2264", label: "less than or equal", description: "Comparison: asserts left operand is less than or equal to right", category: "math" },
+  { command: "\\ge", glyph: "\u2265", label: "greater than or equal", description: "Comparison: asserts left operand is greater than or equal to right", category: "math" },
+  { command: "\\ne", glyph: "\u2260", label: "not equal", description: "Inequality: asserts operands are not numerically equal", category: "math" },
+  { command: "\\approx", glyph: "\u2248", label: "approximately", description: "Approximation: asserts equivalence within numeric tolerance", category: "math" },
+  { command: "\\propto", glyph: "\u221d", label: "proportional to", description: "Proportionality: asserts linear scaling relationship", category: "math" },
 
   // Arithmetic & Calculus
-  { command: "\\sqrt", glyph: "\u221a", label: "square root", category: "math" },
-  { command: "\\times", glyph: "\u00d7", label: "multiplication cross", category: "math" },
-  { command: "\\cdot", glyph: "\u00b7", label: "centered dot", category: "math" },
-  { command: "\\pm", glyph: "\u00b1", label: "plus-minus", category: "math" },
-  { command: "\\mp", glyph: "\u2213", label: "minus-plus", category: "math" },
-  { command: "\\" + "int", glyph: "\u222b", label: "integral", category: "math" },
-  { command: "\\iint", glyph: "\u222c", label: "double integral", category: "math" },
-  { command: "\\iiint", glyph: "\u222d", label: "triple integral", category: "math" },
-  { command: "\\oint", glyph: "\u222e", label: "contour integral", category: "math" },
-  { command: "\\" + "partial", glyph: "\u2202", label: "partial derivative", category: "math" },
-  { command: "\\nabla", glyph: "\u2207", label: "nabla / del", category: "math" },
-  { command: "\\" + "infty", glyph: "\u221e", label: "infinity", category: "math" },
+  { command: "\\sqrt", glyph: "\u221a", label: "square root", description: "Radical: principal square root operator", category: "math" },
+  { command: "\\times", glyph: "\u00d7", label: "multiplication cross", description: "Multiplication: cross product or arithmetic times", category: "math" },
+  { command: "\\cdot", glyph: "\u00b7", label: "centered dot", description: "Multiplication: scalar product or centered multiplication dot", category: "math" },
+  { command: "\\pm", glyph: "\u00b1", label: "plus-minus", description: "Sign: plus or minus tolerance range", category: "math" },
+  { command: "\\mp", glyph: "\u2213", label: "minus-plus", description: "Sign: inverted minus-plus operator", category: "math" },
+  { command: "\\" + "int", glyph: "\u222b", label: "integral", description: "Calculus: continuous accumulation over a domain", category: "math" },
+  { command: "\\iint", glyph: "\u222c", label: "double integral", description: "Calculus: 2D area integral over planar region", category: "math" },
+  { command: "\\iiint", glyph: "\u222d", label: "triple integral", description: "Calculus: 3D volume integral over spatial region", category: "math" },
+  { command: "\\oint", glyph: "\u222e", label: "contour integral", description: "Calculus: closed path contour line integral", category: "math" },
+  { command: "\\" + "partial", glyph: "\u2202", label: "partial derivative", description: "Calculus: partial rate of change with respect to single variable", category: "math" },
+  { command: "\\nabla", glyph: "\u2207", label: "nabla / del", description: "Calculus: spatial gradient vector differential operator", category: "math" },
+  { command: "\\" + "infty", glyph: "\u221e", label: "infinity", description: "Quantity: mathematical unbounded infinity", category: "math" },
 
   // Greek Letters
-  { command: "\\pi", glyph: "\u03c0", label: "pi", category: "math" },
-  { command: "\\tau", glyph: "\u03c4", label: "tau", category: "math" },
-  { command: "\\theta", glyph: "\u03b8", label: "theta", category: "math" },
-  { command: "\\lambda", glyph: "\u03bb", label: "lambda", category: "math" },
-  { command: "\\alpha", glyph: "\u03b1", label: "alpha", category: "math" },
-  { command: "\\beta", glyph: "\u03b2", label: "beta", category: "math" },
-  { command: "\\gamma", glyph: "\u03b3", label: "gamma", category: "math" },
-  { command: "\\delta", glyph: "\u03b4", label: "delta", category: "math" },
-  { command: "\\sigma", glyph: "\u03c3", label: "sigma", category: "math" },
-  { command: "\\omega", glyph: "\u03c9", label: "omega", category: "math" },
-  { command: "\\mu", glyph: "\u03bc", label: "mu", category: "math" },
-  { command: "\\phi", glyph: "\u03d5", label: "phi", category: "math" },
-  { command: "\\" + "Delta", glyph: "\u0394", label: "Delta", category: "math" },
-  { command: "\\Sigma", glyph: "\u03a3", label: "Sigma", category: "math" },
-  { command: "\\Pi", glyph: "\u03a0", label: "Pi", category: "math" },
+  { command: "\\pi", glyph: "\u03c0", label: "pi", description: "Constant: ratio of circle circumference to diameter", category: "math" },
+  { command: "\\tau", glyph: "\u03c4", label: "tau", description: "Constant: circle constant equal to 2*pi", category: "math" },
+  { command: "\\theta", glyph: "\u03b8", label: "theta", description: "Variable: standard angular displacement coordinate", category: "math" },
+  { command: "\\lambda", glyph: "\u03bb", label: "lambda", description: "Symbol: eigenvalue, wavelength, or anonymous function parameter", category: "math" },
+  { command: "\\alpha", glyph: "\u03b1", label: "alpha", description: "Symbol: first Greek variable parameter", category: "math" },
+  { command: "\\beta", glyph: "\u03b2", label: "beta", description: "Symbol: second Greek variable parameter", category: "math" },
+  { command: "\\gamma", glyph: "\u03b3", label: "gamma", description: "Symbol: gamma scaling parameter or function", category: "math" },
+  { command: "\\delta", glyph: "\u03b4", label: "delta", description: "Symbol: infinitesimal variation or Dirac delta function", category: "math" },
+  { command: "\\sigma", glyph: "\u03c3", label: "sigma", description: "Symbol: standard deviation or stress parameter", category: "math" },
+  { command: "\\omega", glyph: "\u03c9", label: "omega", description: "Symbol: angular frequency parameter", category: "math" },
+  { command: "\\mu", glyph: "\u03bc", label: "mu", description: "Symbol: arithmetic mean or friction coefficient", category: "math" },
+  { command: "\\phi", glyph: "\u03d5", label: "phi", description: "Symbol: azimuthal phase angle or golden ratio", category: "math" },
+  { command: "\\" + "Delta", glyph: "\u0394", label: "Delta", description: "Operator: discrete macroscopic finite difference", category: "math" },
+  { command: "\\Sigma", glyph: "\u03a3", label: "Sigma", description: "Operator: sum over indexed sequence", category: "math" },
+  { command: "\\Pi", glyph: "\u03a0", label: "Pi", description: "Operator: product over indexed sequence", category: "math" },
 
   // Logic Connectives & Brackets
-  { command: "\\wedge", glyph: "\u2227", label: "logical and", category: "math" },
-  { command: "\\vee", glyph: "\u2228", label: "logical or", category: "math" },
-  { command: "\\neg", glyph: "\u00ac", label: "logical not", category: "math" },
-  { command: "\\lfloor", glyph: "\u230a", label: "left floor", category: "math" },
-  { command: "\\rfloor", glyph: "\u230b", label: "right floor", category: "math" },
-  { command: "\\lceil", glyph: "\u2308", label: "left ceiling", category: "math" },
-  { command: "\\rceil", glyph: "\u2309", label: "right ceiling", category: "math" },
-  { command: "\\otimes", glyph: "\u2297", label: "tensor product", category: "math" },
-  { command: "\\oplus", glyph: "\u2295", label: "direct sum", category: "math" },
+  { command: "\\wedge", glyph: "\u2227", label: "logical and", description: "Connective: Boolean conjunction operator", category: "math" },
+  { command: "\\vee", glyph: "\u2228", label: "logical or", description: "Connective: Boolean disjunction operator", category: "math" },
+  { command: "\\neg", glyph: "\u00ac", label: "logical not", description: "Connective: Boolean negation operator", category: "math" },
+  { command: "\\lfloor", glyph: "\u230a", label: "left floor", description: "Bracket: opening greatest integer bracket", category: "math" },
+  { command: "\\rfloor", glyph: "\u230b", label: "right floor", description: "Bracket: closing greatest integer bracket", category: "math" },
+  { command: "\\lceil", glyph: "\u2308", label: "left ceiling", description: "Bracket: opening least integer bracket", category: "math" },
+  { command: "\\rceil", glyph: "\u2309", label: "right ceiling", description: "Bracket: closing least integer bracket", category: "math" },
+  { command: "\\otimes", glyph: "\u2297", label: "tensor product", description: "Algebra: tensor outer product operator", category: "math" },
+  { command: "\\oplus", glyph: "\u2295", label: "direct sum", description: "Algebra: direct sum module operator", category: "math" },
 
   // Language Keywords & Flow
-  { command: "\\figure", label: "in-flow figure", category: "keyword" },
-  { command: "\\derive", label: "equivalence derivation", category: "keyword" },
-  { command: "\\axis", label: "coordinate space", category: "keyword" },
-  { command: "\\match", label: "pattern match", category: "keyword" },
-  { command: "\\case", label: "match case", category: "keyword" },
-  { command: "\\otherwise", label: "fallback case", category: "keyword" },
-  { command: "\\quote", label: "quote expression AST", category: "keyword" },
-  { command: "\\build", label: "build expression AST", category: "keyword" },
-  { command: "\\list", label: "list collection", category: "construct" },
-  { command: "\\tuple", label: "tuple construct", category: "construct" },
-  { command: "\\if", label: "conditional if", category: "keyword" },
-  { command: "\\then", label: "conditional then", category: "keyword" },
-  { command: "\\else", label: "conditional else", category: "keyword" },
-  { command: "\\with", label: "with block", category: "keyword" },
-  { command: "\\where", label: "where clause", category: "keyword" },
+  { command: "\\figure", label: "in-flow figure", description: "Viewport: embeds interactive geometric coordinate canvas in document flow", category: "keyword" },
+  { command: "\\derive", label: "equivalence derivation", description: "Derivation: validates step-by-step algebraic relation equality", category: "keyword" },
+  { command: "\\axis", label: "coordinate space", description: "Geometry: declares continuous coordinate axes for numerical relations", category: "keyword" },
+  { command: "\\match", label: "pattern match", description: "Pattern: structural destructuring matching over expression ASTs", category: "keyword" },
+  { command: "\\case", label: "match case", description: "Branch: pattern branch condition in pattern match block", category: "keyword" },
+  { command: "\\otherwise", label: "fallback case", description: "Fallback: default branch in pattern match block", category: "keyword" },
+  { command: "\\quote", label: "quote expression AST", description: "Metaprogramming: treats expression code as first-class AST value", category: "keyword" },
+  { command: "\\build", label: "build expression AST", description: "Metaprogramming: constructs dynamic expression tree from nodes", category: "keyword" },
+  { command: "\\list", label: "list collection", description: "Collection: ordered sequential list literal constructor", category: "construct" },
+  { command: "\\tuple", label: "tuple construct", description: "Construct: fixed-arity heterogeneous ordered tuple", category: "construct" },
+  { command: "\\if", label: "conditional if", description: "Branching: Boolean guard condition", category: "keyword" },
+  { command: "\\then", label: "conditional then", description: "Branching: true evaluated branch expression", category: "keyword" },
+  { command: "\\else", label: "conditional else", description: "Branching: false evaluated fallback branch expression", category: "keyword" },
+  { command: "\\with", label: "with block", description: "Scope: local scope definition block with scoped bindings", category: "keyword" },
+  { command: "\\where", label: "where clause", description: "Scope: trailing qualification bindings clause", category: "keyword" },
 ];
 
 export function findMatchingCommands(prefix: string): AutocompleteItem[] {
@@ -215,10 +216,10 @@ export class AutocompleteController {
       cmdSpan.textContent = item.command;
       row.appendChild(cmdSpan);
 
-      const labelSpan = document.createElement("span");
-      labelSpan.className = "doc-autocomplete-label";
-      labelSpan.textContent = item.label;
-      row.appendChild(labelSpan);
+      const descSpan = document.createElement("span");
+      descSpan.className = "doc-autocomplete-desc";
+      descSpan.textContent = item.description || item.label;
+      row.appendChild(descSpan);
 
       row.addEventListener("mousedown", (e) => {
         e.preventDefault();
