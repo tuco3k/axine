@@ -153,7 +153,7 @@ export class DocumentEditor {
   private wsUnsubscribe?: () => void;
   private autocomplete: AutocompleteController | null = null;
   public blockEditor: BlockDocumentEditor | null = null;
-  private editorMode: 'block' | 'classic' = 'classic';
+  private editorMode: 'block' | 'classic' = 'block';
 
   private dockLayout: DockLayoutState = {
     edge: 'right',
@@ -3601,15 +3601,19 @@ export class DocumentEditor {
     printView.id = 'doc-print-view';
     printView.className = 'doc-print-view';
 
+    const blockEditorEl = document.createElement('div');
+    blockEditorEl.id = 'doc-block-editor';
+    blockEditorEl.className = `doc-block-editor ${this.editorMode === 'block' ? '' : 'hidden'}`;
+
     const lineNumbers = document.createElement('div');
     lineNumbers.id = 'doc-line-numbers';
-    lineNumbers.className = 'doc-line-numbers';
+    lineNumbers.className = `doc-line-numbers ${this.editorMode === 'block' ? 'hidden' : ''}`;
     if (isCurrentActive) {
       this.lineNumbersEl = lineNumbers;
     }
 
     const editorSurface = document.createElement('div');
-    editorSurface.className = 'doc-editor-surface';
+    editorSurface.className = `doc-editor-surface ${this.editorMode === 'block' ? 'hidden' : ''}`;
 
     const overlay = document.createElement('div');
     overlay.id = 'doc-typeset-overlay';
@@ -3687,6 +3691,7 @@ export class DocumentEditor {
 
     paneLeft.appendChild(printView);
     paneLeft.appendChild(lineNumbers);
+    paneLeft.appendChild(blockEditorEl);
     paneLeft.appendChild(editorSurface);
 
     container.appendChild(paneLeft);
@@ -3706,6 +3711,17 @@ export class DocumentEditor {
     }
 
     if (isCurrentActive) {
+      if (this.blockEditor) {
+        this.blockEditor.dispose();
+      }
+      this.blockEditor = new BlockDocumentEditor(blockEditorEl, targetState.getText(), {
+        onChange: (newText: string) => {
+          if (this.textarea && this.textarea.value !== newText) {
+            this.textarea.value = newText;
+            this.handleInputChange(true);
+          }
+        },
+      });
       this.updateCaret();
       this.bindEditorSurfaceEvents();
       this.renderLineNumbers(targetState.getRecords());
