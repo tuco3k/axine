@@ -1,0 +1,35 @@
+# test_trees.ax — Verification of binary trees standard library
+\import "lib/trees.ax"
+
+# Construction:
+#        1
+#       / \
+#      2   3
+#     / \
+#    4   5
+:t4 = :leaf(4)
+:t5 = :leaf(5)
+:t2 = :node(2, :t4, :t5)
+:t3 = :leaf(3)
+:t1 = :node(1, :t2, :t3)
+
+# Inspection
+:is_empty(:empty_tree)
+:is_empty(:t1)
+:is_leaf(:t4)
+:is_leaf(:t2)
+:val1 = :value(:t1)
+
+# Metrics
+:vertices(:t1)
+:edges(:t1)
+:leaves(:t1)
+:height(:t1)
+
+# Traversals
+:pre = :preorder(:t1)
+:preorder(:t1)
+:in = :inorder(:t1)
+:inorder(:t1)
+:post = :postorder(:t1)
+:postorder(:t1)

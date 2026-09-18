@@ -41,7 +41,10 @@ export function hasKnownFunctionCall(line: string, knownFunctions: Set<string> =
   const allFuncs = new Set([...knownFunctions, ...BARE_MATH_FUNCS, 'sum', 'prod', 'min', 'max']);
   for (const fn of allFuncs) {
     // Check for "fn(" or "fn [" or "fn  ("
-    const callPattern = new RegExp(`\\b${fn}\\s*[\\(\\[]`, 'i');
+    const escapedFn = fn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const callPattern = fn.startsWith(':')
+      ? new RegExp(`(?:^|[^a-zA-Z0-9_])${escapedFn}\\s*[\\(\\[]`, 'i')
+      : new RegExp(`\\b${escapedFn}\\s*[\\(\\[]`, 'i');
     if (callPattern.test(line)) {
       return true;
     }
@@ -254,7 +257,7 @@ export function classifyLine(line: string, env: Environment = {}): Classificatio
   const knownFunctions = new Set<string>();
   const knownVariables = new Set(CONSTANTS);
   for (const [k, v] of Object.entries(env)) {
-    if (v.type === 'function' || v.type === 'builtin') {
+    if (v.type === 'function' || v.type === 'builtin' || (v as any).type === 'forall_rule' || v.type === 'lambda') {
       knownFunctions.add(k);
     } else {
       knownVariables.add(k);
@@ -318,7 +321,7 @@ export function classifyLine(line: string, env: Environment = {}): Classificatio
     }
 
     // If it parsed as an expression, check if it was accidental math from multiple prose words
-    const bareProseWords = trimmed.match(/(?<!:)\b[a-zA-Z]{2,}\b/g) || [];
+    const bareProseWords = trimmed.match(/(?<![:\\])\b[a-zA-Z]{2,}\b/g) || [];
     if (
       bareProseWords.length >= 2 &&
       !hasAssignment(trimmed) &&

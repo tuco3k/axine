@@ -3938,3 +3938,279 @@ input[type="number"]:focus {
   flex-direction: column;
 }
 
+/* Autocomplete Popover */
+.doc-autocomplete-popover {
+  position: absolute;
+  z-index: 1000;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  min-width: 220px;
+  max-height: 280px;
+  overflow-y: auto;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  display: flex;
+  flex-direction: column;
+}
+
+.doc-autocomplete-popover.hidden {
+  display: none !important;
+}
+
+.doc-autocomplete-item {
+  display: flex;
+  align-items: center;
+  padding: 5px 8px;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.doc-autocomplete-item:last-child {
+  border-bottom: none;
+}
+
+.doc-autocomplete-item:hover,
+.doc-autocomplete-item.active {
+  background: var(--color-bg-hover);
+  color: var(--color-accent);
+}
+
+.doc-autocomplete-glyph {
+  font-family: var(--font-family-math);
+  font-size: var(--font-size-sm);
+  width: 20px;
+  text-align: center;
+  color: var(--color-text-primary);
+}
+
+.doc-autocomplete-cmd {
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.doc-autocomplete-item.active .doc-autocomplete-cmd {
+  color: var(--color-accent);
+}
+
+.doc-autocomplete-label {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+/* In-Flow Figure Blocks */
+.doc-block-figure {
+  margin: 16px 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  background: var(--color-bg-surface);
+  overflow: hidden;
+  outline: none;
+  transition: border-color var(--duration-fast);
+}
+
+.doc-block-figure:focus,
+.doc-block-figure.selected {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-accent-subtle);
+}
+
+.doc-figure-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--color-bg-surface-elevated);
+  border-bottom: 1px solid var(--color-border-subtle);
+  font-size: var(--font-size-xs);
+}
+
+.doc-figure-title-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.doc-figure-label {
+  font-weight: 500;
+  color: var(--color-text-primary);
+  font-family: var(--font-family-mono);
+}
+
+.doc-figure-prov-btn {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-xs);
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.doc-figure-prov-btn:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.doc-figure-badge {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: var(--border-radius-xs);
+}
+
+.doc-figure-badge.badge-verified {
+  color: var(--color-verified);
+  background: var(--color-verified-bg);
+  border: 1px solid var(--color-verified-border);
+}
+
+.doc-figure-badge.badge-stale {
+  color: var(--color-stale);
+  background: var(--color-stale-bg);
+  border: 1px solid var(--color-stale-border);
+}
+
+.doc-figure-badge.badge-error {
+  color: var(--color-error);
+  background: var(--color-error-bg);
+  border: 1px solid var(--color-error-border);
+}
+
+.doc-figure-badge.badge-unknown {
+  color: var(--color-unknown);
+  background: var(--color-unknown-bg);
+  border: 1px solid var(--color-unknown-border);
+}
+
+.doc-figure-viewport-container {
+  position: relative;
+  margin: 0 auto;
+}
+
+.doc-figure-viewport-container.inert-scroll {
+  pointer-events: none; /* Let document scroll pass through */
+}
+
+.doc-block-figure.selected .doc-figure-viewport-container.inert-scroll {
+  pointer-events: auto;
+}
+
+.doc-figure-viewport-container.navigating {
+  pointer-events: auto;
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+
+.doc-figure-error-msg {
+  padding: 24px;
+  color: var(--color-error);
+  font-size: var(--font-size-sm);
+  text-align: center;
+}
+
+/* Equation and Paragraph Blocks */
+.doc-block-equation {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-sm);
+  background: transparent;
+  outline: none;
+  transition: background-color var(--duration-fast), border-color var(--duration-fast);
+}
+
+.doc-block-equation:hover {
+  background: var(--color-bg-surface);
+}
+
+.doc-block-equation:focus,
+.doc-block-equation.selected {
+  border-color: var(--color-accent);
+  background: var(--color-bg-surface);
+  box-shadow: 0 0 0 2px var(--color-accent-subtle);
+}
+
+.doc-block-equation.editing {
+  border-color: var(--color-accent);
+  background: var(--color-bg-surface-elevated);
+}
+
+.doc-equation-typeset-view {
+  font-family: var(--font-family-math);
+  font-size: var(--font-size-base);
+  color: var(--color-text-primary);
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+}
+
+.doc-block-source-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-base);
+  line-height: 24.5px;
+  color: var(--color-text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 0;
+  margin: 0;
+}
+
+.doc-block-paragraph {
+  margin: 8px 0;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-sm);
+  outline: none;
+  color: var(--color-text-primary);
+  font-family: var(--font-family-sans, sans-serif);
+  line-height: 1.6;
+}
+
+.doc-block-paragraph:focus,
+.doc-block-paragraph.selected {
+  border-color: var(--color-accent-subtle);
+  background: var(--color-bg-surface);
+}
+
+.doc-inline-math {
+  font-family: var(--font-family-math);
+  padding: 0 2px;
+}
+
+.doc-block-editor {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--space-md) var(--space-lg);
+  box-sizing: border-box;
+  background: var(--color-bg-base);
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.doc-block.highlight-pulse {
+  animation: blockPulse 1.2s ease-out;
+}
+
+@keyframes blockPulse {
+  0% {
+    background-color: var(--color-accent-subtle);
+    box-shadow: 0 0 0 3px var(--color-accent);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: none;
+  }
+}
+

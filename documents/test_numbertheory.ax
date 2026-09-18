@@ -1,0 +1,39 @@
+# test_numbertheory.ax — Verification of number theory standard library
+\import "lib/numbertheory.ax"
+
+# GCD and LCM
+:gcd(48, 18)
+:lcm(4, 6)
+
+# Extended Euclidean algorithm: (gcd, x, y) where a*x + b*y = gcd
+:ext_gcd(35, 15)
+:ext_gcd(3, 7)
+
+# Modular arithmetic
+:mod(-5, 7)
+:mod_add(10, 8, 12)
+:mod_sub(2, 5, 7)
+:mod_mul(4, 5, 7)
+
+# Modular inverse
+:mod_inv(3, 7)
+:mod_inv(10, 17)
+
+# Primality and primes
+:isprime(17)
+:isprime(18)
+:nextprime(17)
+
+# Totient
+:totient(9)
+:totient(10)
+:totient(12)
+
+# Modular exponentiation
+:powmod(3, 4, 7)
+:powmod(2, 10, 1000)
+
+# Divisors and Factorization
+:divisors(12)
+:factorize(60)
+:factorize(84)

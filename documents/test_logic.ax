@@ -1,0 +1,47 @@
+# test_logic.ax — Verification of propositional logic standard library
+\import "lib/logic.ax"
+
+# Basic connectives
+:l_not(\true)
+:l_not(\false)
+:l_and(\true, \false)
+:l_or(\true, \false)
+:l_implies(\true, \false)
+:l_implies(\false, \true)
+:l_iff(\true, \true)
+:l_iff(\true, \false)
+:l_xor(\true, \false)
+:l_xor(\true, \true)
+
+# Truth assignments for 1, 2, and 3 variables
+:rows1 = :assignments(1)
+:rows2 = :assignments(2)
+:assignments(1)
+:assignments(2)
+:assignments(3)
+
+# Law of Excluded Middle: p or (not p)
+\forall :row, :eval_lem(:row) = :l_or(:row[0], :l_not(:row[0]))
+:lem_res = [ :eval_lem(:rows1[0]), :eval_lem(:rows1[1]) ]
+:lem_res
+:is_tautology(:lem_res)
+:is_satisfiable(:lem_res)
+
+# De Morgan's Law: not(p and q) iff (not p or not q)
+\forall :row, :eval_demorgan(:row) = :l_iff(:l_not(:l_and(:row[0], :row[1])), :l_or(:l_not(:row[0]), :l_not(:row[1])))
+:demorgan_res = [ :eval_demorgan(:rows2[0]), :eval_demorgan(:rows2[1]), :eval_demorgan(:rows2[2]), :eval_demorgan(:rows2[3]) ]
+:demorgan_res
+:is_tautology(:demorgan_res)
+
+# Contradiction: p and (not p)
+\forall :row, :eval_contra(:row) = :l_and(:row[0], :l_not(:row[0]))
+:contra_res = [ :eval_contra(:rows1[0]), :eval_contra(:rows1[1]) ]
+:contra_res
+:is_contradiction(:contra_res)
+
+# Contingency: p and q
+\forall :row, :eval_and(:row) = :l_and(:row[0], :row[1])
+:and_res = [ :eval_and(:rows2[0]), :eval_and(:rows2[1]), :eval_and(:rows2[2]), :eval_and(:rows2[3]) ]
+:and_res
+:is_satisfiable(:and_res)
+:is_tautology(:and_res)

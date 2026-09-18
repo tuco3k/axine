@@ -1,0 +1,39 @@
+# test_combinatorics.ax — Verification of combinatorics standard library
+\import "lib/combinatorics.ax"
+
+# Factorial
+:factorial(0)
+:factorial(1)
+:factorial(5)
+:factorial(7)
+
+# Permutations P(n, k)
+:permutations(5, 2)
+:permutations(5, 5)
+:permutations(6, 3)
+
+# Combinations C(n, k)
+:combinations(5, 2)
+:combinations(6, 3)
+:combinations(10, 3)
+
+# Binomial coefficients
+:binomial(4, 2)
+:binomial(5, 0)
+:binomial(5, 5)
+
+# Partitions p(n)
+:partitions(0)
+:partitions(1)
+:partitions(2)
+:partitions(3)
+:partitions(4)
+:partitions(5)
+:partitions(6)
+
+# Derangements !n
+:derangements(0)
+:derangements(1)
+:derangements(2)
+:derangements(3)
+:derangements(4)

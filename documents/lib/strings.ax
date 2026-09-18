@@ -1,0 +1,35 @@
+# strings.ax — String operations over collections of character codes
+# Provides: :str_concat, :str_len, :char_at, :str_reverse, :substring, :substr, :is_palindrome, :str_equal, :str_empty
+# Assumes: Strings are finite sequences (lists) of numeric character codes.
+\module :strings
+
+# String length
+\forall s, :str_len(s) = \card(s)
+
+# String empty predicate
+\forall s, :str_empty(s) = (\card(s) = 0)
+
+# Concatenation of two strings
+\forall a, b, :str_concat(a, b) = a + b
+
+# Character code indexing at zero-based position i
+\forall s, i, :char_at(s, i) = s[i]
+
+# String reversal
+\forall s, i, a, :rev_step(s, i, a) = \if i < 0 \then a \else :rev_step(s, i - 1, a + [s[i]])
+\forall s, :str_reverse(s) = :rev_step(s, (\card(s)) - 1, [])
+
+# Substring extraction from index [start, end)
+\forall s, i, e, a, :sub_step(s, i, e, a) = \if (i >= e) \or (i >= (\card(s))) \then a \else :sub_step(s, i + 1, e, a + [s[i]])
+\forall s, :start, :end, :substring(s, :start, :end) = :sub_step(s, :start, :end, [])
+
+# Substring extraction with start index and length
+\forall s, :start, :len, :substr(s, :start, :len) = :substring(s, :start, :start + :len)
+
+# String equality via structural sequence comparison
+\forall a, b, :str_equal(a, b) = (a = b)
+
+# Palindrome test (w = reverse(w))
+\forall s, :is_palindrome(s) = (s = :str_reverse(s))
+
+\export :str_len, :str_empty, :str_concat, :char_at, :str_reverse, :substring, :substr, :str_equal, :is_palindrome

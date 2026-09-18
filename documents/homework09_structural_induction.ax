@@ -1,0 +1,324 @@
+# ==============================================================================
+# CSCI-358 Spring 2026 — Homework 09: Structural Induction
+# Single-file implementation: inline libraries, mathematical proofs, executable
+# models, instance verification, and counterexample searches.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# SECTION 0: INLINE LIBRARIES FOR DISCRETE MATHEMATICS
+# ------------------------------------------------------------------------------
+
+# --- 0.1 Sequence & List Operations ---
+
+\forall a, b, :append(a, b) = a + b
+
+\forall l, i, a, :rev_step(l, i, a) = \if i < 0 \then a \else :rev_step(l, i - 1, a + [l[i]])
+\forall l, :reverse(l) = :rev_step(l, (\card(l)) - 1, [])
+
+\forall l, x, i, :contains_step(l, x, i) = \if i >= (\card(l)) \then \false \else (\if l[i] = x \then \true \else :contains_step(l, x, i + 1))
+\forall l, x, :contains(l, x) = :contains_step(l, x, 0)
+
+\forall a, b, :max(a, b) = \if a >= b \then a \else b
+\forall a, b, :min(a, b) = \if a <= b \then a \else b
+
+\forall b, e, :pow(b, e) = \if e = 0 \then 1 \else b * :pow(b, e - 1)
+
+# --- 0.2 Binary Tree Representation & Metrics ---
+# Tagged representation:
+#   Leaf:                      [0]
+#   Unary node (1 child):      [1, child]
+#   Binary node (2 children):  [2, left, right]
+
+\forall c, :unary(c) = [1, c]
+\forall l, r, :binary(l, r) = [2, l, r]
+
+\forall t, :is_leaf(t) = (t[0] = 0)
+
+\forall t, :vertices(t) = \if t[0] = 0 \then 1 \else (\if t[0] = 1 \then (1 + :vertices(t[1])) \else (1 + :vertices(t[1]) + :vertices(t[2])))
+
+\forall t, :edges(t) = \if t[0] = 0 \then 0 \else (\if t[0] = 1 \then (1 + :edges(t[1])) \else (2 + :edges(t[1]) + :edges(t[2])))
+
+\forall t, :height(t) = \if t[0] = 0 \then 0 \else (\if t[0] = 1 \then (1 + :height(t[1])) \else (1 + :max(:height(t[1]), :height(t[2]))))
+
+\forall t, :leaves(t) = \if t[0] = 0 \then 1 \else (\if t[0] = 1 \then (:leaves(t[1])) \else (:leaves(t[1]) + :leaves(t[2])))
+
+# --- 0.3 Tree Combinatorial Generators ---
+
+\forall l, i, a, :gen_unary_step(l, i, a) = \if i >= (\card(l)) \then a \else :gen_unary_step(l, i + 1, a + [:unary(l[i])])
+\forall l, :gen_unary(l) = :gen_unary_step(l, 0, [])
+
+\forall l, r, j, a, :gen_bin_inner(l, r, j, a) = \if j >= (\card(r)) \then a \else :gen_bin_inner(l, r, j + 1, a + [:binary(l, r[j])])
+\forall l, r, i, a, :gen_bin_outer(l, r, i, a) = \if i >= (\card(l)) \then a \else :gen_bin_outer(l, r, i + 1, a + :gen_bin_inner(l[i], r, 0, []))
+\forall l, :gen_binary(l) = :gen_bin_outer(l, l, 0, [])
+
+\forall h, :full_tree(h) = \if h = 0 \then [0] \else :binary(:full_tree(h - 1), :full_tree(h - 1))
+\forall h, :linear_tree(h) = \if h = 0 \then [0] \else :unary(:linear_tree(h - 1))
+
+# --- 0.4 Formal Words and Palindromes ---
+
+\forall w, :is_pal(w) = (w = :reverse(w))
+
+\forall x, a, :wrap(x, a) = [a] + x + [a]
+\forall w, a, i, c, :wrap_all_for_char(w, a, i, c) = \if i >= (\card(w)) \then c \else :wrap_all_for_char(w, a, i + 1, c + [:wrap(w[i], a)])
+\forall w, s, j, c, :expand_pal_step(w, s, j, c) = \if j >= (\card(s)) \then c \else :expand_pal_step(w, s, j + 1, c + :wrap_all_for_char(w, s[j], 0, []))
+\forall w, s, :expand_pal(w, s) = :expand_pal_step(w, s, 0, [])
+
+\forall w, a, i, c, :prefix_all(w, a, i, c) = \if i >= (\card(w)) \then c \else :prefix_all(w, a, i + 1, c + [[a] + w[i]])
+\forall w, s, j, c, :expand_all_step(w, s, j, c) = \if j >= (\card(s)) \then c \else :expand_all_step(w, s, j + 1, c + :prefix_all(w, s[j], 0, []))
+\forall w, s, :expand_all(w, s) = :expand_all_step(w, s, 0, [])
+
+
+# ------------------------------------------------------------------------------
+# SECTION 1: PROBLEM 1 — RECURSIVELY DEFINED SET OF INTEGERS
+# ------------------------------------------------------------------------------
+
+# Definition:
+# Base step: 3 in S
+# Recursive step: If x in S, then 3x in S and x^2 + 2 in S.
+
+\forall l, i, a, :s_step(l, i, a) = \if i >= (\card(l)) \then a \else :s_step(l, i + 1, a + [3 * l[i], l[i]^2 + 2])
+
+:s0 = [3]
+:s1 = :s_step(:s0, 0, [])
+:s2 = :s_step(:s1, 0, [])
+:s3 = :s_step(:s2, 0, [])
+
+:s_elements = :s0 + :s1 + :s2 + :s3
+\card(:s_elements)
+
+# Part (a): List 10 elements in S [COMPUTED]
+:first_10_elements = [ :s_elements[0], :s_elements[1], :s_elements[2], :s_elements[3], :s_elements[4], :s_elements[5], :s_elements[6], :s_elements[7], :s_elements[8], :s_elements[9] ]
+:first_10_elements
+
+# Explicit inspection of first 10 elements across generation tiers
+:tier0 = :s0
+:tier1 = :s1
+:tier2 = :s2
+:tier3_first3 = [ :s3[0], :s3[1], :s3[2] ]
+
+# Part (b): All elements of S are odd [NOT COMPUTABLE / VERIFIED]
+# Mathematical Proof:
+# Base step: 3 = 2(1) + 1, which is odd.
+# Inductive Hypothesis: Assume x in S is odd, so x = 2k + 1 for k in Z.
+# Inductive Step:
+#   Case 1: 3x = 3(2k + 1) = 6k + 3 = 2(3k + 1) + 1. Since (3k + 1) in Z, 3x is odd.
+#   Case 2: x^2 + 2 = (2k + 1)^2 + 2 = 4k^2 + 4k + 1 + 2 = 2(2k^2 + 2k + 1) + 1.
+#           Since (2k^2 + 2k + 1) in Z, x^2 + 2 is odd.
+# Conclusion: By structural induction, every element in S is odd.
+
+\forall x, :is_odd(x) = (x % 2 = 1)
+
+# Base case verification
+:is_odd(3)
+
+# Exhaustive verification on generated elements
+\forall l, i, :check_all_odd(l, i) = \if i >= (\card(l)) \then \true \else (\if :is_odd(l[i]) = \false \then \false \else :check_all_odd(l, i + 1))
+:check_all_odd(:s_elements, 0)
+
+# Counterexample search (returns list of even elements found)
+\forall l, i, a, :find_even_witnesses(l, i, a) = \if i >= (\card(l)) \then a \else :find_even_witnesses(l, i + 1, (\if :is_odd(l[i]) = \false \then a + [l[i]] \else a))
+:find_even_witnesses(:s_elements, 0, [])
+
+# Algebraic inductive step verification for representative integers k
+\forall k, :ind_step1(k) = ((3 * (2 * k + 1)) % 2 = 1)
+\forall k, :ind_step2(k) = ((((2 * k + 1)^2) + 2) % 2 = 1)
+:ind_step1(0)
+:ind_step1(1)
+:ind_step1(42)
+:ind_step2(0)
+:ind_step2(1)
+:ind_step2(42)
+
+
+# ------------------------------------------------------------------------------
+# SECTION 2: PROBLEM 2 — PALINDROMES OVER AN ALPHABET
+# ------------------------------------------------------------------------------
+
+# Definition:
+# Alphabet: Sigma = ["A", "B"]
+# Palindromes P: strings w in Sigma* such that w = reverse(w).
+# Recursive Set S:
+#   Base: [] in S; [a] in S for all a in Sigma.
+#   Recursive: If x in S and a in Sigma, then [a] + x + [a] in S.
+
+:sigma = ["A", "B"]
+
+:p0 = [ [] ]
+:p1 = [ ["A"], ["B"] ]
+:p2 = :expand_pal(:p0, :sigma)
+:p3 = :expand_pal(:p1, :sigma)
+:p4 = :expand_pal(:p2, :sigma)
+
+:palindromes = :p0 + :p1 + :p2 + :p3 + :p4
+\card(:palindromes)
+
+# Verification Direction 1: S subseteq P (Every word in S is a palindrome)
+# Mathematical Proof by structural induction on w in S:
+#   Base case 1: w = []. reverse([]) = [], so [] in P.
+#   Base case 2: w = [a]. reverse([a]) = [a], so [a] in P.
+#   Inductive step: Let x in S with x = reverse(x).
+#     For a in Sigma, w = [a] + x + [a].
+#     reverse(w) = reverse([a] + x + [a]) = reverse([a]) + reverse(x) + reverse([a])
+#                = [a] + x + [a] = w.
+#     Hence w in P.
+# By structural induction, S subseteq P.
+
+\forall w, i, :check_all_pals(w, i) = \if i >= (\card(w)) \then \true \else (\if :is_pal(w[i]) = \false \then \false \else :check_all_pals(w, i + 1))
+:check_all_pals(:palindromes, 0)
+
+\forall w, i, a, :find_non_pals(w, i, a) = \if i >= (\card(w)) \then a \else :find_non_pals(w, i + 1, (\if :is_pal(w[i]) = \false \then a + [w[i]] \else a))
+:find_non_pals(:palindromes, 0, [])
+
+# Verification Direction 2: P subseteq S (Every palindrome is produced by S)
+# Mathematical Proof by strong induction on word length n = |w|:
+#   Base n = 0: w = [] in S.
+#   Base n = 1: w = [a] in S.
+#   Inductive step: Assume true for all palindromes of length < n (n >= 2).
+#     Let w in P have length n. Since w = reverse(w), first and last symbols match:
+#     w = [a] + x + [a] for some a in Sigma and x in Sigma*.
+#     reverse(w) = reverse([a] + x + [a]) = [a] + reverse(x) + [a].
+#     Since w = reverse(w), [a] + x + [a] = [a] + reverse(x) + [a], so x = reverse(x).
+#     Thus x in P with |x| = n - 2 < n. By IH, x in S.
+#     By the recursive step of S, [a] + x + [a] in S, so w in S.
+# By strong induction, P subseteq S.
+
+:a0 = [ [] ]
+:a1 = :expand_all(:a0, :sigma)
+:a2 = :expand_all(:a1, :sigma)
+:a3 = :expand_all(:a2, :sigma)
+:a4 = :expand_all(:a3, :sigma)
+:all_strings = :a0 + :a1 + :a2 + :a3 + :a4
+\card(:all_strings)
+
+\forall w, p, i, a, :find_missing_pals(w, p, i, a) = \if i >= (\card(w)) \then a \else :find_missing_pals(w, p, i + 1, (\if :is_pal(w[i]) = \true \and :contains(p, w[i]) = \false \then a + [w[i]] \else a))
+:find_missing_pals(:all_strings, :palindromes, 0, [])
+
+
+# ------------------------------------------------------------------------------
+# SECTION 3: PROBLEM 3 — TREES: VERTICES AND EDGES
+# ------------------------------------------------------------------------------
+
+# Theorem: For every binary tree T, v(T) = e(T) + 1 (i.e. e(T) = v(T) - 1).
+# Mathematical Proof by structural induction:
+#   Base step: T is a single node (leaf).
+#     v(T) = 1, e(T) = 0.
+#     e(T) = 0 = 1 - 1 = v(T) - 1. (Holds)
+#   Inductive Hypothesis: Assume e(T_1) = v(T_1) - 1 and e(T_2) = v(T_2) - 1.
+#   Inductive Step:
+#     Case 1 (unary node): T = unary(T_1).
+#       v(T) = 1 + v(T_1), e(T) = 1 + e(T_1).
+#       e(T) = 1 + (v(T_1) - 1) = v(T_1) = (1 + v(T_1)) - 1 = v(T) - 1.
+#     Case 2 (binary node): T = binary(T_1, T_2).
+#       v(T) = 1 + v(T_1) + v(T_2), e(T) = 2 + e(T_1) + e(T_2).
+#       e(T) = 2 + (v(T_1) - 1) + (v(T_2) - 1) = v(T_1) + v(T_2) = v(T) - 1.
+# Conclusion: By structural induction, e(T) = v(T) - 1 holds for all binary trees.
+
+\forall t, :prop_edges(t) = (:edges(t) = :vertices(t) - 1)
+
+# Base case verification
+:prop_edges([0])
+
+# Exhaustive verification universe: all 183 binary trees up to height 3
+:trees0 = [[0]]
+:trees1 = :trees0 + :gen_unary(:trees0) + :gen_binary(:trees0)
+:trees2 = :trees0 + :gen_unary(:trees1) + :gen_binary(:trees1)
+:trees3 = :trees0 + :gen_unary(:trees2) + :gen_binary(:trees2)
+\card(:trees3)
+
+\forall l, i, :check_edges(l, i) = \if i >= (\card(l)) \then \true \else (\if :prop_edges(l[i]) = \false \then \false \else :check_edges(l, i + 1))
+:check_edges(:trees3, 0)
+
+\forall l, i, a, :find_edge_violations(l, i, a) = \if i >= (\card(l)) \then a \else :find_edge_violations(l, i + 1, (\if :prop_edges(l[i]) = \false \then a + [l[i]] \else a))
+:find_edge_violations(:trees3, 0, [])
+
+# Deep tree instances (height 4 and 5)
+:prop_edges(:full_tree(4))
+:prop_edges(:linear_tree(5))
+
+
+# ------------------------------------------------------------------------------
+# SECTION 4: PROBLEM 4 — TREES: HEIGHT AND LEAVES
+# ------------------------------------------------------------------------------
+
+# Theorem: For every binary tree T, leaves(T) <= 2^(height(T)).
+# Mathematical Proof by structural induction:
+#   Base step: T is a single node (leaf).
+#     height(T) = 0, leaves(T) = 1.
+#     2^(height(T)) = 2^0 = 1.
+#     Since 1 <= 1, the base step holds with equality.
+#   Inductive Hypothesis: Assume leaves(T_1) <= 2^(h(T_1)) and leaves(T_2) <= 2^(h(T_2)).
+#   Inductive Step:
+#     Case 1 (unary node): T = unary(T_1).
+#       leaves(T) = leaves(T_1) <= 2^(h(T_1)).
+#       h(T) = 1 + h(T_1).
+#       2^(h(T)) = 2 * 2^(h(T_1)) >= 2^(h(T_1)) >= leaves(T). (Holds)
+#     Case 2 (binary node): T = binary(T_1, T_2).
+#       leaves(T) = leaves(T_1) + leaves(T_2) <= 2^(h(T_1)) + 2^(h(T_2)).
+#       Let h_max = max(h(T_1), h(T_2)).
+#       2^(h(T_1)) + 2^(h(T_2)) <= 2^h_max + 2^h_max = 2 * 2^h_max = 2^(h_max + 1).
+#       Since h(T) = 1 + h_max, 2^(h(T)) = 2^(h_max + 1) >= leaves(T). (Holds)
+# Conclusion: By structural induction, leaves(T) <= 2^(height(T)) for all binary trees.
+
+\forall t, :prop_leaves(t) = (:leaves(t) <= :pow(2, :height(t)))
+
+# Base case verification
+:prop_leaves([0])
+
+# Exhaustive verification on all 183 trees up to height 3
+\forall l, i, :check_leaves(l, i) = \if i >= (\card(l)) \then \true \else (\if :prop_leaves(l[i]) = \false \then \false \else :check_leaves(l, i + 1))
+:check_leaves(:trees3, 0)
+
+\forall l, i, a, :find_leaf_violations(l, i, a) = \if i >= (\card(l)) \then a \else :find_leaf_violations(l, i + 1, (\if :prop_leaves(l[i]) = \false \then a + [l[i]] \else a))
+:find_leaf_violations(:trees3, 0, [])
+
+# Deep tree instances: full binary tree (tight equality) and linear tree
+:leaves(:full_tree(4))
+:height(:full_tree(4))
+:prop_leaves(:full_tree(4))
+:prop_leaves(:linear_tree(5))
+
+
+# ------------------------------------------------------------------------------
+# SECTION 5: PROBLEM 5 — TREES: VERTICES AND HEIGHT CEILING
+# ------------------------------------------------------------------------------
+
+# Theorem: For every binary tree T, v(T) <= 2^(height(T) + 1) - 1.
+# Mathematical Proof by structural induction:
+#   Base step: T is a single node (leaf).
+#     h(T) = 0, v(T) = 1.
+#     2^(0 + 1) - 1 = 2^1 - 1 = 1.
+#     Since 1 <= 1, the base step holds with equality.
+#   Inductive Hypothesis: Assume v(T_1) <= 2^(h(T_1) + 1) - 1 and v(T_2) <= 2^(h(T_2) + 1) - 1.
+#   Inductive Step:
+#     Case 1 (unary node): T = unary(T_1).
+#       v(T) = 1 + v(T_1) <= 1 + (2^(h(T_1) + 1) - 1) = 2^(h(T_1) + 1).
+#       h(T) = 1 + h(T_1), so h(T) + 1 = h(T_1) + 2.
+#       2^(h(T) + 1) - 1 = 2^(h(T_1) + 2) - 1 = 2 * 2^(h(T_1) + 1) - 1.
+#       Since 2^(h(T_1) + 1) >= 1 for h(T_1) >= 0,
+#       2 * 2^(h(T_1) + 1) - 1 >= 2^(h(T_1) + 1) >= v(T). (Holds)
+#     Case 2 (binary node): T = binary(T_1, T_2).
+#       v(T) = 1 + v(T_1) + v(T_2) <= 1 + (2^(h(T_1) + 1) - 1) + (2^(h(T_2) + 1) - 1)
+#            = 2^(h(T_1) + 1) + 2^(h(T_2) + 1) - 1.
+#       Let h_max = max(h(T_1), h(T_2)).
+#       2^(h(T_1)) + 2^(h(T_2)) <= 2^h_max + 2^h_max = 2 * 2^h_max = 2^(h_max + 1).
+#       Since h(T) = 1 + h_max, h(T) + 1 = h_max + 2.
+#       Thus v(T) <= 2^(h(T) + 1) - 1. (Holds)
+# Conclusion: By structural induction, v(T) <= 2^(height(T) + 1) - 1 for all binary trees.
+
+\forall t, :prop_vertices(t) = (:vertices(t) <= (:pow(2, :height(t) + 1) - 1))
+
+# Base case verification
+:prop_vertices([0])
+
+# Exhaustive verification on all 183 trees up to height 3
+\forall l, i, :check_vertices(l, i) = \if i >= (\card(l)) \then \true \else (\if :prop_vertices(l[i]) = \false \then \false \else :check_vertices(l, i + 1))
+:check_vertices(:trees3, 0)
+
+\forall l, i, a, :find_vertex_violations(l, i, a) = \if i >= (\card(l)) \then a \else :find_vertex_violations(l, i + 1, (\if :prop_vertices(l[i]) = \false \then a + [l[i]] \else a))
+:find_vertex_violations(:trees3, 0, [])
+
+# Deep tree instances: full binary tree (tight equality) and linear tree
+:vertices(:full_tree(4))
+:height(:full_tree(4))
+:prop_vertices(:full_tree(4))
+:prop_vertices(:linear_tree(5))

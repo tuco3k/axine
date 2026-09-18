@@ -1,0 +1,35 @@
+# trees.ax — Binary tree construction, metrics, and traversals
+# Provides: :empty_tree, :leaf, :node, :is_empty, :is_leaf, :value, :left, :right, :vertices, :edges, :leaves, :height, :preorder, :inorder, :postorder
+# Assumes: Binary trees are represented as [] for empty, or [value, left_subtree, right_subtree] for non-empty nodes.
+\module :trees
+
+# Constructors
+:empty_tree = []
+\forall v, :leaf(v) = [v, [], []]
+\forall v, l, r, :node(v, l, r) = [v, l, r]
+
+# Node inspection
+\forall t, :is_empty(t) = (\card(t) = 0)
+\forall t, :is_leaf(t) = \if \card(t) = 0 \then \false \else (\if (\card(t[1]) = 0) \and (\card(t[2]) = 0) \then \true \else \false)
+\forall t, :value(t) = t[0]
+\forall t, :left(t) = t[1]
+\forall t, :right(t) = t[2]
+
+# Tree metrics
+\forall t, :vertices(t) = \if \card(t) = 0 \then 0 \else (1 + :vertices(t[1]) + :vertices(t[2]))
+
+\forall t, :edges(t) = \if :vertices(t) <= 1 \then 0 \else (:vertices(t) - 1)
+
+\forall t, :leaves(t) = \if \card(t) = 0 \then 0 \else (\if :is_leaf(t) \then 1 \else (:leaves(t[1]) + :leaves(t[2])))
+
+\forall a, b, :max_val(a, b) = \if a >= b \then a \else b
+\forall t, :height(t) = \if \card(t) = 0 \then 0 \else (\if :is_leaf(t) \then 0 \else (1 + :max_val(:height(t[1]), :height(t[2]))))
+
+# Traversals
+\forall t, :preorder(t) = \if \card(t) = 0 \then [] \else ([t[0]] + :preorder(t[1]) + :preorder(t[2]))
+
+\forall t, :inorder(t) = \if \card(t) = 0 \then [] \else (:inorder(t[1]) + [t[0]] + :inorder(t[2]))
+
+\forall t, :postorder(t) = \if \card(t) = 0 \then [] \else (:postorder(t[1]) + :postorder(t[2]) + [t[0]])
+
+\export :empty_tree, :leaf, :node, :is_empty, :is_leaf, :value, :left, :right, :vertices, :edges, :leaves, :height, :preorder, :inorder, :postorder

@@ -1,0 +1,34 @@
+# logic.ax — Propositional logic, truth tables, and satisfiability
+# Provides: :l_not, :l_and, :l_or, :l_implies, :l_iff, :l_xor, :assignments, :is_satisfiable, :is_tautology, :is_contradiction, :table_row1, :table_row2
+# Assumes: Boolean values (\true, \false). Bounded variable truth table analysis.
+\module :logic
+
+# Logical Connectives
+\forall p, :l_not(p) = \if p \then \false \else \true
+\forall p, q, :l_and(p, q) = (p \and q)
+\forall p, q, :l_or(p, q) = (p \or q)
+\forall p, q, :l_implies(p, q) = \if p \then q \else \true
+\forall p, q, :l_iff(p, q) = (p = q)
+\forall p, q, :l_xor(p, q) = \if p = q \then \false \else \true
+
+# Generation of all truth assignments for n boolean variables (2^n rows)
+\forall a, i, c, :expand_row(a, i, c) = \if i >= (\card(a)) \then c \else :expand_row(a, i + 1, c + [a[i] + [\true], a[i] + [\false]])
+\forall n, :assignments(n) = \if n = 0 \then [ [] ] \else :expand_row(:assignments(n - 1), 0, [])
+
+# Truth table row constructors
+\forall p, r, :table_row1(p, r) = [p, r]
+\forall p, q, r, :table_row2(p, q, r) = [p, q, r]
+
+# Satisfiability analysis over evaluated formula outputs
+\forall r, i, :sat_step(r, i) = \if i >= (\card(r)) \then \false \else (\if r[i] = \true \then \true \else :sat_step(r, i + 1))
+\forall r, :is_satisfiable(r) = :sat_step(r, 0)
+
+# Tautology analysis (every row evaluates to \true)
+\forall r, i, :taut_step(r, i) = \if i >= (\card(r)) \then \true \else (\if r[i] = \false \then \false \else :taut_step(r, i + 1))
+\forall r, :is_tautology(r) = :taut_step(r, 0)
+
+# Contradiction analysis (every row evaluates to \false)
+\forall r, i, :contra_step(r, i) = \if i >= (\card(r)) \then \true \else (\if r[i] = \true \then \false \else :contra_step(r, i + 1))
+\forall r, :is_contradiction(r) = :contra_step(r, 0)
+
+\export :l_not, :l_and, :l_or, :l_implies, :l_iff, :l_xor, :assignments, :is_satisfiable, :is_tautology, :is_contradiction, :table_row1, :table_row2

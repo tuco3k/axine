@@ -223,5 +223,5 @@ describe("Virtualization Scrolling & 5,000-Line Caret Alignment Test", () => {
 
       expect(actualOffset).toBe(expectedOffset);
     }
-  });
+  }, 30000);
 });

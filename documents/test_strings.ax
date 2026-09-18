@@ -1,0 +1,40 @@
+# test_strings.ax — Verification of strings standard library
+\import "lib/strings.ax"
+
+:s1 = "hello"
+:s2 = "world"
+:pal = "racecar"
+:not_pal = "axine"
+
+# Length
+:str_len(:s1)
+:str_empty("")
+:str_empty(:s1)
+
+# Concatenation
+:s_cat = :str_concat(:s1, :s2)
+:str_concat(:s1, :s2)
+:str_len(:s_cat)
+
+# Indexing (char_at)
+# In "hello", index 0 is 104 ('h'), index 1 is 101 ('e')
+:char_at(:s1, 0)
+:char_at(:s1, 1)
+
+# Reversal
+:rev_hello = :str_reverse(:s1)
+:str_reverse(:s1)
+:str_reverse(:pal)
+
+# Substring
+# "hello" indices 1 to 4 -> "ell" [101, 108, 108]
+:substring(:s1, 1, 4)
+:substr(:s1, 1, 3)
+
+# Equality
+:str_equal(:s1, "hello")
+:str_equal(:s1, :s2)
+
+# Palindrome test
+:is_palindrome(:pal)
+:is_palindrome(:not_pal)

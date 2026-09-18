@@ -1,0 +1,51 @@
+# graphs.ax — Finite graph representations, adjacency, paths, connectivity, and cycle detection
+# Provides: :make_graph, :graph_vertices, :graph_edges, :adjacent, :neighbors, :degree, :reachable, :has_path, :is_connected, :num_components, :has_cycle
+# Assumes: Undirected graphs represented as (V, E) where V is a list of vertices and E is a list of edge pairs (u, v).
+\module :graphs
+
+# Graph constructor and accessors
+\forall v, e, :make_graph(v, e) = (v, e)
+\forall g, :graph_vertices(g) = g[0]
+\forall g, :graph_edges(g) = g[1]
+
+# Vertex containment helper
+\forall l, x, i, :in_list(l, x, i) = \if i >= (\card(l)) \then \false \else (\if l[i] = x \then \true \else :in_list(l, x, i + 1))
+\forall l, x, :contains_node(l, x) = :in_list(l, x, 0)
+
+# Adjacency predicate: are vertices u and v connected by an edge?
+\forall e, u, v, i, :adj_step(e, u, v, i) = \if i >= (\card(e)) \then \false \else (\if ((e[i][0] = u) \and (e[i][1] = v)) \or ((e[i][0] = v) \and (e[i][1] = u)) \then \true \else :adj_step(e, u, v, i + 1))
+\forall g, u, v, :adjacent(g, u, v) = :adj_step(g[1], u, v, 0)
+
+# Neighbors of vertex u
+\forall g, u, i, c, :neigh_step(g, u, i, c) = \if i >= (\card(g[0])) \then c \else :neigh_step(g, u, i + 1, (\if (g[0][i] != u) \and (:adjacent(g, u, g[0][i]) = \true) \then c + [g[0][i]] \else c))
+\forall g, u, :neighbors(g, u) = :neigh_step(g, u, 0, [])
+
+# Degree of vertex u
+\forall g, u, :degree(g, u) = (\card(:neighbors(g, u)))
+
+# Reachability via breadth-first search
+\forall n, v, i, f, w, :add_nbrs(n, v, i, f, w) = \if i >= (\card(n)) \then (f, w) \else (\if :contains_node(v, n[i]) = \false \then :add_nbrs(n, w + [n[i]], i + 1, f + [n[i]], w + [n[i]]) \else :add_nbrs(n, v, i + 1, f, w))
+\forall g, f, v, i, p, :expand_one(g, f, v, i, p) = :expand_front(g, f, v, i + 1, p[0], p[1])
+\forall g, f, v, i, a, b, :expand_front(g, f, v, i, a, b) = \if i >= (\card(f)) \then (a, b) \else :expand_one(g, f, v, i, :add_nbrs(:neighbors(g, f[i]), b, 0, a, b))
+\forall g, p, :bfs_next(g, p) = :bfs_step(g, p[0], p[1])
+\forall g, f, v, :bfs_step(g, f, v) = \if (\card(f)) = 0 \then v \else :bfs_next(g, :expand_front(g, f, v, 0, [], v))
+\forall g, u, :reachable(g, u) = :bfs_step(g, [u], [u])
+
+# Path existence predicate
+\forall g, u, v, :has_path(g, u, v) = :contains_node(:reachable(g, u), v)
+
+# Graph connectivity predicate
+\forall g, :is_connected(g) = \if (\card(g[0])) <= 1 \then \true \else ((\card(:reachable(g, g[0][0]))) = (\card(g[0])))
+
+# Difference helper
+\forall a, b, i, c, :diff_step(a, b, i, c) = \if i >= (\card(a)) \then c \else :diff_step(a, b, i + 1, (\if :contains_node(b, a[i]) \then c \else c + [a[i]]))
+\forall a, b, :list_diff(a, b) = :diff_step(a, b, 0, [])
+
+# Number of connected components
+\forall g, u, k, :comp_step(g, u, k) = \if (\card(u)) = 0 \then k \else :comp_step(g, :list_diff(u, :reachable(g, u[0])), k + 1)
+\forall g, :num_components(g) = \if (\card(g[0])) = 0 \then 0 \else :comp_step(g, g[0], 0)
+
+# Cycle detection: an undirected graph has a cycle iff |E| > |V| - k
+\forall g, :has_cycle(g) = ((\card(g[1])) > ((\card(g[0])) - :num_components(g)))
+
+\export :make_graph, :graph_vertices, :graph_edges, :adjacent, :neighbors, :degree, :reachable, :has_path, :is_connected, :num_components, :has_cycle

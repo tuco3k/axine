@@ -184,6 +184,21 @@ export interface ModuleResolutionFailure {
   searchedPaths: string[];
 }
 
+function getNodeFs(): { fs: any; path: any } | null {
+  if (Evaluator.fsModule) return Evaluator.fsModule;
+  if (typeof (globalThis as any).__axine_fs__ !== 'undefined') {
+    return (globalThis as any).__axine_fs__;
+  }
+  if (typeof process !== 'undefined' && (process.versions as any)?.node) {
+    try {
+      if (typeof require !== 'undefined') {
+        return { fs: require('fs'), path: require('path') };
+      }
+    } catch {}
+  }
+  return null;
+}
+
 export function resolveModuleCode(
   importPath: string,
   baseDir: string = Evaluator.currentBaseDir,
@@ -227,10 +242,10 @@ export function resolveModuleCode(
     }
 
     // If running in Node environment with a workspaceRoot directory
-    if (workspaceRoot && typeof process !== 'undefined' && (process.versions as any)?.node) {
+    const nodeFs = getNodeFs();
+    if (workspaceRoot && nodeFs) {
       try {
-        const fs = require('fs');
-        const path = require('path');
+        const { fs, path } = nodeFs;
         const wsFsPaths = [
           path.resolve(workspaceRoot, importPath),
           path.resolve(workspaceRoot, withAx(importPath)),
@@ -273,13 +288,13 @@ export function resolveModuleCode(
   }
 
   // Check physical filesystem in Node environment (relative to baseDir or cwd)
-  if (typeof process !== 'undefined' && (process.versions as any)?.node) {
+  const nodeFsDisk = getNodeFs();
+  if (nodeFsDisk) {
     try {
-      const fs = require('fs');
-      const path = require('path');
+      const { fs, path } = nodeFsDisk;
       const searchDirs = [
-        baseDir || process.cwd(),
-        process.cwd(),
+        baseDir || (typeof process !== 'undefined' ? process.cwd() : ''),
+        typeof process !== 'undefined' ? process.cwd() : '',
       ];
       for (const dir of searchDirs) {
         if (!dir) continue;
@@ -510,6 +525,11 @@ export class Evaluator {
   public static workspaceFiles: Map<string, string> = new Map();
   public static currentBaseDir: string = '';
   public static currentWorkspaceRoot: string = '';
+  public static fsModule: { fs: any; path: any } | null = null;
+
+  public static setFsModule(fs: any, path: any): void {
+    Evaluator.fsModule = { fs, path };
+  }
 
   public static setBaseDir(dir: string): void {
     Evaluator.currentBaseDir = dir;
@@ -1935,7 +1955,11 @@ export class Evaluator {
         throw createError(`Property '${prop}' does not exist on type '${targetVal.type}'`, node.span);
       }
       case 'StringLiteral': {
-        return { type: 'string', value: node.value };
+        const elements: Value[] = [];
+        for (let i = 0; i < node.value.length; i++) {
+          elements.push({ type: 'rational', n: BigInt(node.value.charCodeAt(i)), d: 1n });
+        }
+        return { type: 'list', elements };
       }
       case 'FunctionCall': {
         const userRuleRes = this.applyUserRules(node, currentEnv);
@@ -2571,16 +2595,12 @@ export class Evaluator {
       let fmt: 'csv' | 'json' = 'csv';
       if (node.args.length >= 2) {
         const arg1 = node.args[1];
-        if (arg1.type === 'NamedArg' && arg1.name === 'format') {
-          const val = this.evalNode(arg1.value, currentEnv);
-          if (val.type === 'string' && (val.value === 'json' || val.value === 'csv')) {
-            fmt = val.value;
-          }
-        } else {
-          const val = this.evalNode(arg1, currentEnv);
-          if (val.type === 'string' && (val.value === 'json' || val.value === 'csv')) {
-            fmt = val.value;
-          }
+        const val = this.evalNode(arg1.type === 'NamedArg' ? arg1.value : arg1, currentEnv);
+        let strVal = '';
+        if (val.type === 'string') strVal = val.value;
+        else if (val.type === 'list') strVal = String.fromCharCode(...val.elements.map(e => Number((e as any).n ?? 0)));
+        if (strVal === 'json' || strVal === 'csv') {
+          fmt = strVal;
         }
       }
       return { type: 'string', value: exportTrajectory(trajVal, fmt) };
@@ -4078,9 +4098,17 @@ export class Evaluator {
       }
       case 'StringLiteral': {
         const v = evaluatedArgs[0];
+        let strVal = '';
+        if (v && v.type === 'string') {
+          strVal = v.value;
+        } else if (v && v.type === 'list') {
+          strVal = String.fromCharCode(...v.elements.map(e => Number((e as any).n ?? 0)));
+        } else if (v) {
+          strVal = formatAST(valueToASTNode(v, node.span));
+        }
         const strNode: StringLiteralNode = {
           type: 'StringLiteral',
-          value: v ? (v.type === 'string' ? v.value : formatAST(valueToASTNode(v, node.span))) : '',
+          value: strVal,
           span: node.span,
         };
         constructedAst = strNode;

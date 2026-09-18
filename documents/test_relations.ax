@@ -1,0 +1,39 @@
+# test_relations.ax — Verification of binary relations standard library
+\import "lib/relations.ax"
+
+:S = [1, 2, 3]
+
+# Equivalence relation: partition into {1, 2} and {3}
+:R_eq = [(1, 1), (2, 2), (3, 3), (1, 2), (2, 1)]
+
+# Membership
+:rel_contains(:R_eq, 1, 2)
+:rel_contains(:R_eq, 1, 3)
+
+# Properties of R_eq
+:is_reflexive(:R_eq, :S)
+:is_symmetric(:R_eq)
+:is_transitive(:R_eq)
+:is_equivalence(:R_eq, :S)
+
+# Equivalence classes
+:equiv_class(:R_eq, :S, 1)
+:equiv_class(:R_eq, :S, 2)
+:equiv_class(:R_eq, :S, 3)
+
+# Non-reflexive, non-symmetric, non-transitive relation
+:R2 = [(1, 2), (2, 3)]
+:is_reflexive(:R2, :S)
+:is_symmetric(:R2)
+:is_transitive(:R2)
+
+# Closures
+:rc = :reflexive_closure(:R2, :S)
+:is_reflexive(:rc, :S)
+
+:sc = :symmetric_closure(:R2)
+:is_symmetric(:sc)
+
+:tc = :transitive_closure(:R2)
+:is_transitive(:tc)
+:rel_contains(:tc, 1, 3)

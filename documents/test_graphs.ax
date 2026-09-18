@@ -1,0 +1,34 @@
+# test_graphs.ax — Verification of graphs standard library
+\import "lib/graphs.ax"
+
+# Test graph constructions
+:G_tree = :make_graph([1, 2, 3, 4], [(1, 2), (2, 3), (3, 4)])
+:G_cycle = :make_graph([1, 2, 3], [(1, 2), (2, 3), (3, 1)])
+:G_disconn = :make_graph([1, 2, 3, 4], [(1, 2), (3, 4)])
+
+# Adjacency
+:adjacent(:G_tree, 1, 2)
+:adjacent(:G_tree, 1, 3)
+
+# Neighbors and Degree
+:neighbors(:G_tree, 2)
+:degree(:G_tree, 2)
+:degree(:G_tree, 1)
+
+# Reachable and Path
+:reachable(:G_tree, 1)
+:has_path(:G_tree, 1, 4)
+:has_path(:G_disconn, 1, 4)
+
+# Connectivity
+:is_connected(:G_tree)
+:is_connected(:G_disconn)
+
+# Components
+:num_components(:G_tree)
+:num_components(:G_disconn)
+
+# Cycle detection
+:has_cycle(:G_tree)
+:has_cycle(:G_cycle)
+:has_cycle(:G_disconn)

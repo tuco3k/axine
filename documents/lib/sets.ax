@@ -1,0 +1,42 @@
+# sets.ax — Finite set operations over ordered collections
+# Provides: :contains, :subset, :set_equal, :union, :intersection, :difference, :card, :powerset, :range
+# Assumes: Sets are finite lists of distinct elements. Equality (=) determines element equivalence.
+# Note: Set-builder expressions over bounded ranges are natively written using: \set { x \in a..b \where P(x) }
+\module :sets
+
+# Membership predicate: x in s
+\forall s, x, i, :contains_step(s, x, i) = \if i >= (\card(s)) \then \false \else (\if s[i] = x \then \true \else :contains_step(s, x, i + 1))
+\forall s, x, :contains(s, x) = :contains_step(s, x, 0)
+
+# Cardinality of a finite set
+\forall s, :card(s) = \card(s)
+
+# Subset predicate: a subseteq b
+\forall a, b, i, :subset_step(a, b, i) = \if i >= (\card(a)) \then \true \else (\if :contains(b, a[i]) = \false \then \false \else :subset_step(a, b, i + 1))
+\forall a, b, :subset(a, b) = :subset_step(a, b, 0)
+
+# Set equality: a = b iff a subseteq b and b subseteq a
+\forall a, b, :set_equal(a, b) = (:subset(a, b) \and :subset(b, a))
+
+# Set union: a union b
+\forall a, b, i, c, :union_step(a, b, i, c) = \if i >= (\card(b)) \then c \else :union_step(a, b, i + 1, (\if :contains(c, b[i]) = \true \then c \else c + [b[i]]))
+\forall a, b, :union(a, b) = :union_step(a, b, 0, a)
+
+# Set intersection: a intersect b
+\forall a, b, i, c, :inter_step(a, b, i, c) = \if i >= (\card(a)) \then c \else :inter_step(a, b, i + 1, (\if :contains(b, a[i]) = \true \then c + [a[i]] \else c))
+\forall a, b, :intersection(a, b) = :inter_step(a, b, 0, [])
+
+# Set difference: a \\ b
+\forall a, b, i, c, :diff_step(a, b, i, c) = \if i >= (\card(a)) \then c \else :diff_step(a, b, i + 1, (\if :contains(b, a[i]) = \false \then c + [a[i]] \else c))
+\forall a, b, :difference(a, b) = :diff_step(a, b, 0, [])
+
+# Powerset: P(s)
+\forall x, p, i, c, :prepend_all(x, p, i, c) = \if i >= (\card(p)) \then c \else :prepend_all(x, p, i + 1, c + [[x] + p[i]])
+\forall s, i, :powerset_step(s, i) = \if i >= (\card(s)) \then [ [] ] \else (:powerset_step(s, i + 1) + :prepend_all(s[i], :powerset_step(s, i + 1), 0, []))
+\forall s, :powerset(s) = :powerset_step(s, 0)
+
+# Bounded range list: [min, min+1, ..., max]
+\forall i, m, c, :range_step(i, m, c) = \if i > m \then c \else :range_step(i + 1, m, c + [i])
+\forall a, b, :range(a, b) = :range_step(a, b, [])
+
+\export :contains, :card, :subset, :set_equal, :union, :intersection, :difference, :powerset, :range

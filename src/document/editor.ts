@@ -12,6 +12,8 @@ import { PaneContainer } from '../notebook/pane_container';
 import { TabData, updateDocumentTabTitles, findLeaf, getAllLeaves, getAllTabs } from '../notebook/pane_tree';
 import { WorkspaceManager, Workspace, RecentWorkspace } from './workspace';
 import { WelcomeScreen } from './welcome_screen';
+import { AutocompleteController, AutocompleteTarget } from './autocomplete';
+import { BlockDocumentEditor } from './block_editor';
 
 function escapeHtml(str: string): string {
   return str
@@ -149,6 +151,9 @@ export class DocumentEditor {
   private activeWorkspace: Workspace | null = null;
   private welcomeScreen: WelcomeScreen | null = null;
   private wsUnsubscribe?: () => void;
+  private autocomplete: AutocompleteController | null = null;
+  public blockEditor: BlockDocumentEditor | null = null;
+  private editorMode: 'block' | 'classic' = 'classic';
 
   private dockLayout: DockLayoutState = {
     edge: 'right',
@@ -644,6 +649,9 @@ export class DocumentEditor {
 
     if (this.textarea) {
       this.textarea.value = next.state.getText();
+      if (this.blockEditor) {
+        this.blockEditor.setText(next.state.getText());
+      }
       this.updateTypesetOverlay();
       this.textarea.setSelectionRange(
         next.caretPosition.selectionStart,
@@ -1240,6 +1248,12 @@ export class DocumentEditor {
             <div id="doc-view-dropdown" class="doc-file-dropdown hidden"></div>
           </div>
 
+          <div class="doc-file-menu-wrapper doc-mode-menu-wrapper">
+            <button id="doc-mode-toggle-btn" class="doc-btn" title="Toggle Document Flow / Raw Editor">
+              ${this.editorMode === 'block' ? 'Raw Editor' : 'Document Flow'}
+            </button>
+          </div>
+
           <div class="doc-header-actions">
             <div class="doc-budget-selector">
               <label for="budget-select">Budget:</label>
@@ -1267,8 +1281,9 @@ export class DocumentEditor {
         <main id="doc-workspace" class="doc-workspace" data-dock="right">
           <div class="doc-pane-left">
             <div id="doc-print-view" class="doc-print-view"></div>
-            <div id="doc-line-numbers" class="doc-line-numbers"></div>
-            <div class="doc-editor-surface">
+            <div id="doc-line-numbers" class="doc-line-numbers ${this.editorMode === 'block' ? 'hidden' : ''}"></div>
+            <div id="doc-block-editor" class="doc-block-editor ${this.editorMode === 'block' ? '' : 'hidden'}"></div>
+            <div class="doc-editor-surface ${this.editorMode === 'block' ? 'hidden' : ''}">
               <div id="doc-typeset-overlay" class="doc-typeset-overlay"></div>
               <div id="doc-caret" class="doc-caret"></div>
               <textarea
@@ -1382,9 +1397,61 @@ export class DocumentEditor {
     this.updateTypesetOverlay();
     this.updateCaret();
     this.updateFileInfo();
+
+    const blockEditorEl = this.container.querySelector('#doc-block-editor') as HTMLElement;
+    if (blockEditorEl) {
+      this.blockEditor = new BlockDocumentEditor(blockEditorEl, rawText, {
+        onChange: (newText: string) => {
+          if (this.textarea && this.textarea.value !== newText) {
+            this.textarea.value = newText;
+            this.handleInputChange(true);
+          }
+        },
+      });
+    }
+
+    if (this.container) {
+      this.autocomplete = new AutocompleteController(this.container, () => this.handleInputChange());
+    }
   }
 
-  private handleInputChange() {
+  public setEditorMode(mode: 'block' | 'classic'): void {
+    this.editorMode = mode;
+    const blockEl = this.container.querySelector('#doc-block-editor') as HTMLElement;
+    const surfaceEl = this.container.querySelector('.doc-editor-surface') as HTMLElement;
+    const lineNumsEl = this.container.querySelector('#doc-line-numbers') as HTMLElement;
+    const btn = this.container.querySelector('#doc-mode-toggle-btn') as HTMLElement;
+
+    if (mode === 'block') {
+      blockEl?.classList.remove('hidden');
+      surfaceEl?.classList.add('hidden');
+      lineNumsEl?.classList.add('hidden');
+      if (btn) btn.textContent = 'Raw Editor';
+      if (this.blockEditor && this.textarea) {
+        this.blockEditor.setText(this.textarea.value);
+      }
+    } else {
+      blockEl?.classList.add('hidden');
+      surfaceEl?.classList.remove('hidden');
+      lineNumsEl?.classList.remove('hidden');
+      if (btn) btn.textContent = 'Document Flow';
+      if (this.blockEditor && this.textarea) {
+        this.textarea.value = this.blockEditor.getText();
+        this.handleInputChange(true);
+      }
+    }
+  }
+
+  public getEditorMode(): 'block' | 'classic' {
+    return this.editorMode;
+  }
+
+  private handleInputChange(skipBlockSync: boolean = false) {
+    if (!skipBlockSync && this.blockEditor && this.textarea) {
+      if (this.blockEditor.getText() !== this.textarea.value) {
+        this.blockEditor.setText(this.textarea.value);
+      }
+    }
     this.updateTypesetOverlay();
     this.updateCaret();
     this.isDirty = this.textarea.value !== this.savedContent;
@@ -1403,6 +1470,12 @@ export class DocumentEditor {
     const newTabBtn = this.container.querySelector('#doc-session-new-tab-btn');
     newTabBtn?.addEventListener('click', () => {
       this.newDocument();
+    });
+
+    // Mode Toggle Button
+    const modeBtn = this.container.querySelector('#doc-mode-toggle-btn');
+    modeBtn?.addEventListener('click', () => {
+      this.setEditorMode(this.editorMode === 'block' ? 'classic' : 'block');
     });
 
     // File Menu dropdown toggle
@@ -1862,9 +1935,15 @@ export class DocumentEditor {
         this.textarea.selectionStart = this.textarea.selectionEnd = transformedBeforeCaret.length;
       }
       this.handleInputChange();
+      if (this.autocomplete) {
+        this.autocomplete.checkPrefix(this.getAutocompleteTarget());
+      }
     });
 
     this.textarea.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (this.autocomplete && this.autocomplete.handleKeydown(e, this.getAutocompleteTarget())) {
+        return;
+      }
       if (e.key === 'Tab') {
         e.preventDefault();
         const start = this.textarea.selectionStart;
@@ -1918,6 +1997,34 @@ export class DocumentEditor {
     this.textarea.addEventListener('click', () => this.updateCaret());
 
     this.bindSurfaceMouseEvents();
+  }
+
+  private getAutocompleteTarget(): AutocompleteTarget {
+    return {
+      getValue: () => this.textarea?.value || '',
+      setValue: (v: string) => {
+        if (this.textarea) {
+          this.textarea.value = v;
+          this.handleInputChange();
+        }
+      },
+      getSelectionStart: () => this.textarea?.selectionStart || 0,
+      setSelection: (start: number, end: number) => {
+        if (this.textarea) {
+          this.textarea.selectionStart = start;
+          this.textarea.selectionEnd = end;
+          this.updateCaret();
+        }
+      },
+      getCaretCoordinates: () => {
+        if (this.caretEl) {
+          const left = parseFloat(this.caretEl.style.left || '0');
+          const top = parseFloat(this.caretEl.style.top || '0');
+          return { x: left, y: top };
+        }
+        return { x: 50, y: 50 };
+      }
+    };
   }
 
   private getOffsetFromMouseEvent(e: MouseEvent): number {

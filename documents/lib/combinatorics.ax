@@ -1,0 +1,25 @@
+# combinatorics.ax — Counting principles, factorials, permutations, combinations, and partitions
+# Provides: :factorial, :permutations, :combinations, :binomial, :partitions, :derangements
+# Assumes: Non-negative integer inputs.
+\module :combinatorics
+
+# Factorial n!
+\forall n, :factorial(n) = \if n <= 1 \then 1 \else n * :factorial(n - 1)
+
+# Permutations P(n, k) = n! / (n - k)!
+\forall n, k, :permutations(n, k) = \if k <= 0 \then 1 \else (\if n < k \then 0 \else n * :permutations(n - 1, k - 1))
+
+# Combinations C(n, k) = n! / (k! (n - k)!)
+\forall n, k, :combinations(n, k) = \if (k < 0) \or (k > n) \then 0 \else (\if (k = 0) \or (k = n) \then 1 \else (:factorial(n) / (:factorial(k) * :factorial(n - k))))
+
+# Binomial coefficient alias
+\forall n, k, :binomial(n, k) = :combinations(n, k)
+
+# Integer partitions p(n) using recursive helper with max part k
+\forall n, k, :part_helper(n, k) = \if n = 0 \then 1 \else (\if (n < 0) \or (k <= 0) \then 0 \else (:part_helper(n - k, k) + :part_helper(n, k - 1)))
+\forall n, :partitions(n) = \if n < 0 \then 0 \else :part_helper(n, n)
+
+# Derangements !n (subfactorial)
+\forall n, :derangements(n) = \if n = 0 \then 1 \else (\if n = 1 \then 0 \else ((n - 1) * (:derangements(n - 1) + :derangements(n - 2))))
+
+\export :factorial, :permutations, :combinations, :binomial, :partitions, :derangements

@@ -1,9 +1,16 @@
 import { processDocumentLines } from '../src/core/worker';
 import { formatValue } from '../src/document/editor';
 import { SpaceValue } from '../src/core/types';
+import { Evaluator } from '../src/core/evaluator';
 import fs from 'fs';
+import path from 'path';
 
-export function runAxineDoc(code: string): Array<{ lineIdx: number; line: string; state: string; output: string; rawResult?: any }> {
+Evaluator.setFsModule(fs, path);
+
+export function runAxineDoc(code: string, baseDir?: string): Array<{ lineIdx: number; line: string; state: string; output: string; rawResult?: any }> {
+  if (baseDir) {
+    Evaluator.setBaseDir(baseDir);
+  }
   const lines = code.split('\n');
   const results: Array<{ lineIdx: number; line: string; state: string; output: string; rawResult?: any }> = [];
 
@@ -43,8 +50,10 @@ export function runAxineDoc(code: string): Array<{ lineIdx: number; line: string
 }
 
 if (process.argv[2]) {
-  const content = fs.readFileSync(process.argv[2], 'utf-8');
-  const res = runAxineDoc(content);
+  const filePath = path.resolve(process.argv[2]);
+  const baseDir = path.dirname(filePath);
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const res = runAxineDoc(content, baseDir);
   for (const r of res) {
     if (r.state === 'PROSE' && r.line.trim().startsWith('#')) {
       console.log(`L${r.lineIdx + 1}: ${r.line}`);

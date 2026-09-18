@@ -1,0 +1,38 @@
+# test_sets.ax — Verification of sets standard library
+\import "lib/sets.ax"
+
+:A = [1, 2, 3]
+:B = [3, 4, 5]
+:C = [2, 3, 1]
+
+# Membership
+:c1 = :contains(:A, 2)
+:c2 = :contains(:A, 4)
+
+# Subset
+:sub1 = :subset([1, 2], :A)
+:sub2 = :subset([1, 4], :A)
+
+# Set equality
+:eq1 = :set_equal(:A, :C)
+:eq2 = :set_equal(:A, :B)
+
+# Set operations
+:u = :union(:A, :B)
+:union(:A, :B)
+:inter = :intersection(:A, :B)
+:diff = :difference(:A, :B)
+
+# Cardinality
+:card_u = :card(:u)
+
+# Powerset
+:p = :powerset([1, 2])
+:powerset([1, 2])
+
+# Bounded range
+:r = :range(1, 5)
+:range(1, 5)
+
+# Bounded range set builder syntax
+:evens = \set { x \in 1..10 \where x % 2 = 0 }

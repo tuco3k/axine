@@ -1,4 +1,5 @@
 import { DocumentEditor } from './document/editor';
+import { BlockDocumentEditor } from './document/block_editor';
 import { Evaluator, evaluate, createInitialEnvironment } from './core/evaluator';
 import { FileManager } from './document/file_manager';
 import { typesetMath } from './core/math_typeset';
@@ -11,6 +12,8 @@ import './styles/main.css';
 (window as any).SpaceViewport = SpaceViewport;
 (window as any).FileManager = FileManager;
 (window as any).typesetMath = typesetMath;
+(window as any).BlockDocumentEditor = BlockDocumentEditor;
+(window as any).DocumentEditor = DocumentEditor;
 
 function init() {
   const root = document.getElementById('app');

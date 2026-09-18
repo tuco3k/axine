@@ -1,0 +1,42 @@
+# relations.ax — Binary relations over finite sets
+# Provides: :rel_contains, :is_reflexive, :is_symmetric, :is_transitive, :is_equivalence, :equiv_class, :reflexive_closure, :symmetric_closure, :transitive_closure
+# Assumes: Relations are lists of pairs (2-tuples or 2-element lists). Sets are lists of distinct elements.
+\module :relations
+
+# Membership predicate: (x, y) in r
+\forall r, x, y, i, :rel_in_step(r, x, y, i) = \if i >= (\card(r)) \then \false \else (\if (r[i][0] = x) \and (r[i][1] = y) \then \true \else :rel_in_step(r, x, y, i + 1))
+\forall r, x, y, :rel_contains(r, x, y) = :rel_in_step(r, x, y, 0)
+
+# Reflexivity: for all a in s, (a, a) in r
+\forall r, s, i, :refl_step(r, s, i) = \if i >= (\card(s)) \then \true \else (\if :rel_contains(r, s[i], s[i]) = \false \then \false \else :refl_step(r, s, i + 1))
+\forall r, s, :is_reflexive(r, s) = :refl_step(r, s, 0)
+
+# Symmetry: for all (a, b) in r, (b, a) in r
+\forall r, i, :symm_step(r, i) = \if i >= (\card(r)) \then \true \else (\if :rel_contains(r, r[i][1], r[i][0]) = \false \then \false \else :symm_step(r, i + 1))
+\forall r, :is_symmetric(r) = :symm_step(r, 0)
+
+# Transitivity: for all (a, b), (b, c) in r, (a, c) in r
+\forall r, i, j, :trans_step(r, i, j) = \if i >= (\card(r)) \then \true \else (\if j >= (\card(r)) \then :trans_step(r, i + 1, 0) \else (\if (r[i][1] = r[j][0]) \and (:rel_contains(r, r[i][0], r[j][1]) = \false) \then \false \else :trans_step(r, i, j + 1)))
+\forall r, :is_transitive(r) = :trans_step(r, 0, 0)
+
+# Equivalence relation predicate
+\forall r, s, :is_equivalence(r, s) = (:is_reflexive(r, s) \and (:is_symmetric(r) \and :is_transitive(r)))
+
+# Equivalence class of element x with respect to relation r over set s: [x]_r = { y in s | (x, y) in r }
+\forall r, s, x, i, c, :eq_class_step(r, s, x, i, c) = \if i >= (\card(s)) \then c \else :eq_class_step(r, s, x, i + 1, (\if :rel_contains(r, x, s[i]) = \true \then c + [s[i]] \else c))
+\forall r, s, x, :equiv_class(r, s, x) = :eq_class_step(r, s, x, 0, [])
+
+# Reflexive closure: r union { (a, a) | a in s }
+\forall r, s, i, c, :refl_clos_step(r, s, i, c) = \if i >= (\card(s)) \then c \else :refl_clos_step(r, s, i + 1, (\if :rel_contains(c, s[i], s[i]) = \true \then c \else c + [(s[i], s[i])]))
+\forall r, s, :reflexive_closure(r, s) = :refl_clos_step(r, s, 0, r)
+
+# Symmetric closure: r union { (b, a) | (a, b) in r }
+\forall r, i, c, :symm_clos_step(r, i, c) = \if i >= (\card(r)) \then c \else :symm_clos_step(r, i + 1, (\if :rel_contains(c, r[i][1], r[i][0]) = \true \then c \else c + [(r[i][1], r[i][0])]))
+\forall r, :symmetric_closure(r) = :symm_clos_step(r, 0, r)
+
+# Transitive closure: iterative augmentation until fixed point
+\forall r, i, j, c, :trans_pass(r, i, j, c) = \if i >= (\card(r)) \then c \else (\if j >= (\card(r)) \then :trans_pass(r, i + 1, 0, c) \else (\if (r[i][1] = r[j][0]) \and (:rel_contains(c, r[i][0], r[j][1]) = \false) \then :trans_pass(r, i, j + 1, c + [(r[i][0], r[j][1])]) \else :trans_pass(r, i, j + 1, c)))
+\forall r, k, :trans_clos_step(r, k) = \if k <= 0 \then r \else (\if (\card(:trans_pass(r, 0, 0, r))) = (\card(r)) \then r \else :trans_clos_step(:trans_pass(r, 0, 0, r), k - 1))
+\forall r, :transitive_closure(r) = :trans_clos_step(r, (\card(r)))
+
+\export :rel_contains, :is_reflexive, :is_symmetric, :is_transitive, :is_equivalence, :equiv_class, :reflexive_closure, :symmetric_closure, :transitive_closure

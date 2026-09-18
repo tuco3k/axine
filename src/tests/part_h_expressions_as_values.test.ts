@@ -133,6 +133,11 @@ describe('Capability C1 Gate: Expressions as Values, \\match, \\build, \\quote, 
   // 3. \\match Over Every AST Node Type
   // =========================================================================
   describe('\\match Pattern Matching Across All AST Node Types', () => {
+    const strCodes = (s: string) => ({
+      type: 'list',
+      elements: Array.from(s).map(c => ({ type: 'rational', n: BigInt(c.charCodeAt(0)), d: 1n })),
+    });
+
     it('matches NumberLiteral and StringLiteral', () => {
       const env = createInitialEnvironment();
       const code1 = `
@@ -141,7 +146,7 @@ describe('Capability C1 Gate: Expressions as Values, \\match, \\build, \\quote, 
           \\otherwise: "fallback"
         }
       `;
-      expect(evaluate(code1, env).value).toEqual({ type: 'string', value: 'matched 42' });
+      expect(evaluate(code1, env).value).toEqual(strCodes('matched 42'));
 
       const code2 = `
         \\match \\quote("hello") {
@@ -149,7 +154,7 @@ describe('Capability C1 Gate: Expressions as Values, \\match, \\build, \\quote, 
           \\otherwise: "fallback"
         }
       `;
-      expect(evaluate(code2, env).value).toEqual({ type: 'string', value: 'matched hello' });
+      expect(evaluate(code2, env).value).toEqual(strCodes('matched hello'));
     });
 
     it('matches Identifier and metavariable wildcards', () => {
@@ -160,19 +165,19 @@ describe('Capability C1 Gate: Expressions as Values, \\match, \\build, \\quote, 
           \\otherwise: "none"
         }
       `;
-      expect(evaluate(code, env).value).toEqual({ type: 'string', value: 'matched wildcard' });
+      expect(evaluate(code, env).value).toEqual(strCodes('matched wildcard'));
     });
 
-    it('matches BinaryOp (+, -, *, /, ^)', () => {
+    it('matches BinaryOp', () => {
       const env = createInitialEnvironment();
       const code = `
-        \\match \\quote(a * b) {
+        \\match \\quote(x * y) {
           \\case :x + :y: "sum",
           \\case :x * :y: "product",
           \\otherwise: "other"
         }
       `;
-      expect(evaluate(code, env).value).toEqual({ type: 'string', value: 'product' });
+      expect(evaluate(code, env).value).toEqual(strCodes('product'));
     });
 
     it('matches UnaryOp and PostfixOp', () => {
@@ -183,7 +188,7 @@ describe('Capability C1 Gate: Expressions as Values, \\match, \\build, \\quote, 
           \\otherwise: "other"
         }
       `;
-      expect(evaluate(code1, env).value).toEqual({ type: 'string', value: 'negative' });
+      expect(evaluate(code1, env).value).toEqual(strCodes('negative'));
 
       const code2 = `
         \\match \\quote(n!) {
@@ -191,7 +196,7 @@ describe('Capability C1 Gate: Expressions as Values, \\match, \\build, \\quote, 
           \\otherwise: "other"
         }
       `;
-      expect(evaluate(code2, env).value).toEqual({ type: 'string', value: 'factorial' });
+      expect(evaluate(code2, env).value).toEqual(strCodes('factorial'));
     });
 
     it('matches FunctionCall and Diff', () => {
@@ -203,7 +208,7 @@ describe('Capability C1 Gate: Expressions as Values, \\match, \\build, \\quote, 
           \\otherwise: "other"
         }
       `;
-      expect(evaluate(code1, env).value).toEqual({ type: 'string', value: 'sin of expr' });
+      expect(evaluate(code1, env).value).toEqual(strCodes('sin of expr'));
 
       const code2 = `
         \\match \\quote(d//dx (x^3)) {
@@ -211,7 +216,7 @@ describe('Capability C1 Gate: Expressions as Values, \\match, \\build, \\quote, 
           \\otherwise: "other"
         }
       `;
-      expect(evaluate(code2, env).value).toEqual({ type: 'string', value: 'derivative wrt x' });
+      expect(evaluate(code2, env).value).toEqual(strCodes('derivative wrt x'));
     });
 
     it('matches BracketOp, Tuple, and List', () => {
@@ -222,7 +227,7 @@ describe('Capability C1 Gate: Expressions as Values, \\match, \\build, \\quote, 
           \\otherwise: "other"
         }
       `;
-      expect(evaluate(code1, env).value).toEqual({ type: 'string', value: 'absolute value' });
+      expect(evaluate(code1, env).value).toEqual(strCodes('absolute value'));
 
       const code2 = `
         \\match \\quote((1, 2)) {
@@ -230,7 +235,7 @@ describe('Capability C1 Gate: Expressions as Values, \\match, \\build, \\quote, 
           \\otherwise: "other"
         }
       `;
-      expect(evaluate(code2, env).value).toEqual({ type: 'string', value: '2-tuple' });
+      expect(evaluate(code2, env).value).toEqual(strCodes('2-tuple'));
 
       const code3 = `
         \\match \\quote([1, 2, 3]) {
@@ -238,7 +243,7 @@ describe('Capability C1 Gate: Expressions as Values, \\match, \\build, \\quote, 
           \\otherwise: "other"
         }
       `;
-      expect(evaluate(code3, env).value).toEqual({ type: 'string', value: '3-list' });
+      expect(evaluate(code3, env).value).toEqual(strCodes('3-list'));
     });
 
     it('performs non-linear pattern matching (identical metavariables)', () => {
@@ -250,7 +255,7 @@ describe('Capability C1 Gate: Expressions as Values, \\match, \\build, \\quote, 
           \\otherwise: "other"
         }
       `;
-      expect(evaluate(codeMatch, env).value).toEqual({ type: 'string', value: 'identical terms' });
+      expect(evaluate(codeMatch, env).value).toEqual(strCodes('identical terms'));
 
       const codeMismatch = `
         \\match \\quote(x + y) {
@@ -259,7 +264,7 @@ describe('Capability C1 Gate: Expressions as Values, \\match, \\build, \\quote, 
           \\otherwise: "other"
         }
       `;
-      expect(evaluate(codeMismatch, env).value).toEqual({ type: 'string', value: 'different terms' });
+      expect(evaluate(codeMismatch, env).value).toEqual(strCodes('different terms'));
     });
 
     it('evaluates guard conditions in \\case \\if', () => {
@@ -271,7 +276,7 @@ describe('Capability C1 Gate: Expressions as Values, \\match, \\build, \\quote, 
           \\otherwise: "other"
         }
       `;
-      expect(evaluate(code, env).value).toEqual({ type: 'string', value: 'large' });
+      expect(evaluate(code, env).value).toEqual(strCodes('large'));
     });
 
     it('falls back to \\otherwise when no case matches', () => {
@@ -282,7 +287,7 @@ describe('Capability C1 Gate: Expressions as Values, \\match, \\build, \\quote, 
           \\otherwise: "fallback reached"
         }
       `;
-      expect(evaluate(code, env).value).toEqual({ type: 'string', value: 'fallback reached' });
+      expect(evaluate(code, env).value).toEqual(strCodes('fallback reached'));
     });
 
     it('throws structured error when no case matches and no \\otherwise is provided', () => {
