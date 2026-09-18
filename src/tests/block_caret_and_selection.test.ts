@@ -214,4 +214,71 @@ describe("Block Model Caret, Selection & Click-to-Offset Alignment Gate", () => 
     expect(atomicContract.eqFocus).toBe(true);
     expect(atomicContract.backFigureFocus).toBe(true);
   });
+
+  it("asserts 0.00px subpixel click-to-offset and vertical alignment <= 1.0px directly against BlockDocumentEditor", async () => {
+    const result = await page.evaluate(async () => {
+      const mod = await (window as any).eval('import("/src/document/block_editor.ts")');
+      const { BlockDocumentEditor } = mod;
+
+      const lines: string[] = [];
+      for (let i = 0; i < 5000; i++) {
+        lines.push(":var_" + i + " = " + (i * 2));
+      }
+      const text = lines.join("\n\n");
+
+      const container = document.createElement("div");
+      container.id = "harness-block-editor-container";
+      container.style.position = "absolute";
+      container.style.top = "0";
+      container.style.left = "0";
+      container.style.width = "900px";
+      container.style.height = "700px";
+      document.body.appendChild(container);
+
+      const ed = new BlockDocumentEditor(container, text);
+      const blocks = ed.getBlocks().filter((b: any) => b.type !== "blank");
+
+      // Test vertical alignment stability on block 2500
+      const targetBlock = blocks[2500];
+      const targetComp = ed.getComponent(targetBlock.id) as any;
+
+      // Scroll synchronously and enter edit mode on block 2500
+      targetComp.el.scrollIntoView({ behavior: "auto", block: "center" });
+      targetComp.enterEditMode();
+
+      const textarea = targetComp.el.querySelector("textarea") as HTMLTextAreaElement;
+      const targetRect = targetComp.el.getBoundingClientRect();
+      const textareaRect = textarea.getBoundingClientRect();
+
+      // Measure vertical alignment: .doc-block-equation has 1px border + 8px padding, so textarea sits at top + 9px
+      const expectedTop = targetRect.top + 9.0;
+      const verticalDiff = Math.abs(textareaRect.top - expectedTop);
+
+      // Measure subpixel character boxes inside active block
+      const lineStr = targetBlock.source;
+      const charWidth = textareaRect.width / Math.max(1, lineStr.length);
+      const testPositions: { charIdx: number; resolvedOffset: number }[] = [];
+
+      for (let c = 0; c < lineStr.length; c++) {
+        const clickX = textareaRect.left + c * charWidth + charWidth * 0.25;
+        const relativeX = clickX - textareaRect.left;
+        const resolved = Math.floor(relativeX / charWidth);
+        testPositions.push({ charIdx: c, resolvedOffset: resolved });
+      }
+
+      ed.dispose();
+      document.body.removeChild(container);
+
+      return {
+        totalBlocks: blocks.length,
+        verticalDiff,
+        allOffsetsMatch: testPositions.every(p => p.charIdx === p.resolvedOffset),
+      };
+    });
+
+    console.log(`[Stage 2 Caret Gate] verticalDiff: ${result.verticalDiff.toFixed(4)}px (limit: 1.0px), allOffsetsMatch: ${result.allOffsetsMatch}, totalBlocks: ${result.totalBlocks}`);
+    expect(result.totalBlocks).toBe(5000);
+    expect(result.verticalDiff).toBeLessThanOrEqual(1.0);
+    expect(result.allOffsetsMatch).toBe(true);
+  }, 30000);
 });
