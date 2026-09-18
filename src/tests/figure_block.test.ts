@@ -119,4 +119,55 @@ describe("Stage 3 Gate: Atomic In-Flow Figure Block Component", () => {
     expect(result.navigatingExited).toBe(true);
     expect(result.afterDelete).toBe(true);
   });
+
+  it("verifies natural in-flow reflow anchoring when preceding content expands", async () => {
+    const reflowResult = await page.evaluate(async () => {
+      const mod = await (window as any).eval('import("/src/document/blocks/figure_block.ts")');
+      const { FigureBlockComponent } = mod;
+
+      const container = document.createElement("div");
+      container.style.position = "absolute";
+      container.style.top = "0";
+      container.style.left = "0";
+      container.style.width = "800px";
+      document.body.appendChild(container);
+
+      // Preceding block
+      const prevBlock = document.createElement("div");
+      prevBlock.style.height = "50px";
+      prevBlock.style.margin = "8px 0";
+      container.appendChild(prevBlock);
+
+      // Figure block
+      const fig = new FigureBlockComponent({
+        id: "fig_reflow",
+        type: "figure" as const,
+        source: "\\figure(:orbit, width: 400, height: 200)",
+        lines: ["\\figure(:orbit, width: 400, height: 200)"],
+        startLine: 1,
+        endLine: 1,
+        status: "verified" as const,
+        metadata: { width: 400, height: 200 },
+      });
+      container.appendChild(fig.el);
+
+      const initialFigTop = fig.el.getBoundingClientRect().top;
+
+      // Expand preceding block by 120px
+      prevBlock.style.height = "170px";
+      const expandedFigTop = fig.el.getBoundingClientRect().top;
+      const reflowDelta = expandedFigTop - initialFigTop;
+
+      fig.dispose();
+      document.body.removeChild(container);
+
+      return {
+        initialFigTop,
+        expandedFigTop,
+        reflowDelta,
+      };
+    });
+
+    expect(reflowResult.reflowDelta).toBe(120);
+  });
 });
