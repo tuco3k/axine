@@ -10,7 +10,7 @@
  * 6. Caret accuracy: Slot inputs maintain subpixel alignment <= 1.0px.
  */
 
-import { DocumentBlock } from "../block_model";
+import { DocumentBlock, BlockType } from "../block_model";
 import { SlotCommandDeclaration, SlotCommandData, SlotCommandRegistry } from "./slot_command";
 
 export interface SlotBlockOptions {
@@ -19,6 +19,7 @@ export interface SlotBlockOptions {
   onStepNext?: () => void;
   onStepPrev?: () => void;
   onDeleteRequest?: (blockId: string) => void;
+  onRequestTransform?: (blockId: string, targetType: BlockType, source: string, caretOffset?: number) => void;
 }
 
 function escapeHtml(str: string): string {
@@ -120,14 +121,14 @@ export class SlotBlockComponent {
         }
         if (e.key === "Backspace" || e.key === "Delete") {
           e.preventDefault();
-          this.options.onDeleteRequest?.(this.block.id);
+          this.options.onRequestTransform?.(this.block.id, "paragraph", "", 0);
           return;
         }
       }
     });
   }
 
-  public enterEditMode(targetSlotId?: string): void {
+  public enterEditMode(targetSlotId?: string, caretOffset: number = 0): void {
     if (this.isEditing) return;
     this.isEditing = true;
 
@@ -141,7 +142,7 @@ export class SlotBlockComponent {
     const slotIds = this.decl.getSlotIds(this.data);
     const initialSlot = targetSlotId || slotIds[0];
     if (initialSlot) {
-      this.focusSlot(initialSlot);
+      this.focusSlot(initialSlot, false, caretOffset);
     }
   }
 
@@ -188,7 +189,7 @@ export class SlotBlockComponent {
           e.preventDefault();
           const nextSlot = this.decl.getNextSlotId(slotId, this.data, e.shiftKey);
           if (nextSlot) {
-            this.focusSlot(nextSlot);
+            this.focusSlot(nextSlot, true);
           }
         } else if (e.key === "Escape") {
           e.preventDefault();
@@ -197,9 +198,17 @@ export class SlotBlockComponent {
           e.preventDefault();
           const nextSlot = this.decl.getNextSlotId(slotId, this.data, false);
           if (nextSlot && nextSlot !== slotId) {
-            this.focusSlot(nextSlot);
+            this.focusSlot(nextSlot, true);
           } else {
             this.exitEditMode(true);
+          }
+        } else if (e.key === "Backspace") {
+          const slotIds = this.decl.getSlotIds(this.data);
+          const isFirstSlot = slotId === slotIds[0];
+          if (isFirstSlot && input.selectionStart === 0 && input.selectionEnd === 0 && input.value === "") {
+            e.preventDefault();
+            this.options.onRequestTransform?.(this.block.id, "paragraph", "", 0);
+            return;
           }
         }
       });
@@ -216,12 +225,16 @@ export class SlotBlockComponent {
     });
   }
 
-  public focusSlot(slotId: string): void {
+  public focusSlot(slotId: string, selectAll: boolean = false, caretOffset: number = 0): void {
     const input = this.activeSlotInputs.get(slotId);
     if (input) {
       this.currentFocusedSlotId = slotId;
       input.focus();
-      input.select();
+      if (selectAll) {
+        input.select();
+      } else if (typeof input.setSelectionRange === "function") {
+        input.setSelectionRange(caretOffset, caretOffset);
+      }
     }
   }
 

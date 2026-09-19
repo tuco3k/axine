@@ -45,6 +45,37 @@ export interface DocumentModel {
   blocks: DocumentBlock[];
 }
 
+export function classifyBlockType(source: string): BlockType {
+  const trimmed = source.trim();
+  if (trimmed === "") {
+    return "paragraph";
+  }
+  if (trimmed.startsWith("\\table") || trimmed.startsWith("\\cases")) {
+    return "slot";
+  }
+  if (trimmed.startsWith("\\figure") || trimmed.includes("{\\axis")) {
+    return "figure";
+  }
+  if (trimmed.startsWith("\\derive")) {
+    return "derivation";
+  }
+  if (trimmed.startsWith("# ") || trimmed.startsWith("## ") || trimmed.startsWith("### ")) {
+    return "heading";
+  }
+  if (trimmed.startsWith("#")) {
+    return "paragraph";
+  }
+  // Relational definitions or equations: e.g. "x = 5", ":x := 10", "y = mx + b", "a <= b"
+  if (/^(:?[a-zA-Z_][a-zA-Z0-9_]*(\([^)]*\))?\s*(:=|=|<=|>=|<|>)\s*.+)$/.test(trimmed)) {
+    return "equation";
+  }
+  // Pure math expressions with operators (e.g. x^2 + y^2, 2 + 2)
+  if (/^[a-zA-Z0-9_]+(\s*[\^+\-*/]\s*[a-zA-Z0-9_]+)+$/.test(trimmed)) {
+    return "equation";
+  }
+  return "paragraph";
+}
+
 export function extractDefinedSymbol(source: string): string | undefined {
   const trimmed = source.trim();
   const match = trimmed.match(/^(:?[a-zA-Z_][a-zA-Z0-9_]*)(?:\([^)]*\))?\s*(?::=|=)/);

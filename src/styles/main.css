@@ -4207,11 +4207,95 @@ input[type="number"]:focus {
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: var(--space-md) var(--space-lg);
+  padding: 40px 24px;
   box-sizing: border-box;
-  background: var(--color-bg-base);
+  background: var(--color-doc-surround, var(--color-bg-base));
   color: var(--color-text-primary);
   outline: none;
+}
+
+.doc-page-sheet {
+  max-width: 800px;
+  min-height: calc(100% - 80px);
+  margin: 0 auto;
+  background: var(--color-doc-sheet-bg, var(--color-bg-surface));
+  border: 1px solid var(--color-doc-sheet-border, var(--color-border-subtle));
+  border-radius: var(--border-radius-sm, 3px);
+  box-shadow: var(--color-doc-sheet-shadow, 0 4px 24px rgba(0, 0, 0, 0.3));
+  padding: 48px 56px;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.doc-block-heading {
+  margin: 16px 0 8px 0;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-sm);
+  outline: none;
+  color: var(--color-text-primary);
+}
+
+.doc-block-heading:focus,
+.doc-block-heading.selected {
+  border-color: var(--color-accent-subtle);
+  background: var(--color-bg-surface);
+}
+
+.doc-heading-content {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-family-ui, sans-serif);
+}
+
+.doc-heading-content h1,
+h1.doc-heading-content {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.doc-heading-content h2,
+h2.doc-heading-content {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.doc-heading-content h3,
+h3.doc-heading-content {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.doc-heading-placeholder {
+  color: var(--color-text-tertiary, #8c867e);
+  font-style: italic;
+  font-weight: normal;
+}
+
+.doc-heading-input {
+  font-size: 20px;
+  font-weight: 600;
+  padding: 4px 0;
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .doc-block-editor {
+    padding: 0;
+    background: var(--color-doc-sheet-bg, var(--color-bg-surface));
+  }
+  .doc-page-sheet {
+    max-width: 100%;
+    min-height: 100%;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 24px 16px;
+  }
 }
 
 .doc-block.highlight-pulse {

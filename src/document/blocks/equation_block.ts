@@ -9,7 +9,7 @@
  * 5. Escape (or blur): Commits changes, compiles AST in worker, returns to atomic typeset view.
  */
 
-import { DocumentBlock } from "../block_model";
+import { DocumentBlock, BlockType } from "../block_model";
 import { typesetMath } from "../../core/math_typeset";
 import { AutocompleteController, AutocompleteTarget } from "../autocomplete";
 
@@ -19,6 +19,7 @@ export interface EquationBlockOptions {
   onStepNext?: () => void;
   onStepPrev?: () => void;
   onDeleteRequest?: (blockId: string) => void;
+  onRequestTransform?: (blockId: string, targetType: BlockType, source: string, caretOffset?: number) => void;
 }
 
 export class EquationBlockComponent {
@@ -95,9 +96,18 @@ export class EquationBlockComponent {
           this.options.onStepPrev?.();
           return;
         }
-        if (e.key === "Backspace" || e.key === "Delete") {
+        if (e.key === "Delete") {
           e.preventDefault();
           this.options.onDeleteRequest?.(this.block.id);
+          return;
+        }
+        if (e.key === "Backspace") {
+          e.preventDefault();
+          if (this.options.onRequestTransform) {
+            this.options.onRequestTransform(this.block.id, "paragraph", "", 0);
+          } else {
+            this.options.onDeleteRequest?.(this.block.id);
+          }
           return;
         }
       } else {
@@ -110,7 +120,7 @@ export class EquationBlockComponent {
     });
   }
 
-  public enterEditMode() {
+  public enterEditMode(caretOffset?: number) {
     if (this.isEditing) return;
     this.isEditing = true;
 
@@ -152,6 +162,16 @@ export class EquationBlockComponent {
     this.textarea.addEventListener("input", () => {
       if (this.textarea) {
         this.textarea.rows = Math.max(1, this.textarea.value.split("\n").length);
+        const val = this.textarea.value;
+        const trimmed = val.trim();
+        const caret = this.textarea.selectionStart ?? val.length;
+
+        // Check if reverted to plain prose text (no relations or math operators)
+        const hasRelationOrMath = /[=:<>+\-*/^\\_]/.test(val);
+        if (!hasRelationOrMath && trimmed !== "" && this.options.onRequestTransform) {
+          this.options.onRequestTransform(this.block.id, "paragraph", val, caret);
+          return;
+        }
       }
       this.autocomplete?.checkPrefix(target);
     });
@@ -163,6 +183,11 @@ export class EquationBlockComponent {
       if (e.key === "Escape") {
         e.preventDefault();
         this.exitEditMode(true);
+      } else if (e.key === "Backspace" && this.textarea) {
+        if (this.textarea.value === "") {
+          e.preventDefault();
+          this.options.onRequestTransform?.(this.block.id, "paragraph", "", 0);
+        }
       }
     });
 
@@ -176,6 +201,10 @@ export class EquationBlockComponent {
     });
 
     this.textarea.focus();
+    const targetOffset = caretOffset !== undefined ? caretOffset : this.textarea.value.length;
+    if (typeof this.textarea.setSelectionRange === "function") {
+      this.textarea.setSelectionRange(targetOffset, targetOffset);
+    }
   }
 
   public exitEditMode(commit: boolean = true) {

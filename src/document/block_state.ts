@@ -5,7 +5,7 @@
  * and state invalidation (stale/error/verified).
  */
 
-import { DocumentModel, DocumentBlock, parseAxDocument, serializeAxDocument, extractDefinedSymbol, extractReferencedSymbols } from "./block_model";
+import { DocumentModel, DocumentBlock, BlockType, parseAxDocument, serializeAxDocument, extractDefinedSymbol, extractReferencedSymbols, classifyBlockType } from "./block_model";
 
 export type BlockStateListener = (model: DocumentModel) => void;
 
@@ -74,9 +74,21 @@ export class BlockState {
     }
   }
 
-  public updateBlock(id: string, newSource: string) {
+  public setBlockType(id: string, type: BlockType) {
     const b = this.getBlock(id);
     if (!b) return;
+    b.type = type;
+    this.notify();
+  }
+
+  public updateBlock(id: string, newSource: string): { typeChanged: boolean; oldType: BlockType; newType: BlockType } | undefined {
+    const b = this.getBlock(id);
+    if (!b) return undefined;
+
+    const oldType = b.type;
+    const newType = classifyBlockType(newSource);
+    const typeChanged = oldType !== newType;
+    b.type = newType;
 
     const oldDef = b.definedSymbol;
     b.source = newSource;
@@ -118,6 +130,7 @@ export class BlockState {
     }
 
     this.notify();
+    return { typeChanged, oldType, newType };
   }
 
   public deleteBlock(id: string) {

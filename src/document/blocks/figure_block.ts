@@ -9,7 +9,7 @@
  * 5. Scroll-safe click-to-activate: wheel/trackpad scrolling passes through until clicked.
  */
 
-import { DocumentBlock } from "../block_model";
+import { DocumentBlock, BlockType } from "../block_model";
 import { SpaceValue } from "../../core/types";
 import { SpaceViewport } from "../../plot/space_viewport";
 
@@ -19,6 +19,8 @@ export interface FigureBlockOptions {
   onDeleteRequest?: (blockId: string) => void;
   onStepNext?: () => void;
   onStepPrev?: () => void;
+  onCommit?: (blockId: string, newSource: string) => void;
+  onRequestTransform?: (blockId: string, targetType: BlockType, source: string, caretOffset?: number) => void;
 }
 
 export class FigureBlockComponent {
@@ -27,7 +29,10 @@ export class FigureBlockComponent {
   private options: FigureBlockOptions;
   private viewport: SpaceViewport | null = null;
   private canvasContainer: HTMLElement;
+  private editorContainer: HTMLElement;
   private titleBar: HTMLElement;
+  private textarea: HTMLTextAreaElement | null = null;
+  private isEditing: boolean = false;
   private isSelected: boolean = false;
   private isNavigating: boolean = false;
 
@@ -51,6 +56,11 @@ export class FigureBlockComponent {
     this.canvasContainer = document.createElement("div");
     this.canvasContainer.className = "doc-figure-viewport-container inert-scroll";
     this.el.appendChild(this.canvasContainer);
+
+    // Editor Container
+    this.editorContainer = document.createElement("div");
+    this.editorContainer.className = "doc-figure-editor-view hidden";
+    this.el.appendChild(this.editorContainer);
 
     this.bindEvents();
     this.mountViewport();
@@ -114,8 +124,16 @@ export class FigureBlockComponent {
   private bindEvents() {
     // Single Click selects whole atomic figure
     this.el.addEventListener("click", (_e) => {
-      this.setSelected(true);
-      this.options.onSelect?.(this.block.id);
+      if (!this.isEditing) {
+        this.setSelected(true);
+        this.options.onSelect?.(this.block.id);
+      }
+    });
+
+    // Double Click: Enter edit mode
+    this.el.addEventListener("dblclick", (e) => {
+      e.stopPropagation();
+      this.enterEditMode();
     });
 
     // Keyboard navigation (Word's single-arrow stepping)
@@ -126,7 +144,12 @@ export class FigureBlockComponent {
         return;
       }
 
-      if (!this.isNavigating) {
+      if (!this.isNavigating && !this.isEditing) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          this.enterEditMode();
+          return;
+        }
         if (e.key === "ArrowDown" || e.key === "ArrowRight") {
           e.preventDefault();
           this.options.onStepNext?.();
@@ -137,9 +160,18 @@ export class FigureBlockComponent {
           this.options.onStepPrev?.();
           return;
         }
-        if (e.key === "Backspace" || e.key === "Delete") {
+        if (e.key === "Delete") {
           e.preventDefault();
           this.options.onDeleteRequest?.(this.block.id);
+          return;
+        }
+        if (e.key === "Backspace") {
+          e.preventDefault();
+          if (this.options.onRequestTransform) {
+            this.options.onRequestTransform(this.block.id, "paragraph", "", 0);
+          } else {
+            this.options.onDeleteRequest?.(this.block.id);
+          }
           return;
         }
       }
@@ -147,7 +179,7 @@ export class FigureBlockComponent {
 
     // Canvas click-to-activate interaction
     this.canvasContainer.addEventListener("click", (e) => {
-      if (!this.isNavigating) {
+      if (!this.isNavigating && !this.isEditing) {
         e.stopPropagation();
         this.setSelected(true);
         this.setNavigating(true);
@@ -161,6 +193,85 @@ export class FigureBlockComponent {
         this.setNavigating(false);
       }
     });
+  }
+
+  public enterEditMode(caretOffset?: number) {
+    if (this.isEditing) return;
+    this.isEditing = true;
+
+    this.titleBar.classList.add("hidden");
+    this.canvasContainer.classList.add("hidden");
+    this.editorContainer.classList.remove("hidden");
+    this.el.classList.add("editing");
+    this.el.removeAttribute("data-atomic");
+
+    this.editorContainer.innerHTML = "";
+    this.textarea = document.createElement("textarea");
+    this.textarea.className = "doc-block-source-input doc-figure-input";
+    this.textarea.value = this.block.source;
+    this.textarea.rows = Math.max(1, this.block.source.split("\n").length);
+    this.editorContainer.appendChild(this.textarea);
+
+    this.textarea.addEventListener("input", () => {
+      if (!this.textarea) return;
+      this.textarea.rows = Math.max(1, this.textarea.value.split("\n").length);
+      const val = this.textarea.value;
+      const trimmed = val.trim();
+      const caret = this.textarea.selectionStart ?? val.length;
+
+      // If edited away from \figure and doesn't contain {\axis, revert to paragraph
+      if (!trimmed.startsWith("\\figure") && !trimmed.includes("{\\axis")) {
+        this.options.onRequestTransform?.(this.block.id, "paragraph", val, caret);
+        return;
+      }
+
+      this.block.source = val;
+      this.options.onCommit?.(this.block.id, val);
+    });
+
+    this.textarea.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Escape" || e.key === "Enter") {
+        e.preventDefault();
+        this.exitEditMode(true);
+      }
+    });
+
+    this.textarea.addEventListener("blur", () => {
+      this.exitEditMode(true);
+    });
+
+    this.textarea.focus();
+    const targetOffset = caretOffset !== undefined ? caretOffset : this.textarea.value.length;
+    if (typeof this.textarea.setSelectionRange === "function") {
+      this.textarea.setSelectionRange(targetOffset, targetOffset);
+    }
+  }
+
+  public exitEditMode(commit: boolean = true) {
+    if (!this.isEditing) return;
+    this.isEditing = false;
+
+    if (commit && this.textarea) {
+      const newSource = this.textarea.value;
+      if (newSource !== this.block.source) {
+        this.block.source = newSource;
+        this.options.onCommit?.(this.block.id, newSource);
+      }
+    }
+
+    if (this.textarea) {
+      this.editorContainer.innerHTML = "";
+      this.textarea = null;
+    }
+
+    this.editorContainer.classList.add("hidden");
+    this.titleBar.classList.remove("hidden");
+    this.canvasContainer.classList.remove("hidden");
+    this.el.classList.remove("editing");
+    this.el.setAttribute("data-atomic", "true");
+
+    this.updateBlock(this.block);
+    this.setSelected(true);
   }
 
   public setSelected(selected: boolean) {

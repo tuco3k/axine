@@ -9,11 +9,12 @@
  * - Reactive dependency state
  */
 
-import { DocumentBlock, DocumentModel } from "./block_model";
+import { DocumentBlock, DocumentModel, BlockType } from "./block_model";
 import { BlockState } from "./block_state";
 import { FigureBlockComponent } from "./blocks/figure_block";
 import { EquationBlockComponent } from "./blocks/equation_block";
 import { ParagraphBlockComponent } from "./blocks/paragraph_block";
+import { HeadingBlockComponent } from "./blocks/heading_block";
 import { SlotBlockComponent } from "./blocks/slot_block";
 
 export interface BlockEditorOptions {
@@ -27,10 +28,12 @@ export type BlockComponent =
   | FigureBlockComponent
   | EquationBlockComponent
   | ParagraphBlockComponent
+  | HeadingBlockComponent
   | SlotBlockComponent;
 
 export class BlockDocumentEditor {
   public readonly container: HTMLElement;
+  public readonly pageSheet: HTMLElement;
   private model: DocumentModel;
   private state: BlockState;
   private blockComponents: Map<string, BlockComponent> = new Map();
@@ -41,6 +44,10 @@ export class BlockDocumentEditor {
     this.container = container;
     this.options = options;
     this.container.classList.add("doc-block-editor");
+
+    this.pageSheet = document.createElement("div");
+    this.pageSheet.className = "doc-page-sheet";
+    this.container.appendChild(this.pageSheet);
 
     this.state = new BlockState(initialText);
     this.model = this.state.getModel();
@@ -65,14 +72,14 @@ export class BlockDocumentEditor {
       comp.dispose();
     }
     this.blockComponents.clear();
-    this.container.innerHTML = "";
+    this.pageSheet.innerHTML = "";
 
     for (let i = 0; i < this.model.blocks.length; i++) {
       const block = this.model.blocks[i];
       const comp = this.createBlockComponent(block);
       if (comp) {
         this.blockComponents.set(block.id, comp);
-        this.container.appendChild(comp.el);
+        this.pageSheet.appendChild(comp.el);
       }
     }
 
@@ -84,12 +91,13 @@ export class BlockDocumentEditor {
    */
   private createBlockComponent(block: DocumentBlock): BlockComponent | null {
     if (block.type === "blank") {
-      // Blank lines can be lightweight spacer blocks or rendered as empty paragraphs
       const p = new ParagraphBlockComponent(block, {
         onSelect: (id: string) => this.selectBlock(id),
         onStepNext: () => this.stepNext(block.id),
         onStepPrev: () => this.stepPrev(block.id),
         onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
+        onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
+        onDeleteRequest: (id: string) => this.deleteBlock(id),
       });
       return p;
     }
@@ -101,6 +109,8 @@ export class BlockDocumentEditor {
         onStepPrev: () => this.stepPrev(block.id),
         onNavigateToSource: (sym: string) => this.navigateToSource(sym),
         onDeleteRequest: (id: string) => this.deleteBlock(id),
+        onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
+        onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
       });
       return fig;
     }
@@ -111,8 +121,22 @@ export class BlockDocumentEditor {
         onStepNext: () => this.stepNext(block.id),
         onStepPrev: () => this.stepPrev(block.id),
         onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
+        onDeleteRequest: (id: string) => this.deleteBlock(id),
+        onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
       });
       return eq;
+    }
+
+    if (block.type === "heading") {
+      const heading = new HeadingBlockComponent(block, {
+        onSelect: (id: string) => this.selectBlock(id),
+        onStepNext: () => this.stepNext(block.id),
+        onStepPrev: () => this.stepPrev(block.id),
+        onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
+        onDeleteRequest: (id: string) => this.deleteBlock(id),
+        onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
+      });
+      return heading;
     }
 
     if (block.type === "slot") {
@@ -122,29 +146,94 @@ export class BlockDocumentEditor {
         onStepPrev: () => this.stepPrev(block.id),
         onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
         onDeleteRequest: (id: string) => this.deleteBlock(id),
+        onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
       });
       return slot;
     }
 
-    // Default: paragraph, heading, derivation, table
+    // Default: paragraph
     const para = new ParagraphBlockComponent(block, {
       onSelect: (id: string) => this.selectBlock(id),
       onStepNext: () => this.stepNext(block.id),
       onStepPrev: () => this.stepPrev(block.id),
       onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
+      onDeleteRequest: (id: string) => this.deleteBlock(id),
+      onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
     });
     return para;
   }
 
   /**
-   * Handles changes committed from an active editing block
+   * Transforms an existing block into a new block type while preserving caret routing
    */
+  public transformBlock(
+    blockId: string,
+    newType: BlockType,
+    newSource: string,
+    caretOffset?: number
+  ): void {
+    const block = this.state.getBlock(blockId);
+    if (!block) return;
+
+    // Update block state
+    block.type = newType;
+    block.source = newSource;
+    block.lines = newSource.split("\n");
+    this.state.setBlockType(blockId, newType);
+    this.state.updateBlock(blockId, newSource);
+    this.model = this.state.getModel();
+
+    const oldComp = this.blockComponents.get(blockId);
+    const newComp = this.createBlockComponent(block);
+    if (!newComp) return;
+
+    // Replace in DOM
+    if (oldComp && oldComp.el.parentElement) {
+      oldComp.el.parentElement.replaceChild(newComp.el, oldComp.el);
+      oldComp.dispose();
+    } else {
+      this.pageSheet.appendChild(newComp.el);
+    }
+
+    this.blockComponents.set(blockId, newComp);
+    this.selectBlock(blockId);
+
+    // Route focus & caret based on new block type
+    if (newType === "slot") {
+      const slotComp = newComp as SlotBlockComponent;
+      const decl = (slotComp as any).decl;
+      const data = slotComp.getData();
+      const firstSlot = decl ? decl.getSlotIds(data)[0] : "slot_0_0";
+      slotComp.enterEditMode(firstSlot, caretOffset ?? 0);
+    } else if (newType === "figure") {
+      const figComp = newComp as FigureBlockComponent;
+      figComp.setSelected(true);
+      figComp.el.focus();
+    } else if (newType === "heading") {
+      const headingComp = newComp as HeadingBlockComponent;
+      headingComp.enterEditMode(caretOffset);
+    } else if (newType === "equation") {
+      const eqComp = newComp as EquationBlockComponent;
+      eqComp.enterEditMode(caretOffset);
+    } else if (newType === "paragraph") {
+      const paraComp = newComp as ParagraphBlockComponent;
+      paraComp.enterEditMode(caretOffset ?? newSource.length);
+    }
+
+    this.options.onChange?.(this.state.toText());
+  }
+
   /**
    * Handles changes committed from an active editing block
    */
   private handleBlockCommit(blockId: string, newSource: string): void {
-    this.state.updateBlock(blockId, newSource);
+    const res = this.state.updateBlock(blockId, newSource);
     this.model = this.state.getModel();
+
+    if (res && res.typeChanged) {
+      this.transformBlock(blockId, res.newType, newSource);
+      return;
+    }
 
     // Update status indicators on figure blocks
     for (const [id, comp] of this.blockComponents.entries()) {
@@ -271,9 +360,9 @@ export class BlockDocumentEditor {
   }
 
   private bindGlobalEvents(): void {
-    // Clicking empty space in container activates the last block into edit mode
+    // Clicking empty space in container or page sheet activates the last block into edit mode
     this.container.addEventListener("click", (e) => {
-      if (e.target === this.container) {
+      if (e.target === this.container || e.target === this.pageSheet) {
         const lastBlock = this.model.blocks[this.model.blocks.length - 1];
         if (lastBlock) {
           this.selectBlock(lastBlock.id);

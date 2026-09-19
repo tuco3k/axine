@@ -55,6 +55,12 @@
   --color-plot-grid: #2e2b28;
   --color-plot-text: #a8a39d;
 
+  /* Bounded Document Page Tokens — Dark Theme */
+  --color-doc-surround: #141312;
+  --color-doc-sheet-bg: #1f1d1b;
+  --color-doc-sheet-border: #2e2b28;
+  --color-doc-sheet-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+
   /* =========================================================================
      2. Typography System
      ========================================================================= */
@@ -169,4 +175,10 @@
   --color-plot-text: #57534e;
 
   --shadow-floating: 0 4px 12px rgba(0, 0, 0, 0.12);
+
+  /* Bounded Document Page Tokens — Light Theme */
+  --color-doc-surround: #e8e5dc;
+  --color-doc-sheet-bg: #ffffff;
+  --color-doc-sheet-border: #dcd8cc;
+  --color-doc-sheet-shadow: 0 2px 16px rgba(0, 0, 0, 0.08), 0 0 1px rgba(0, 0, 0, 0.1);
 }

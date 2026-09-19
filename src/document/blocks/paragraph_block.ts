@@ -5,7 +5,7 @@
  * Double-click to edit, Escape to commit and render.
  */
 
-import { DocumentBlock } from "../block_model";
+import { DocumentBlock, BlockType } from "../block_model";
 import { typesetMath } from "../../core/math_typeset";
 
 export interface ParagraphBlockOptions {
@@ -13,6 +13,8 @@ export interface ParagraphBlockOptions {
   onCommit?: (blockId: string, newSource: string) => void;
   onStepNext?: () => void;
   onStepPrev?: () => void;
+  onRequestTransform?: (blockId: string, targetType: BlockType, source: string, caretOffset?: number) => void;
+  onDeleteRequest?: (blockId: string) => void;
 }
 
 export class ParagraphBlockComponent {
@@ -111,7 +113,7 @@ export class ParagraphBlockComponent {
     });
   }
 
-  public enterEditMode(initialChar?: string) {
+  public enterEditMode(initialCharOrOffset?: string | number) {
     if (this.isEditing) return;
     this.isEditing = true;
 
@@ -119,16 +121,71 @@ export class ParagraphBlockComponent {
     this.textarea = document.createElement("textarea");
     this.textarea.className = "doc-block-source-input doc-paragraph-input";
     this.textarea.placeholder = "Write math expressions, definitions (x := 5), claims, or prose...";
-    const val = initialChar !== undefined ? (this.block.source ? this.block.source + initialChar : initialChar) : this.block.source;
+
+    let initialOffset: number | undefined = undefined;
+    let val = this.block.source;
+
+    if (typeof initialCharOrOffset === "number") {
+      initialOffset = initialCharOrOffset;
+    } else if (typeof initialCharOrOffset === "string") {
+      val = val ? val + initialCharOrOffset : initialCharOrOffset;
+    }
+
     this.textarea.value = val;
     this.textarea.rows = Math.max(1, val.split("\n").length);
     this.el.appendChild(this.textarea);
 
     this.textarea.addEventListener("input", () => {
-      if (this.textarea) {
-        this.textarea.rows = Math.max(1, this.textarea.value.split("\n").length);
-        this.block.source = this.textarea.value;
-        this.options.onCommit?.(this.block.id, this.textarea.value);
+      if (!this.textarea) return;
+      this.textarea.rows = Math.max(1, this.textarea.value.split("\n").length);
+      const val = this.textarea.value;
+      const trimmed = val.trim();
+      const caret = this.textarea.selectionStart ?? val.length;
+
+      // 1. \table
+      if (trimmed === "\\table" || trimmed.startsWith("\\table ") || trimmed.startsWith("\\table(")) {
+        this.options.onRequestTransform?.(this.block.id, "slot", val, caret);
+        return;
+      }
+      // 2. \cases
+      if (trimmed === "\\cases" || trimmed.startsWith("\\cases ") || trimmed.startsWith("\\cases(")) {
+        this.options.onRequestTransform?.(this.block.id, "slot", val, caret);
+        return;
+      }
+      // 3. \figure
+      if (trimmed === "\\figure" || trimmed.startsWith("\\figure ") || trimmed.startsWith("\\figure(")) {
+        this.options.onRequestTransform?.(this.block.id, "figure", val, caret);
+        return;
+      }
+      // 4. Heading: # a heading
+      if (val.startsWith("# ") || val.startsWith("## ") || val.startsWith("### ")) {
+        this.options.onRequestTransform?.(this.block.id, "heading", val, caret);
+        return;
+      }
+      // 5. Equation: e.g. "x = 5" or ":var := 10"
+      if (/^(:?[a-zA-Z_][a-zA-Z0-9_]*(\([^)]*\))?\s*(:=|=|<=|>=|<|>)\s*.+)$/.test(trimmed)) {
+        this.options.onRequestTransform?.(this.block.id, "equation", val, caret);
+        return;
+      }
+
+      this.block.source = this.textarea.value;
+      this.options.onCommit?.(this.block.id, this.textarea.value);
+    });
+
+    this.textarea.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        this.exitEditMode(true);
+      } else if (e.key === "Enter" && !e.shiftKey) {
+        if (!this.textarea) return;
+        const val = this.textarea.value;
+        const trimmed = val.trim();
+        if (/^(:?[a-zA-Z_][a-zA-Z0-9_]*(\([^)]*\))?\s*(:=|=|<=|>=|<|>)\s*.+)$/.test(trimmed) ||
+            /^[a-zA-Z0-9_]+(\s*[\^+\-*/]\s*[a-zA-Z0-9_]+)+$/.test(trimmed)) {
+          e.preventDefault();
+          this.options.onRequestTransform?.(this.block.id, "equation", val);
+          return;
+        }
       }
     });
 
@@ -139,14 +196,15 @@ export class ParagraphBlockComponent {
     if (typeof this.textarea.focus === "function") {
       this.textarea.focus();
     }
+    const targetSel = initialOffset !== undefined ? initialOffset : this.textarea.value.length;
     if (typeof this.textarea.setSelectionRange === "function") {
-      this.textarea.setSelectionRange(this.textarea.value.length, this.textarea.value.length);
+      this.textarea.setSelectionRange(targetSel, targetSel);
     } else {
-      this.textarea.selectionStart = this.textarea.value.length;
-      this.textarea.selectionEnd = this.textarea.value.length;
+      this.textarea.selectionStart = targetSel;
+      this.textarea.selectionEnd = targetSel;
     }
 
-    if (initialChar !== undefined) {
+    if (typeof initialCharOrOffset === "string") {
       this.options.onCommit?.(this.block.id, this.textarea.value);
     }
   }
@@ -191,6 +249,10 @@ export class ParagraphBlockComponent {
 
   public getIsSelected(): boolean {
     return this.isSelected;
+  }
+
+  public getTextarea(): HTMLTextAreaElement | null {
+    return this.textarea;
   }
 
   public dispose() {
