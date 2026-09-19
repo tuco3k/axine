@@ -4,6 +4,8 @@ Axine is a language where equality is a mathematical relation rather than impera
 
 From this relational foundation, computation is the reduction of relations and the sampling of manifolds. When a relation algebraically isolates a variable to a closed term, that binding unifies through its lexical scope. When an expression contains free variables, it defines a coordinate space whose level sets are extracted by numerical continuation or implicit grid sampling. Discrete recurrences and continuous differential relations describe trajectories across spatial coordinates and continuous time, while operations that cannot be evaluated symbolically stand unreduced as themselves.
 
+Documents in Axine are structured as block trees containing headings, prose paragraphs with inline mathematical typesetting, atomic equation blocks, embedded in-flow figures, and interactive multi-slot insert scaffolds.
+
 ---
 
 ## The Rules, in the Order Someone Needs Them
@@ -28,9 +30,9 @@ The equals sign `=` defines a mathematical relation between expressions. Axine h
 ```
 Output:
 ```
-:r = 5                  => 1D Space (r)
-:area = 3.14159 * :r^2  => 314159/4000
-:area                   => 314159/4000
+ 1: :r = 5                  => 1D Space (r)
+ 2: :area = 3.14159 * :r^2  => 314159/4000
+ 3: :area                   => 314159/4000
 ```
 
 **Example 2: Multi-valued and contradictory relations**
@@ -40,8 +42,8 @@ Output:
 ```
 Output:
 ```
-{\axis x; x^2 = 4}        => Space (x, 1 entities)
-{\axis x; x = 1; x = 2}   => Space (x, 2 entities)
+ 1: {\axis x; x^2 = 4}        => Space (x, 1 entities)
+ 2: {\axis x; x = 1; x = 2}   => Space (x, 2 entities)
 ```
 The relation `x^2 = 4` yields discrete roots $\{-2, 2\}$. The system `x = 1; x = 2` reduces algebraically to `0 = 1` (contradiction), rendering an empty level set.
 
@@ -77,10 +79,10 @@ abc
 ```
 Output:
 ```
-a = 2   => 1D Space (a)
-b = 3   => 1D Space (b)
-c = 4   => 1D Space (c)
-abc     => 24
+ 1: a = 2   => 1D Space (a)
+ 2: b = 3   => 1D Space (b)
+ 3: c = 4   => 1D Space (c)
+ 4: abc     => 24
 ```
 `abc` evaluates as $a \cdot b \cdot c = 2 \cdot 3 \cdot 4 = 24$.
 
@@ -91,8 +93,8 @@ abc     => 24
 ```
 Output:
 ```
-:speed = 100  => 100
-:speed        => 100
+ 1: :speed = 100  => 100
+ 2: :speed        => 100
 ```
 
 #### Common Mistake
@@ -133,7 +135,10 @@ Every language keyword, command, quantifier, and structural constructor begins w
 | `\exists` | 2 | `\exists x \in S, pred` | Bounded existential quantifier |
 | `\exists!` / `\exists_unique` | 2 | `\exists! x \in S, pred` | Unique existential quantifier |
 | `\if ... \then ... \else` | 3 | `\if c \then a \else b` | Conditional expression |
-| `\cases` | 1 | `\cases { \when c: a, ..., \otherwise: b }` | Piecewise definition |
+| `\cases` | 1 | `\cases(n) { v1, c1; v2, c2 }` | Piecewise definition with slot navigation |
+| `\table` | 1 | `\table(r, c) { ... }` | 2D grid matrix with slot navigation |
+| `\figure` | 1 or 2 | `\figure(:sym, width: 400)` | In-flow embedded viewport figure |
+| `\derive` | 1 | `\derive { ... }` | Equational derivation block |
 | `\where` | 2 | `expr \where pred` | Infix domain restriction filter |
 | `\and` / `\land` | 2 | `p \and q` | Logical conjunction |
 | `\or` / `\lor` | 2 | `p \or q` | Logical disjunction |
@@ -167,7 +172,7 @@ Every language keyword, command, quantifier, and structural constructor begins w
 ```
 Output:
 ```
-42
+ 1: \if 1 < 2 \then 42 \else 99 => 42
 ```
 
 **Example 2: Finite set and fold aggregation**
@@ -177,8 +182,8 @@ Output:
 ```
 Output:
 ```
-Set(1, 2, 3, 4)
-10
+ 1: \set { 1, 2, 3, 4 }                      => Set(1, 2, 3, 4)
+ 2: \fold (+) \over \set { 1, 2, 3, 4 } \from 0 => 10
 ```
 
 #### Common Mistake
@@ -209,7 +214,7 @@ Axine distinguishes between evaluating a relation and rendering its geometry. An
 ```
 Output:
 ```
-Space (x, y, 1 entities)
+ 1: {\axis x, y; x^2 + y^2 = 25} => Space (x, y, 1 entities)
 ```
 The viewport extracts the zero level set via Marching Squares and plots a circle of radius 5.
 
@@ -219,7 +224,7 @@ The viewport extracts the zero level set via Marching Squares and plots a circle
 ```
 Output:
 ```
-2D Space (x, y)
+ 1: {x^2 + y^2 = 25} => 2D Space (x, y)
 ```
 The free variables are analyzed and tracked, but zero visual entities are drawn because no projection axes were declared.
 
@@ -260,9 +265,9 @@ Curly braces `{ ... }` define both a lexical scope boundary and a geometric spac
 ```
 Output:
 ```
-:base = 10  => 10
-{ ... }     => 40
-:base       => 10
+ 1: :base = 10  => 10
+ 6: { ... }     => 40
+ 7: :base       => 10
 ```
 The inner `:base = 20` shadows the outer binding locally. Once the block exits, the outer `:base` remains 10.
 
@@ -276,7 +281,7 @@ The inner `:base = 20` shadows the outer binding locally. Once the block exits, 
 ```
 Output:
 ```
-25
+ 5: { ... } => 25
 ```
 
 #### Common Mistake
@@ -312,8 +317,8 @@ Declaring `\forall x` tells the analyzer that $x$ is a bound parameter rather th
 ```
 Output:
 ```
-\forall x, :sq(x) = x^2  => none
-:sq(5)                  => 25
+ 1: \forall x, :sq(x) = x^2  => none
+ 2: :sq(5)                  => 25
 ```
 
 **Example 2: Multi-argument function with library call**
@@ -324,7 +329,9 @@ Output:
 ```
 Output:
 ```
-5
+ 1: \import "lib/sqrt.ax"                          => module sqrt { idiv, :idiv, int_sqrt_step, :int_sqrt_step, int_sqrt, :int_sqrt, is_perfect_square, :is_perfect_square, sqrt, :sqrt }
+ 2: \forall a, b, :hypot(a, b) = :sqrt(a^2 + b^2) => none
+ 3: :hypot(3, 4)                                   => 5
 ```
 
 #### Common Mistake
@@ -355,8 +362,8 @@ Without `\forall x`, this is not a function definition; it is a relational const
 ```
 Output:
 ```
-\import "lib/abs.ax"  => module abs { abs, :abs }
-:abs(-42)             => 42
+ 1: \import "lib/abs.ax"  => module abs { abs, :abs }
+ 2: :abs(-42)             => 42
 ```
 
 **Example 2: Selective symbol import**
@@ -366,7 +373,8 @@ Output:
 ```
 Output:
 ```
-3
+ 1: \from "lib/floor.ax" \import :floor => module floor { floor }
+ 2: :floor(3.8)                         => 3
 ```
 
 #### Common Mistake
@@ -392,8 +400,8 @@ x^2 + 1
 ```
 Output:
 ```
-a + b
-x^2 + 1
+ 1: a + b    => a + b
+ 2: x^2 + 1  => x^2 + 1
 ```
 
 **Example 2: Named function standing alone**
@@ -402,7 +410,7 @@ x^2 + 1
 ```
 Output:
 ```
-f
+ 1: {\forall x, :f(x) = 2*x; :f} => f
 ```
 Referencing `:f` without arguments does not crash or print an opaque pointer; it returns the symbol $f$.
 
@@ -413,7 +421,8 @@ Referencing `:f` without arguments does not crash or print an opaque pointer; it
 ```
 Output:
 ```
-:sqrt(-4)
+ 1: \import "lib/sqrt.ax" => module sqrt { ... }
+ 2: :sqrt(-4)             => :sqrt(-4)
 ```
 In the real field $\mathbb{R}$, $\sqrt{-4}$ does not exist. It stands unreduced as `:sqrt(-4)`.
 
@@ -443,10 +452,10 @@ Axine computes arithmetic over $\mathbb{Q}$ using exact rational fractions backe
 ```
 Output:
 ```
-:q = 1/3 + 1/6  => 1D Space (q)
-:q              => 1/2
-:large = (1/2)^10 => 1/1024
-:large          => 1/1024
+ 1: :q = 1/3 + 1/6    => 1D Space (q)
+ 2: :q                => 1/2
+ 3: :large = (1/2)^10 => 1/1024
+ 4: :large            => 1/1024
 ```
 
 **Example 2: Decimal coercion via `:float`**
@@ -459,8 +468,11 @@ Output:
 ```
 Output:
 ```
-:exact_e        => 260412269/95800320
-:decimal_e      => 2.718282
+ 1: \import "lib/exp.ax"          => module exp { ... }
+ 2: :exact_e = :exp(1)            => 260412269/95800320
+ 3: :exact_e                      => 260412269/95800320
+ 4: :decimal_e = :float(:exact_e) => 2.718282
+ 5: :decimal_e                    => 2.718282
 ```
 
 #### Common Mistake
@@ -495,8 +507,9 @@ g
 ```
 Output:
 ```
-g = 9.8 # Earth sea-level gravity  => 1D Space (g)
-g                                  => 49/5
+ 1: # Gravitational constant in m/s^2 => [PROSE]
+ 2: g = 9.8 # Earth sea-level gravity => 1D Space (g)
+ 3: g                                 => 49/5
 ```
 
 #### Common Mistake
@@ -505,6 +518,56 @@ Using C-style `//` for comments:
 // Damped oscillator parameters
 ```
 In Axine, `//` is the stacked fraction operator (e.g. `a // b` parses as $\frac{a}{b}$) or the differential operator (`d//dt`). Writing `//` at line start is a syntax error.
+
+---
+
+## The Document Model & In-Flow Objects
+
+Axine partitions `.ax` documents into a structured block document tree while maintaining 100% byte-for-byte lossless roundtrip serialization to plain text.
+
+### Block Types
+
+1. **Heading Blocks (`#`, `##`, `###`)**:
+   Section titles and hierarchical headers. Rendered as formatted headings in document flow.
+2. **Paragraph & Prose Blocks**:
+   Natural language text containing inline typeset mathematics wrapped in `$math$` spans, and line comments (`#`). In an empty paragraph, Axine renders an interactive placeholder (`Write math expressions, definitions (x := 5), claims, or prose...`); clicking or typing printable characters immediately enters editing mode.
+3. **Equation Blocks**:
+   Mathematical statements, relations, and definitions.
+   - **Default Display**: Rendered as Cambridge/AMS typeset mathematics.
+   - **Selection**: Single-click selects the equation atomically (arrow keys step over it as a single unit).
+   - **Editing**: Double-clicking (or pressing `Enter` while selected) opens in-place text editing.
+   - **Exit**: Pressing `Escape` or clicking outside commits edits and renders typeset mathematics.
+4. **In-Flow Figure Blocks (`\figure` or `{\axis ...}`)**:
+   Embedded graphical viewports mounted directly within the document flow.
+   - **Atomic Selection**: Selected as a single unit; arrow keys step over the figure.
+   - **Provenance Navigation**: Displays a "Where it came from" link pointing directly to defining equations.
+   - **Scroll Pass-Through**: Canvases allow mouse wheel and trackpad scroll gestures to pass through cleanly without getting trapped. Clicking the canvas activates 3D/2D camera interaction; pressing `Escape` releases focus.
+   - **Reflow Anchoring**: Figures anchor to lexical block positions and reflow as surrounding equations or prose expand.
+5. **Derivation Blocks (`\derive`)**:
+   Step-by-step equivalence chains recording algebraic solver transformations.
+6. **Slot Insert Commands (`\table`, `\cases`)**:
+   Multi-slot insert commands sharing a unified editing architecture:
+   - In static state, renders publication-grade typeset mathematical objects.
+   - Double-clicking enters the structured edit scaffold with targetable input slots.
+   - Pressing `Tab` advances to the next addressable slot; `Shift+Tab` cycles backwards.
+   - Pressing `Escape` renders the command back into typeset mathematics.
+   - **`\table(rows, cols){ ... }`**: 2D grid matrix with row-major Tab traversal.
+   - **`\cases(branches){ val1, cond1; ... }`**: Piecewise conditional function definitions rendered with a large grouping brace.
+
+### Frontmatter Metadata
+Documents can specify metadata using YAML frontmatter enclosed in `---` lines at the top of the file:
+```axine
+---
+:title: Damped Harmonic Motion
+:course: PHYS 211
+:author: Noah Slayton
+:date: 2026-09-18
+---
+```
+
+### Autocomplete & Incomplete Command Floor
+1. **Incomplete commands stay literal**: Typing `\fo` renders as literal text `\fo`. Glyphs are not guessed or mutated prematurely.
+2. **Descriptive Autocomplete Popover**: Displays available commands along with concise one-line descriptions. Pressing `Tab` or `Enter` accepts the selected completion.
 
 ---
 
@@ -524,7 +587,7 @@ Axine implements a minimal seven-primitive floor in its core runtime. Everything
 
 ### What the Core Knows vs. What is Written in Axine
 
-The core runtime contains no implementations of square roots, trigonometric functions, logarithms, exponentials, physical formulas, or numerical integrators.
+The core runtime contains zero implementations of square roots, trigonometric functions, logarithms, exponentials, physical formulas, or numerical integrators.
 
 - **What the core knows**: Addition, subtraction, multiplication, division, modulo, integer exponents, tuple construction, array indexing, conditional branching (`\if`), equational substitution, and level-set extraction (Marching Squares / Cubes).
 - **What is written in Axine**:
@@ -566,12 +629,13 @@ In spaces with dimension $d > 2$, Axine projects the manifold onto the two prima
 
 ## The Standard Library
 
-Every file in `documents/lib/`, what it provides, how to import it, and a verified worked example.
+Every file in `documents/lib/`, what it provides, the signature of every function, and a verified worked example with real output from the engine.
 
 ### 1. `lib/abs.ax`
-- **Provides**: `:abs(x)`
+- **Provides**: Absolute value for real numbers
 - **Import**: `\import "lib/abs.ax"`
-- **Definition**: Conditional piecewise relation: $\text{if } x \ge 0 \text{ then } x \text{ else } -x$.
+- **Function Signatures**:
+  - `:abs(x)` — Absolute value $|x|$ via piecewise relation ($\text{if } x \ge 0 \text{ then } x \text{ else } -x$)
 - **Worked Example**:
   ```axine
   \import "lib/abs.ax"
@@ -580,32 +644,35 @@ Every file in `documents/lib/`, what it provides, how to import it, and a verifi
   ```
   Output:
   ```
-  :abs(-42)   => 42
-  :abs(-7/4)  => 7/4
+   1: \import "lib/abs.ax" => module abs { abs, :abs }
+   2: :abs(-42)            => 42
+   3: :abs(-7/4)           => 7/4
   ```
 
-### 2. `lib/floor.ax`
-- **Provides**: `:floor(x)`, `:round(x)`
-- **Import**: `\import "lib/floor.ax"`
-- **Definition**: Greatest integer $k \le x$ via modulo arithmetic $x - (x \% 1)$. `:round(x)` evaluates `:floor(x + 0.5)`.
+### 2. `lib/bisect.ax`
+- **Provides**: Bisection interval halving root search
+- **Import**: `\import "lib/bisect.ax"`
+- **Function Signatures**:
+  - `:bisect_sqrt_step(x, a, b)` — Single interval-halving step over $[a, b]$ for root of $y^2 - x = 0$
+  - `:bisect_sqrt(x)` — Bisection root search approximating $\sqrt{x}$ over $[0, \max(1, x)]$
 - **Worked Example**:
   ```axine
-  \import "lib/floor.ax"
-  :floor(5.8)
-  :floor(-3.2)
-  :round(4.6)
+  \import "lib/bisect.ax"
+  :bisect_sqrt(2)
+  :bisect_sqrt(16)
   ```
   Output:
   ```
-  :floor(5.8)   => 5
-  :floor(-3.2)  => -4
-  :round(4.6)   => 5
+   1: \import "lib/bisect.ax" => module bisect { bisect_sqrt_step, :bisect_sqrt_step, bisect_sqrt, :bisect_sqrt }
+   2: :bisect_sqrt(2)         => 23/16
+   3: :bisect_sqrt(16)        => 7/2
   ```
 
 ### 3. `lib/ceil.ax`
-- **Provides**: `:ceil(x)`
+- **Provides**: Ceiling function defined via floor relation
 - **Import**: `\import "lib/ceil.ax"`
-- **Definition**: Ceiling function defined via floor relation: $\text{if } \lfloor x \rfloor = x \text{ then } x \text{ else } \lfloor x \rfloor + 1$.
+- **Function Signatures**:
+  - `:ceil(x)` — Least integer $k \ge x$ ($\text{if } \lfloor x \rfloor = x \text{ then } x \text{ else } \lfloor x \rfloor + 1$)
 - **Worked Example**:
   ```axine
   \import "lib/ceil.ax"
@@ -614,30 +681,52 @@ Every file in `documents/lib/`, what it provides, how to import it, and a verifi
   ```
   Output:
   ```
-  :ceil(5.1)   => 6
-  :ceil(-3.8)  => -3
+   1: \import "lib/ceil.ax" => module ceil { ceil, :ceil }
+   2: :ceil(5.1)            => 6
+   3: :ceil(-3.8)           => -3
   ```
 
-### 4. `lib/sqrt.ax`
-- **Provides**: `:sqrt(x)`, `:int_sqrt(x)`, `:is_perfect_square(x)`, `:idiv(a, b)`
-- **Import**: `\import "lib/sqrt.ax"`
-- **Definition**: Exact integer square root for perfect squares, standing unreduced for $x < 0$ in $\mathbb{R}$, and falling back to Newton search.
+### 4. `lib/combinatorics.ax`
+- **Provides**: Factorials, permutations, combinations, integer partitions, and derangements
+- **Import**: `\import "lib/combinatorics.ax"`
+- **Function Signatures**:
+  - `:factorial(n)` — Factorial $n! = \prod_{i=1}^n i$ for non-negative integer $n$
+  - `:permutations(n, k)` — Number of $k$-permutations of $n$ elements $P(n, k) = \frac{n!}{(n - k)!}$
+  - `:combinations(n, k)` — Number of $k$-combinations of $n$ elements $C(n, k) = \frac{n!}{k!(n - k)!}$
+  - `:binomial(n, k)` — Binomial coefficient $\binom{n}{k}$, alias for `:combinations(n, k)`
+  - `:partitions(n)` — Number of integer partitions $p(n)$ via Euler recurrence
+  - `:derangements(n)` — Subfactorial $!n$ (permutations of $n$ elements with zero fixed points)
 - **Worked Example**:
   ```axine
-  \import "lib/sqrt.ax"
-  :sqrt(25)
-  :is_perfect_square(49)
+  \import "lib/combinatorics.ax"
+  :factorial(5)
+  :permutations(5, 2)
+  :combinations(5, 2)
+  :partitions(5)
+  :derangements(4)
   ```
   Output:
   ```
-  :sqrt(25)              => 5
-  :is_perfect_square(49) => 7
+   1: \import "lib/combinatorics.ax" => module combinatorics { factorial, :factorial, permutations, :permutations, combinations, :combinations, binomial, :binomial, partitions, :partitions, derangements, :derangements }
+   2: :factorial(5)                  => 120
+   3: :permutations(5, 2)            => 20
+   4: :combinations(5, 2)            => 10
+   5: :partitions(5)                 => 7
+   6: :derangements(4)               => 9
   ```
 
 ### 5. `lib/exp.ax`
-- **Provides**: `:exp(x)`, `:ln(x)`, `:log(x, b)`, `:log2(x)`, `:exp_series(x)`, `:ln_series(u)`
+- **Provides**: Exponential and logarithmic functions via degree-12 Taylor series and range reduction
 - **Import**: `\import "lib/exp.ax"`
-- **Definition**: 12-term Taylor series with range reduction ($e^x = (e^{x/16})^{16}$) and natural log inverse search.
+- **Function Signatures**:
+  - `:exp_series(x)` — 12-term Taylor polynomial for $e^x$
+  - `:exp_pos(x)` — Range-reduced exponential via square-and-multiply $(e^{x/16})^{16}$
+  - `:exp(x)` — Exponential function $e^x$ for all real $x \in \mathbb{R}$
+  - `:ln_series(u)` — 12-term Taylor series for $\ln(1 + u)$ where $|u| < 1$
+  - `:ln_pos(x)` — Logarithm via square-root domain reduction $64 \cdot \ln(x^{1/64})$
+  - `:ln(x)` — Natural logarithm $\ln(x)$ for positive real $x > 0$
+  - `:log(x, b)` — Base-$b$ logarithm $\log_b(x) = \frac{\ln(x)}{\ln(b)}$
+  - `:log2(x)` — Base-2 logarithm $\log_2(x) = \frac{\ln(x)}{\ln(2)}$
 - **Worked Example**:
   ```axine
   \import "lib/exp.ax"
@@ -647,15 +736,111 @@ Every file in `documents/lib/`, what it provides, how to import it, and a verifi
   ```
   Output:
   ```
-  :exp(0)   => 1
-  :ln(1)    => 0
-  :log2(8)  => 3
+   1: \import "lib/exp.ax" => module exp { exp_series, :exp_series, exp_pos, :exp_pos, exp, :exp, ln_series, :ln_series, ln_pos, :ln_pos, ln, :ln, log, :log, log2, :log2 }
+   2: :exp(0)              => 1
+   3: :ln(1)               => 0
+   4: :log2(8)             => 3
   ```
 
-### 6. `lib/newton.ax`
-- **Provides**: `:newton_sqrt(x)`, `:newton_sqrt_step(x, y)`, `:newton_sqrt_core(x)`
+### 6. `lib/floor.ax`
+- **Provides**: Floor and rounding functions defined via discreteness relation
+- **Import**: `\import "lib/floor.ax"`
+- **Function Signatures**:
+  - `:floor(x)` — Greatest integer $k \le x$ using modulo arithmetic $x - (x \bmod 1)$
+  - `:round(x)` — Rounds real $x$ to nearest integer via $\lfloor x + 0.5 \rfloor$
+- **Worked Example**:
+  ```axine
+  \import "lib/floor.ax"
+  :floor(5.8)
+  :floor(-3.2)
+  :round(4.6)
+  ```
+  Output:
+  ```
+   1: \import "lib/floor.ax" => module floor { floor, :floor, round, :round }
+   2: :floor(5.8)            => 5
+   3: :floor(-3.2)           => -4
+   4: :round(4.6)            => 5
+  ```
+
+### 7. `lib/graphs.ax`
+- **Provides**: Finite graph representations, adjacency, connectivity, and cycle detection
+- **Import**: `\import "lib/graphs.ax"`
+- **Function Signatures**:
+  - `:make_graph(v, e)` — Constructs undirected graph $(V, E)$ from vertex list $v$ and edge pairs $e$
+  - `:graph_vertices(g)` — Extracts vertex list $V$ from graph $g$
+  - `:graph_edges(g)` — Extracts edge list $E$ from graph $g$
+  - `:adjacent(g, u, v)` — Returns true if vertices $u$ and $v$ share an edge in $g$
+  - `:neighbors(g, u)` — Returns list of all vertices adjacent to vertex $u$
+  - `:degree(g, u)` — Degree of vertex $u$ (count of incident edges)
+  - `:reachable(g, u)` — List of all vertices reachable from $u$ via breadth-first search
+  - `:has_path(g, u, v)` — Returns true if a path exists between vertices $u$ and $v$
+  - `:is_connected(g)` — Returns true if all vertices belong to a single connected component
+  - `:num_components(g)` — Total count of connected components in graph $g$
+  - `:has_cycle(g)` — Returns true if graph $g$ contains at least one cycle ($|E| > |V| - k$)
+- **Worked Example**:
+  ```axine
+  \import "lib/graphs.ax"
+  :g = :make_graph([1, 2, 3, 4], [(1, 2), (2, 3), (3, 1), (3, 4)])
+  :degree(:g, 3)
+  :neighbors(:g, 3)
+  :is_connected(:g)
+  :has_cycle(:g)
+  ```
+  Output:
+  ```
+   1: \import "lib/graphs.ax"                                            => module graphs { ... }
+   2: :g = :make_graph([1, 2, 3, 4], [(1, 2), (2, 3), (3, 1), (3, 4)])  => 1D Space (g)
+   3: :degree(:g, 3)                                                     => 3
+   4: :neighbors(:g, 3)                                                  => [1, 2, 4]
+   5: :is_connected(:g)                                                  => true
+   6: :has_cycle(:g)                                                     => true
+  ```
+
+### 8. `lib/logic.ax`
+- **Provides**: Propositional logic connectives, truth assignment tables, and satisfiability analysis
+- **Import**: `\import "lib/logic.ax"`
+- **Function Signatures**:
+  - `:l_not(p)` — Propositional negation $\neg p$
+  - `:l_and(p, q)` — Propositional conjunction $p \land q$
+  - `:l_or(p, q)` — Propositional disjunction $p \lor q$
+  - `:l_implies(p, q)` — Material implication $p \to q \equiv \neg p \lor q$
+  - `:l_iff(p, q)` — Logical equivalence $p \leftrightarrow q$
+  - `:l_xor(p, q)` — Exclusive disjunction $p \oplus q$
+  - `:assignments(n)` — Generates all $2^n$ boolean truth valuation lists for $n$ variables
+  - `:table_row1(p, r)` — Formats 1-variable truth table row `[p, r]`
+  - `:table_row2(p, q, r)` — Formats 2-variable truth table row `[p, q, r]`
+  - `:is_satisfiable(r)` — Returns true if at least one evaluation in result list $r$ is true
+  - `:is_tautology(r)` — Returns true if every evaluation in result list $r$ is true
+  - `:is_contradiction(r)` — Returns true if every evaluation in result list $r$ is false
+- **Worked Example**:
+  ```axine
+  \import "lib/logic.ax"
+  :p = \true
+  :q = \false
+  :l_implies(:p, :q)
+  :l_xor(:p, :q)
+  :is_tautology([\true, \true, \true])
+  :is_satisfiable([\false, \true, \false])
+  ```
+  Output:
+  ```
+   1: \import "lib/logic.ax"                    => module logic { ... }
+   2: :p = \true                                => 1D Space (p)
+   3: :q = \false                               => 1D Space (q)
+   4: :l_implies(:p, :q)                        => false
+   5: :l_xor(:p, :q)                            => true
+   6: :is_tautology([\true, \true, \true])      => true
+   7: :is_satisfiable([\false, \true, \false])  => true
+  ```
+
+### 9. `lib/newton.ax`
+- **Provides**: Newton-Raphson root convergence with interval scaling
 - **Import**: `\import "lib/newton.ax"`
-- **Definition**: 6 unrolled Newton-Raphson steps $y_{n+1} = \frac{1}{2}(y_n + x / y_n)$ with interval scaling across powers of 4.
+- **Function Signatures**:
+  - `:newton_sqrt_step(x, y)` — Single Newton-Raphson iteration step $y_{n+1} = \frac{1}{2}(y_n + x/y_n)$
+  - `:newton_sqrt_core(x)` — Six unrolled Newton iterations over domain $[0.25, 4.0]$
+  - `:newton_sqrt(x)` — Square root via interval scaling across powers of 4 and Newton convergence
 - **Worked Example**:
   ```axine
   \import "lib/newton.ax"
@@ -663,29 +848,29 @@ Every file in `documents/lib/`, what it provides, how to import it, and a verifi
   ```
   Output:
   ```
-  4946041176255201878775086487573351061418968498177/3497379255757941172020851852070562919437964212608
+   1: \import "lib/newton.ax" => module newton { newton_sqrt_step, :newton_sqrt_step, newton_sqrt_core, :newton_sqrt_core, newton_sqrt, :newton_sqrt }
+   2: :newton_sqrt(2)          => 4946041176255201878775086487573351061418968498177/3497379255757941172020851852070562919437964212608
   ```
 
-### 7. `lib/bisect.ax`
-- **Provides**: `:bisect_sqrt(x)`, `:bisect_sqrt_step(x, a, b)`
-- **Import**: `\import "lib/bisect.ax"`
-- **Definition**: Interval halving root search over $[a, b]$ for $y^2 - x = 0$.
-- **Worked Example**:
-  ```axine
-  \import "lib/bisect.ax"
-  :bisect_sqrt(2)
-  :bisect_sqrt(16)
-  ```
-  Output:
-  ```
-  :bisect_sqrt(2)   => 23/16
-  :bisect_sqrt(16)  => 7/2
-  ```
-
-### 8. `lib/numbertheory.ax`
-- **Provides**: `:gcd(a, b)`, `:lcm(a, b)`, `:isprime(n)`, `:totient(n)`, `:powmod(b, e, m)`, `:binomial(n, k)`, `:nextprime(n)`, `:divisors(n)`, `:factorize(n)`
+### 10. `lib/numbertheory.ax`
+- **Provides**: Divisibility, modular arithmetic, extended Euclidean algorithm, and primality testing
 - **Import**: `\import "lib/numbertheory.ax"`
-- **Definition**: Euclidean algorithm, trial division primality, modular exponentiation, and prime factorization.
+- **Function Signatures**:
+  - `:gcd(a, b)` — Greatest common divisor $\gcd(a, b)$ via Euclidean algorithm
+  - `:lcm(a, b)` — Least common multiple $\frac{|a \cdot b|}{\gcd(a, b)}$
+  - `:ext_gcd(a, b)` — Extended Euclidean algorithm returning $(g, x, y)$ where $ax + by = g$
+  - `:mod(a, m)` — Canonical non-negative remainder in $[0, m - 1]$
+  - `:mod_add(a, b, m)` — Modular addition $(a + b) \bmod m$
+  - `:mod_sub(a, b, m)` — Modular subtraction $(a - b) \bmod m$
+  - `:mod_mul(a, b, m)` — Modular multiplication $(a \cdot b) \bmod m$
+  - `:mod_inv(a, m)` — Modular multiplicative inverse $a^{-1} \bmod m$ (returns 0 if non-coprime)
+  - `:isprime(n)` — Primality predicate via trial division
+  - `:totient(n)` — Euler's totient function $\phi(n)$ counting integers $k \le n$ coprime to $n$
+  - `:powmod(b, e, m)` — Modular exponentiation $b^e \bmod m$ via repeated squaring
+  - `:binomial(n, k)` — Binomial coefficient $\binom{n}{k} = \frac{n!}{k!(n - k)!}$
+  - `:nextprime(n)` — Smallest prime strictly greater than $n$
+  - `:divisors(n)` — Ordered list of all positive divisors of $n$
+  - `:factorize(n)` — Prime factorization returning list of `(prime, exponent)` tuples
 - **Worked Example**:
   ```axine
   \import "lib/numbertheory.ax"
@@ -694,20 +879,204 @@ Every file in `documents/lib/`, what it provides, how to import it, and a verifi
   :totient(9)
   :binomial(5, 2)
   :factorize(60)
+  :ext_gcd(35, 15)
+  :mod_inv(3, 11)
   ```
   Output:
   ```
-  :gcd(48, 18)    => 6
-  :isprime(17)    => true
-  :totient(9)     => 6
-  :binomial(5, 2) => 10
-  :factorize(60)  => [(2, 2), (3, 1), (5, 1)]
+   1: \import "lib/numbertheory.ax" => module numbertheory { ... }
+   2: :gcd(48, 18)                  => 6
+   3: :isprime(17)                  => true
+   4: :totient(9)                   => 6
+   5: :binomial(5, 2)               => 10
+   6: :factorize(60)                => [(2, 2), (3, 1), (5, 1)]
+   7: :ext_gcd(35, 15)              => (5, 1, -2)
+   8: :mod_inv(3, 11)               => 4
   ```
 
-### 9. `lib/trig.ax`
-- **Provides**: `:sin(x)`, `:cos(x)`, `:tan(x)`, `:asin(x)`, `:acos(x)`, `:atan(x)`, `:sinh(x)`, `:cosh(x)`, `:tanh(x)`
+### 11. `lib/relations.ax`
+- **Provides**: Binary relations over finite sets, closures, and equivalence classes
+- **Import**: `\import "lib/relations.ax"`
+- **Function Signatures**:
+  - `:rel_contains(r, x, y)` — Returns true if pair $(x, y)$ belongs to binary relation $r$
+  - `:is_reflexive(r, s)` — Returns true if relation $r$ is reflexive over set $s$
+  - `:is_symmetric(r)` — Returns true if relation $r$ is symmetric ($(a, b) \in r \implies (b, a) \in r$)
+  - `:is_transitive(r)` — Returns true if relation $r$ is transitive
+  - `:is_equivalence(r, s)` — Returns true if $r$ is reflexive, symmetric, and transitive on $s$
+  - `:equiv_class(r, s, x)` — Returns equivalence class $[x]_r = \{ y \in s \mid (x, y) \in r \}$
+  - `:reflexive_closure(r, s)` — Computes reflexive closure $r \cup \{ (a, a) \mid a \in s \}$
+  - `:symmetric_closure(r)` — Computes symmetric closure $r \cup \{ (b, a) \mid (a, b) \in r \}$
+  - `:transitive_closure(r)` — Computes transitive closure $r^+$ via fixed-point composition
+- **Worked Example**:
+  ```axine
+  \import "lib/relations.ax"
+  :s = [1, 2, 3]
+  :r = [(1, 1), (2, 2), (3, 3), (1, 2), (2, 1)]
+  :is_reflexive(:r, :s)
+  :is_symmetric(:r)
+  :is_transitive(:r)
+  :is_equivalence(:r, :s)
+  :equiv_class(:r, :s, 1)
+  ```
+  Output:
+  ```
+   1: \import "lib/relations.ax"                         => module relations { ... }
+   2: :s = [1, 2, 3]                                     => 1D Space (s)
+   3: :r = [(1, 1), (2, 2), (3, 3), (1, 2), (2, 1)]     => 1D Space (r)
+   4: :is_reflexive(:r, :s)                              => true
+   5: :is_symmetric(:r)                                  => true
+   6: :is_transitive(:r)                                 => true
+   7: :is_equivalence(:r, :s)                            => true
+   8: :equiv_class(:r, :s, 1)                            => [1, 2]
+  ```
+
+### 12. `lib/sets.ax`
+- **Provides**: Finite set operations, subsets, powersets, and integer ranges
+- **Import**: `\import "lib/sets.ax"`
+- **Function Signatures**:
+  - `:contains(s, x)` — Returns true if element $x$ belongs to finite set $s$
+  - `:card(s)` — Cardinality (number of distinct elements) of set $s$
+  - `:subset(a, b)` — Returns true if set $a$ is a subset of set $b$ ($a \subseteq b$)
+  - `:set_equal(a, b)` — Returns true if sets $a$ and $b$ contain identical elements
+  - `:union(a, b)` — Computes union set $a \cup b$ without duplicate elements
+  - `:intersection(a, b)` — Computes intersection set $a \cap b$
+  - `:difference(a, b)` — Computes set difference $a \setminus b$
+  - `:powerset(s)` — Computes power set $\mathcal{P}(s)$ containing all $2^{|s|}$ subsets
+  - `:range(a, b)` — Generates discrete integer list $[a, a + 1, \dots, b]$
+- **Worked Example**:
+  ```axine
+  \import "lib/sets.ax"
+  :a = [1, 2, 3]
+  :b = [2, 3, 4]
+  :union(:a, :b)
+  :intersection(:a, :b)
+  :difference(:a, :b)
+  :subset([2, 3], :a)
+  ```
+  Output:
+  ```
+   1: \import "lib/sets.ax" => module sets { ... }
+   2: :a = [1, 2, 3]        => 1D Space (a)
+   3: :b = [2, 3, 4]        => 1D Space (b)
+   4: :union(:a, :b)        => [1, 2, 3, 4]
+   5: :intersection(:a, :b) => [2, 3]
+   6: :difference(:a, :b)   => [1]
+   7: :subset([2, 3], :a)   => true
+  ```
+
+### 13. `lib/sqrt.ax`
+- **Provides**: Square root defined as mathematical relation with Newton search
+- **Import**: `\import "lib/sqrt.ax"`
+- **Function Signatures**:
+  - `:idiv(a, b)` — Exact integer division $(a - (a \bmod b)) / b$
+  - `:int_sqrt_step(x, y)` — Iteration step for integer square root
+  - `:int_sqrt(x)` — Exact integer square root $\lfloor \sqrt{x} \rfloor$
+  - `:is_perfect_square(x)` — Returns integer root $\sqrt{x}$ if exact, otherwise -1
+  - `:sqrt(x)` — Exact integer root for squares, stands unreduced for negative reals, else Newton approximation
+- **Worked Example**:
+  ```axine
+  \import "lib/sqrt.ax"
+  :sqrt(25)
+  :is_perfect_square(49)
+  :sqrt(-4)
+  ```
+  Output:
+  ```
+   1: \import "lib/sqrt.ax"   => module sqrt { idiv, :idiv, int_sqrt_step, :int_sqrt_step, int_sqrt, :int_sqrt, is_perfect_square, :is_perfect_square, sqrt, :sqrt }
+   2: :sqrt(25)              => 5
+   3: :is_perfect_square(49) => 7
+   4: :sqrt(-4)              => :sqrt(-4)
+  ```
+
+### 14. `lib/strings.ax`
+- **Provides**: String operations over finite sequences of numeric character codes
+- **Import**: `\import "lib/strings.ax"`
+- **Function Signatures**:
+  - `:str_len(s)` — Length (element count) of character code list $s$
+  - `:str_empty(s)` — Returns true if string length is 0
+  - `:str_concat(a, b)` — Concatenates two character code lists $a + b$
+  - `:char_at(s, i)` — Character code at 0-based index $i$
+  - `:str_reverse(s)` — Reverses order of character codes in string $s$
+  - `:substring(s, start, end)` — Extracts slice from index `start` up to index `end`
+  - `:substr(s, start, len)` — Extracts slice of length `len` starting at index `start`
+  - `:str_equal(a, b)` — Structural equality comparison of character sequences
+  - `:is_palindrome(s)` — Returns true if string reads identically forward and backward
+- **Worked Example**:
+  ```axine
+  \import "lib/strings.ax"
+  :s = [104, 101, 108, 108, 111]
+  :str_len(:s)
+  :str_reverse(:s)
+  :is_palindrome([109, 97, 100, 97, 109])
+  ```
+  Output:
+  ```
+   1: \import "lib/strings.ax"                 => module strings { ... }
+   2: :s = [104, 101, 108, 108, 111]           => 1D Space (s)
+   3: :str_len(:s)                             => 5
+   4: :str_reverse(:s)                         => [111, 108, 108, 101, 104]
+   5: :is_palindrome([109, 97, 100, 97, 109]) => true
+  ```
+
+### 15. `lib/trees.ax`
+- **Provides**: Binary tree construction, structural metrics, and tree traversals
+- **Import**: `\import "lib/trees.ax"`
+- **Function Signatures**:
+  - `:empty_tree` — Constant empty binary tree `[]`
+  - `:leaf(v)` — Constructs leaf node `[v, [], []]` containing value $v$
+  - `:node(v, l, r)` — Constructs binary tree node `[v, l, r]` with subtrees $l$ and $r$
+  - `:is_empty(t)` — Returns true if tree $t$ is empty
+  - `:is_leaf(t)` — Returns true if node $t$ is a non-empty leaf
+  - `:value(t)` — Returns root value $v$ of node $t$
+  - `:left(t)` — Returns left subtree of node $t$
+  - `:right(t)` — Returns right subtree of node $t$
+  - `:vertices(t)` — Total count of vertices in tree $t$
+  - `:edges(t)` — Total count of edges in tree $t$ ($\max(0, |V| - 1)$)
+  - `:leaves(t)` — Total count of leaf nodes in tree $t$
+  - `:height(t)` — Height of tree $t$ (0 for leaf, $1 + \max(h_l, h_r)$ for internal node)
+  - `:preorder(t)` — Preorder traversal sequence `[v, ...preorder(l), ...preorder(r)]`
+  - `:inorder(t)` — Inorder traversal sequence `[...inorder(l), v, ...inorder(r)]`
+  - `:postorder(t)` — Postorder traversal sequence `[...postorder(l), ...postorder(r), v]`
+- **Worked Example**:
+  ```axine
+  \import "lib/trees.ax"
+  :t = :node(1, :leaf(2), :leaf(3))
+  :vertices(:t)
+  :height(:t)
+  :inorder(:t)
+  :preorder(:t)
+  ```
+  Output:
+  ```
+   1: \import "lib/trees.ax"                => module trees { ... }
+   2: :t = :node(1, :leaf(2), :leaf(3))     => 1D Space (t)
+   3: :vertices(:t)                         => 3
+   4: :height(:t)                           => 1
+   5: :inorder(:t)                          => [2, 1, 3]
+   6: :preorder(:t)                         => [1, 2, 3]
+  ```
+
+### 16. `lib/trig.ax`
+- **Provides**: Circular and hyperbolic trigonometric functions via degree-25 Taylor series and angle reduction
 - **Import**: `\import "lib/trig.ax"`
-- **Definition**: Degree-25 Taylor series with modular argument reduction to $[-\pi/2, \pi/2]$.
+- **Function Signatures**:
+  - `:sin_series(x)` — 13-term degree-25 Taylor series for $\sin(x)$
+  - `:cos_series(x)` — 13-term degree-24 Taylor series for $\cos(x)$
+  - `:reduce_angle(x)` — Reduces angle modulo $2\pi$ into interval $[-\pi, \pi]$
+  - `:sin(x)` — Circular sine function $\sin(x)$ for real $x \in \mathbb{R}$
+  - `:cos(x)` — Circular cosine function $\cos(x)$ for real $x \in \mathbb{R}$
+  - `:tan(x)` — Circular tangent function $\tan(x) = \frac{\sin(x)}{\cos(x)}$
+  - `:asin_series(x)` — Taylor series for inverse sine
+  - `:asin(x)` — Inverse sine function $\arcsin(x)$
+  - `:acos(x)` — Inverse cosine function $\arccos(x) = \frac{\pi}{2} - \arcsin(x)$
+  - `:atan_series(x)` — Taylor series for inverse tangent
+  - `:atan_half(x)` — Argument reduction $\frac{x}{1 + \sqrt{1 + x^2}}$
+  - `:atan(x)` — Inverse tangent function $\arctan(x)$
+  - `:sinh_series(x)` — Taylor series for hyperbolic sine
+  - `:cosh_series(x)` — Taylor series for hyperbolic cosine
+  - `:sinh(x)` — Hyperbolic sine function $\sinh(x)$
+  - `:cosh(x)` — Hyperbolic cosine function $\cosh(x)$
+  - `:tanh(x)` — Hyperbolic tangent function $\tanh(x) = \frac{\sinh(x)}{\cosh(x)}$
 - **Worked Example**:
   ```axine
   \import "lib/trig.ax"
@@ -719,11 +1088,12 @@ Every file in `documents/lib/`, what it provides, how to import it, and a verifi
   ```
   Output:
   ```
-  :sin(0)   => 0
-  :cos(0)   => 1
-  :tan(0)   => 0
-  :sinh(0)  => 0
-  :cosh(0)  => 1
+   1: \import "lib/trig.ax" => module trig { sin_series, :sin_series, cos_series, :cos_series, reduce_angle, :reduce_angle, sin, :sin, cos, :cos, tan, :tan, asin, :asin, acos, :acos, atan_half, :atan_half, atan, :atan, sinh, :sinh, cosh, :cosh, tanh, :tanh }
+   2: :sin(0)              => 0
+   3: :cos(0)              => 1
+   4: :tan(0)              => 0
+   5: :sinh(0)             => 0
+   6: :cosh(0)             => 1
   ```
 
 ---
@@ -762,17 +1132,18 @@ This program finds the real root of the cubic polynomial $f(x) = x^3 - 2x - 5 = 
 
 #### Actual Output
 ```
+ 1: # newton_cubic.ax — Root convergence for x^3 - 2x - 5 = 0 via Newton recurrence => [PROSE]
  2: \import "lib/abs.ax"                          => module abs { abs, :abs }
- 7: \forall x, :step(x) = x - (x^3 - 2*x - 5) / (3*x^2 - 2) => none
- 9: :x0 = 2.0                                     => 2
-10: :x1 = :step(:x0)                              => 21/10
-11: :x2 = :step(:x1)                              => 11761/5615
-12: :x3 = :step(:x2)                              => 4138744325037/1975957316495
-13: :x4 = :step(:x3)                              => 180361507581342374686204847776335588181/86109846986684169676738889168418120215
-16: :exact_root = :x4                             => 180361507581342374686204847776335588181/86109846986684169676738889168418120215
-19: :approx_root = :float(:x4)                    => 2.094551
-22: :residual = :abs(:x4^3 - 2*:x4 - 5)           => 97478968847293887616593624137354075403328388555575414301470152374718996497152047171163502108416/638496399387006462929790970234774267447697621088328700331993595837849311688746982375182162850458682854070800938375
-23: :residual_float = :float(:residual)           => 0
+ 4: \forall x, :step(x) = x - (x^3 - 2*x - 5) / (3*x^2 - 2) => none
+ 6: :x0 = 2.0                                     => 2
+ 7: :x1 = :step(:x0)                              => 21/10
+ 8: :x2 = :step(:x1)                              => 11761/5615
+ 9: :x3 = :step(:x2)                              => 4138744325037/1975957316495
+10: :x4 = :step(:x3)                              => 180361507581342374686204847776335588181/86109846986684169676738889168418120215
+12: :exact_root = :x4                             => 180361507581342374686204847776335588181/86109846986684169676738889168418120215
+13: :approx_root = :float(:x4)                    => 2.094551
+15: :residual = :abs(:x4^3 - 2*:x4 - 5)           => 97478968847293887616593624137354075403328388555575414301470152374718996497152047171163502108416/638496399387006462929790970234774267447697621088328700331993595837849311688746982375182162850458682854070800938375
+16: :residual_float = :float(:residual)           => 0
 ```
 
 ---
@@ -810,18 +1181,15 @@ This program defines a 3D spherical shell constrained by an affine slicing plane
 
 #### Actual Output
 ```
- 6: { ... }                                       => Space (x, y, z, 2 entities)
-11: { ... }                                       => Space (x, y, 1 entities)
-15: :x_c = -2/5                                   => -2/5
-16: :z_c = 0.5 * :x_c + 1                         => 4/5
-19: :r_sq = 9 - (:x_c^2 + :z_c^2)                 => 41/5
-20: :r_sq_float = :float(:r_sq)                   => 8.2
-23: :y_sq = 9 - :z_c^2 - 0                        => 209/25
-24: :y_bound = :float(:y_sq)                      => 8.36
+ 4: { ... }                         => Space (x, y, z, 2 entities)
+ 8: { ... }                         => Space (x, y, 1 entities)
+10: :x_c = -2/5                     => -2/5
+11: :z_c = 0.5 * :x_c + 1           => 4/5
+12: :r_sq = 9 - (:x_c^2 + :z_c^2)   => 41/5
+13: :r_sq_float = :float(:r_sq)     => 8.2
+14: :y_sq = 9 - :z_c^2 - 0          => 209/25
+15: :y_bound = :float(:y_sq)        => 8.36
 ```
-
-#### Rendered Viewport Screenshot
-![3D Sphere Slice](assets/program2_sphere_slice.png)
 
 ---
 
@@ -862,23 +1230,20 @@ d//d:time :vx = -(k / m) * :x - (c / m) * :vx
 
 #### Actual Output
 ```
- 2: \import "lib/exp.ax"                          => module exp { exp_series, :exp_series, exp_pos, :exp_pos, exp, :exp, ln_series, :ln_series, ln_pos, :ln_pos, ln, :ln, log, :log, log2, :log2 }
- 3: \import "lib/trig.ax"                         => module trig { sin_series, :sin_series, cos_series, :cos_series, reduce_angle, :reduce_angle, sin, :sin, cos, :cos, tan, :tan, asin, :asin, acos, :acos, atan_half, :atan_half, atan, :atan, sinh, :sinh, cosh, :cosh, tanh, :tanh }
- 5: m = 1.0                                       => 1D Space (m)
- 6: k = 9.0                                       => 1D Space (k)
- 7: c = 0.6                                       => 1D Space (c)
-13: :gamma = 0.3                                  => 3/10
-14: :omega_d = 2.984962                           => 1492481/500000
-15: :x0 = 2.0                                     => 2
-18: d//d:time :x = :vx                            => 2D Space (vx, x)
-19: d//d:time :vx = -(k / m) * :x - (c / m) * :vx => 2D Space (vx, x)
-24: { ... }                                       => Space (time, x, 1 entities)
-27: :x_1 = :x0 * :exp(-:gamma * 1.0) * :cos(:omega_d * 1.0) => -1.463499
-28: :x_1_approx = :float(:x_1)                    => -1.463499
+ 1: \import "lib/exp.ax"                          => module exp { ... }
+ 2: \import "lib/trig.ax"                         => module trig { ... }
+ 4: m = 1.0                                       => 1D Space (m)
+ 5: k = 9.0                                       => 1D Space (k)
+ 6: c = 0.6                                       => 1D Space (c)
+ 8: :gamma = 0.3                                  => 3/10
+ 9: :omega_d = 2.984962                           => 1492481/500000
+10: :x0 = 2.0                                     => 2
+12: d//d:time :x = :vx                            => 2D Space (vx, x)
+13: d//d:time :vx = -(k / m) * :x - (c / m) * :vx => 2D Space (vx, x)
+17: { ... }                                       => Space (time, x, 1 entities)
+19: :x_1 = :x0 * :exp(-:gamma * 1.0) * :cos(:omega_d * 1.0) => -1.463499
+20: :x_1_approx = :float(:x_1)                    => -1.463499
 ```
-
-#### Rendered Viewport Screenshot
-![Damped Oscillator Trajectory](assets/program3_damped_oscillator.png)
 
 ---
 
