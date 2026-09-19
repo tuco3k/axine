@@ -172,12 +172,20 @@ export class ParagraphBlockComponent {
     }
 
     this.textarea.value = val;
-    this.textarea.rows = Math.max(1, val.split("\n").length);
+    this.textarea.style.overflow = "hidden";
+    this.textarea.style.resize = "none";
     this.el.appendChild(this.textarea);
+
+    const autoResize = () => {
+      if (!this.textarea) return;
+      this.textarea.style.height = "auto";
+      this.textarea.style.height = `${Math.max(26, this.textarea.scrollHeight)}px`;
+    };
+    autoResize();
 
     this.textarea.addEventListener("input", () => {
       if (!this.textarea) return;
-      this.textarea.rows = Math.max(1, this.textarea.value.split("\n").length);
+      autoResize();
       const val = this.textarea.value;
       const trimmed = val.trim();
       const caret = this.textarea.selectionStart ?? val.length;

@@ -4179,6 +4179,9 @@ input[type="number"]:focus {
   border: none !important;
   outline: none !important;
   resize: none !important;
+  overflow: hidden !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
   color: transparent !important;
   caret-color: var(--color-text-primary) !important;
   font-family: var(--font-family-math) !important;
@@ -4223,7 +4226,10 @@ input[type="number"]:focus {
   background: transparent;
   border: none;
   outline: none;
-  resize: none;
+  resize: none !important;
+  overflow: hidden !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
   padding: 0;
   margin: 0;
 }
@@ -4265,6 +4271,25 @@ input[type="number"]:focus {
   background: transparent;
   border: none;
   outline: none;
+  width: 100%;
+  box-sizing: border-box;
+  resize: none !important;
+  overflow: hidden !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+.doc-editor-view textarea::-webkit-scrollbar,
+.doc-editor-view input::-webkit-scrollbar,
+.doc-paragraph-input::-webkit-scrollbar,
+.doc-equation-input::-webkit-scrollbar,
+.doc-figure-input::-webkit-scrollbar,
+.doc-block-source-input::-webkit-scrollbar,
+.doc-heading-input::-webkit-scrollbar,
+.doc-slot-input::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 .doc-paragraph-placeholder {

@@ -196,6 +196,8 @@ export class EquationBlockComponent {
     this.textarea = document.createElement("textarea");
     this.textarea.className = "doc-block-source-input doc-equation-input";
     this.textarea.value = this.block.source;
+    this.textarea.style.overflow = "hidden";
+    this.textarea.style.resize = "none";
     this.textarea.rows = Math.max(1, this.block.source.split("\n").length);
     this.editorContainer.appendChild(this.textarea);
 
