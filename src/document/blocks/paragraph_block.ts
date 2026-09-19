@@ -43,6 +43,11 @@ export class ParagraphBlockComponent {
 
   private renderProse() {
     let text = this.block.source;
+    if (text.trim() === "") {
+      this.renderedContainer.innerHTML = `<span class="doc-paragraph-placeholder">Write math expressions, definitions (x := 5), claims, or prose...</span>`;
+      return;
+    }
+
     // Strip leading # from comment lines for display, or render cleanly
     const lines = text.split("\n").map(l => l.replace(/^#\s?/, ""));
     const rawProse = lines.join("\n");
@@ -64,6 +69,9 @@ export class ParagraphBlockComponent {
       if (!this.isEditing) {
         this.setSelected(true);
         this.options.onSelect?.(this.block.id);
+        if (this.block.source.trim() === "") {
+          this.enterEditMode();
+        }
       }
     });
 
@@ -89,6 +97,11 @@ export class ParagraphBlockComponent {
           this.options.onStepPrev?.();
           return;
         }
+        if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          e.preventDefault();
+          this.enterEditMode(e.key);
+          return;
+        }
       } else {
         if (e.key === "Escape") {
           e.preventDefault();
@@ -98,20 +111,24 @@ export class ParagraphBlockComponent {
     });
   }
 
-  public enterEditMode() {
+  public enterEditMode(initialChar?: string) {
     if (this.isEditing) return;
     this.isEditing = true;
 
     this.renderedContainer.classList.add("hidden");
     this.textarea = document.createElement("textarea");
     this.textarea.className = "doc-block-source-input doc-paragraph-input";
-    this.textarea.value = this.block.source;
-    this.textarea.rows = Math.max(1, this.block.source.split("\n").length);
+    this.textarea.placeholder = "Write math expressions, definitions (x := 5), claims, or prose...";
+    const val = initialChar !== undefined ? (this.block.source ? this.block.source + initialChar : initialChar) : this.block.source;
+    this.textarea.value = val;
+    this.textarea.rows = Math.max(1, val.split("\n").length);
     this.el.appendChild(this.textarea);
 
     this.textarea.addEventListener("input", () => {
       if (this.textarea) {
         this.textarea.rows = Math.max(1, this.textarea.value.split("\n").length);
+        this.block.source = this.textarea.value;
+        this.options.onCommit?.(this.block.id, this.textarea.value);
       }
     });
 
@@ -119,7 +136,19 @@ export class ParagraphBlockComponent {
       this.exitEditMode(true);
     });
 
-    this.textarea.focus();
+    if (typeof this.textarea.focus === "function") {
+      this.textarea.focus();
+    }
+    if (typeof this.textarea.setSelectionRange === "function") {
+      this.textarea.setSelectionRange(this.textarea.value.length, this.textarea.value.length);
+    } else {
+      this.textarea.selectionStart = this.textarea.value.length;
+      this.textarea.selectionEnd = this.textarea.value.length;
+    }
+
+    if (initialChar !== undefined) {
+      this.options.onCommit?.(this.block.id, this.textarea.value);
+    }
   }
 
   public exitEditMode(commit: boolean = true) {
@@ -148,7 +177,9 @@ export class ParagraphBlockComponent {
     this.isSelected = selected;
     if (selected) {
       this.el.classList.add("selected");
-      this.el.focus();
+      if (typeof this.el.focus === "function") {
+        this.el.focus();
+      }
     } else {
       this.el.classList.remove("selected");
     }

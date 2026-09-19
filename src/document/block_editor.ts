@@ -14,6 +14,7 @@ import { BlockState } from "./block_state";
 import { FigureBlockComponent } from "./blocks/figure_block";
 import { EquationBlockComponent } from "./blocks/equation_block";
 import { ParagraphBlockComponent } from "./blocks/paragraph_block";
+import { SlotBlockComponent } from "./blocks/slot_block";
 
 export interface BlockEditorOptions {
   onChange?: (fullText: string) => void;
@@ -22,7 +23,11 @@ export interface BlockEditorOptions {
   readOnly?: boolean;
 }
 
-export type BlockComponent = FigureBlockComponent | EquationBlockComponent | ParagraphBlockComponent;
+export type BlockComponent =
+  | FigureBlockComponent
+  | EquationBlockComponent
+  | ParagraphBlockComponent
+  | SlotBlockComponent;
 
 export class BlockDocumentEditor {
   public readonly container: HTMLElement;
@@ -39,9 +44,16 @@ export class BlockDocumentEditor {
 
     this.state = new BlockState(initialText);
     this.model = this.state.getModel();
-
     this.renderAllBlocks();
     this.bindGlobalEvents();
+
+    if (this.model.blocks.length === 1 && this.model.blocks[0].source.trim() === "") {
+      const firstComp = this.blockComponents.get(this.model.blocks[0].id);
+      if (firstComp && 'enterEditMode' in firstComp && typeof (firstComp as any).enterEditMode === 'function') {
+        this.selectBlock(this.model.blocks[0].id);
+        (firstComp as any).enterEditMode();
+      }
+    }
   }
 
   /**
@@ -101,6 +113,17 @@ export class BlockDocumentEditor {
         onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
       });
       return eq;
+    }
+
+    if (block.type === "slot") {
+      const slot = new SlotBlockComponent(block, {
+        onSelect: (id: string) => this.selectBlock(id),
+        onStepNext: () => this.stepNext(block.id),
+        onStepPrev: () => this.stepPrev(block.id),
+        onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
+        onDeleteRequest: (id: string) => this.deleteBlock(id),
+      });
+      return slot;
     }
 
     // Default: paragraph, heading, derivation, table
@@ -248,23 +271,42 @@ export class BlockDocumentEditor {
   }
 
   private bindGlobalEvents(): void {
-    // Clicking empty space in container deselects
+    // Clicking empty space in container activates the last block into edit mode
     this.container.addEventListener("click", (e) => {
       if (e.target === this.container) {
-        this.selectBlock(null);
+        const lastBlock = this.model.blocks[this.model.blocks.length - 1];
+        if (lastBlock) {
+          this.selectBlock(lastBlock.id);
+          const comp = this.blockComponents.get(lastBlock.id);
+          if (comp && 'enterEditMode' in comp && typeof (comp as any).enterEditMode === 'function') {
+            (comp as any).enterEditMode();
+          }
+        }
       }
     });
 
-    // Arrow navigation when container itself has focus
+    // Arrow navigation and typing activation when container has focus
     this.container.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (!this.selectedBlockId) return;
-
       if (e.key === "ArrowDown") {
-        e.preventDefault();
-        this.stepNext(this.selectedBlockId);
+        if (this.selectedBlockId) {
+          e.preventDefault();
+          this.stepNext(this.selectedBlockId);
+        }
       } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        this.stepPrev(this.selectedBlockId);
+        if (this.selectedBlockId) {
+          e.preventDefault();
+          this.stepPrev(this.selectedBlockId);
+        }
+      } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const targetId = this.selectedBlockId || (this.model.blocks.length > 0 ? this.model.blocks[this.model.blocks.length - 1].id : null);
+        if (targetId) {
+          const comp = this.blockComponents.get(targetId);
+          if (comp && 'enterEditMode' in comp && typeof (comp as any).enterEditMode === 'function') {
+            e.preventDefault();
+            this.selectBlock(targetId);
+            (comp as any).enterEditMode(e.key);
+          }
+        }
       }
     });
   }

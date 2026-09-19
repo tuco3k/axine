@@ -21,6 +21,7 @@ export type BlockType =
   | "equation"
   | "figure"
   | "derivation"
+  | "slot"
   | "blank";
 
 export interface DocumentBlock {
@@ -132,8 +133,16 @@ export function parseAxDocument(text: string): DocumentModel {
 
     if (currentLines.length === 0) {
       blockStartLine = i;
+      if (trimmed.startsWith("\\table") || trimmed.startsWith("\\cases")) {
+        currentType = "slot";
+      } else if (trimmed.startsWith("\\figure(") || trimmed.startsWith("\\figure ") || trimmed.includes("{\\axis")) {
+        currentType = "figure";
+      } else if (trimmed.startsWith("\\derive")) {
+        currentType = "derivation";
+      }
     }
 
+    const hadDepth = braceDepth > 0 || parenDepth > 0;
     // Depth tracking across multiline constructs
     for (const ch of line) {
       if (ch === "{" && parenDepth === 0) braceDepth++;
@@ -144,6 +153,12 @@ export function parseAxDocument(text: string): DocumentModel {
 
     if (braceDepth > 0 || parenDepth > 0) {
       currentLines.push(line);
+      continue;
+    }
+
+    if (hadDepth && braceDepth === 0 && parenDepth === 0) {
+      currentLines.push(line);
+      flush();
       continue;
     }
 
@@ -166,6 +181,14 @@ export function parseAxDocument(text: string): DocumentModel {
       currentType = "heading";
       currentLines.push(line);
       flush();
+      continue;
+    }
+
+    if (trimmed.startsWith("\\table") || trimmed.startsWith("\\cases")) {
+      flush();
+      currentType = "slot";
+      currentLines.push(line);
+      if (braceDepth === 0) flush();
       continue;
     }
 

@@ -4189,6 +4189,13 @@ input[type="number"]:focus {
   background: var(--color-bg-surface);
 }
 
+.doc-paragraph-placeholder {
+  color: var(--color-text-muted, #71717a);
+  font-style: italic;
+  pointer-events: none;
+  user-select: none;
+}
+
 .doc-inline-math {
   font-family: var(--font-family-math);
   padding: 0 2px;
@@ -4221,4 +4228,119 @@ input[type="number"]:focus {
     box-shadow: none;
   }
 }
+
+/* ==========================================================================
+   Slot Block & Insert Command Scaffold Styles
+   ========================================================================== */
+.doc-block-slot {
+  margin: 10px 0;
+  padding: 10px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-md);
+  outline: none;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+  cursor: default;
+}
+
+.doc-block-slot:focus,
+.doc-block-slot.selected {
+  border-color: var(--color-accent-subtle);
+  background: var(--color-bg-surface);
+}
+
+.doc-block-slot.editing {
+  border-color: var(--color-accent);
+  background: var(--color-bg-surface);
+  cursor: text;
+}
+
+.doc-slot-table-wrapper {
+  overflow-x: auto;
+  margin: 4px 0;
+}
+
+.doc-slot-table {
+  border-collapse: collapse;
+  font-family: var(--font-family-mono, monospace);
+  font-size: 14px;
+}
+
+.doc-slot-table td.doc-slot-cell {
+  border: 1px solid var(--color-border);
+  padding: 6px 14px;
+  min-width: 50px;
+  text-align: center;
+}
+
+.doc-slot-table.scaffold td.doc-slot-cell.editable {
+  padding: 4px 6px;
+}
+
+.doc-slot-input {
+  font-family: var(--font-family-mono, monospace);
+  font-size: 14px;
+  line-height: 20px;
+  padding: 3px 6px;
+  background: var(--color-bg-base);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  outline: none;
+  min-width: 60px;
+  max-width: 140px;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.doc-slot-input:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1.5px var(--color-accent);
+}
+
+.doc-slot-placeholder {
+  color: var(--color-text-muted, #71717a);
+  opacity: 0.6;
+  font-size: 14px;
+  user-select: none;
+}
+
+.doc-slot-cases-wrapper {
+  display: flex;
+  align-items: center;
+  margin: 6px 0;
+}
+
+.doc-cases-scaffold-brace,
+.doc-cases-brace {
+  font-size: 42px;
+  line-height: 1;
+  font-family: var(--font-family-math, serif);
+  margin-right: 12px;
+  color: var(--color-text-primary);
+  user-select: none;
+}
+
+.doc-cases-scaffold-branches,
+.doc-cases-branches {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.doc-cases-scaffold-row,
+.doc-cases-branch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.doc-cases-scaffold-label,
+.doc-cases-separator {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  margin: 0 4px;
+  user-select: none;
+}
+
 
