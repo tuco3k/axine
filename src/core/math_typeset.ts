@@ -610,12 +610,12 @@ function findTopLevelFrac(str: string): number {
 }
 
 function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
-  const tokenRegex = /(\s+)|("[^"]*"|'[^']*')|(-?\b\d+\s*\/\s*\d+\b)|(\.\.)|(\b[a-zA-Z]_(?:\{[^}]*\}|\([^)]*\)|[a-zA-Z0-9]+))|(sqrt\((?:[^()]+|\([^()]*\))*\))|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(_(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b(?:sin|cos|tan|ln|exp|det|sqrt|pi|inf)\b)|(\b[a-zA-Z][a-zA-Z0-9_]*\b)|([()\[\],'{}:.])|([\u2200-\u23FF\u27C0-\u27EF\u2980-\u2AFF\u2016\u2020\u00B7\u2100-\u214F\u0370-\u03FF])/g;
+  const tokenRegex = /(\s+)|("[^"]*"|'[^']*')|(-?\b\d+\s*\/\s*\d+\b)|(\.\.)|(\b[a-zA-Z]_(?:\{[^}]*\}|\([^)]*\)|[a-zA-Z0-9]+))|(sqrt\((?:[^()]+|\([^()]*\))*\))|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(_(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b(?:sin|cos|tan|ln|exp|det|sqrt|pi|inf)\b)|(\\[a-zA-Z]*)|(\b[a-zA-Z][a-zA-Z0-9_]*\b)|([()\[\],'{}:.])|([\u2200-\u23FF\u27C0-\u27EF\u2980-\u2AFF\u2016\u2020\u00B7\u2100-\u214F\u0370-\u03FF])/g;
 
   let out = '';
   let match: RegExpExecArray | null;
   while ((match = tokenRegex.exec(str)) !== null) {
-    const [, wsTok, strTok, fracTok, dotDotTok, subVarTok, sqrtTok, supTok, subTok, deltaTok, entityTok, relTok, binTok, numTok, fnTok, identTok, puncTok, mathSymTok] = match;
+    const [, wsTok, strTok, fracTok, dotDotTok, subVarTok, sqrtTok, supTok, subTok, deltaTok, entityTok, relTok, binTok, numTok, fnTok, cmdTok, identTok, puncTok, mathSymTok] = match;
 
     if (wsTok) {
       out += wsTok;
@@ -676,6 +676,8 @@ function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
       else if (fnTok === 'inf') out += `<span class="tm-const">&infin;</span>`;
       else if (fnTok === 'lim') out += `<span class="tm-fn">${escapeHtml(fnTok)}</span>`;
       else out += `<span class="tm-fn">${escapeHtml(fnTok)}</span>`;
+    } else if (cmdTok) {
+      out += `<span class="doc-literal-cmd">${escapeHtml(cmdTok)}</span>`;
     } else if (identTok) {
       if (identTok === 'sum' || identTok === '\u03a3') {
         out += `<span class="tm-bigop-symbol">&sum;</span>`;

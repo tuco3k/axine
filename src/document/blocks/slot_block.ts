@@ -191,6 +191,7 @@ export class SlotBlockComponent {
       });
 
       input.addEventListener("keydown", (e: KeyboardEvent) => {
+        e.stopPropagation();
         if (e.key === "Tab") {
           e.preventDefault();
           const nextSlot = this.decl.getNextSlotId(slotId, this.data, e.shiftKey);

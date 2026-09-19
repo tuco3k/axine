@@ -14,6 +14,7 @@ export interface HeadingBlockOptions {
   onStepPrev?: () => void;
   onRequestTransform?: (blockId: string, targetType: BlockType, source: string, caretOffset?: number) => void;
   onDeleteRequest?: (blockId: string) => void;
+  clickToEdit?: boolean;
 }
 
 export class HeadingBlockComponent {
@@ -147,6 +148,7 @@ export class HeadingBlockComponent {
     this.isEditing = true;
 
     this.renderedContainer.classList.add("hidden");
+    this.el.classList.add("editing");
     this.input = document.createElement("input");
     this.input.type = "text";
     this.input.className = "doc-block-source-input doc-heading-input";
@@ -159,6 +161,7 @@ export class HeadingBlockComponent {
     });
 
     this.input.addEventListener("keydown", (e: KeyboardEvent) => {
+      e.stopPropagation();
       if (e.key === "Escape") {
         e.preventDefault();
         this.exitEditMode(true);
@@ -199,6 +202,7 @@ export class HeadingBlockComponent {
   public exitEditMode(commit: boolean = true) {
     if (!this.isEditing) return;
     this.isEditing = false;
+    this.el.classList.remove("editing");
 
     if (commit && this.input) {
       const newSource = this.input.value;

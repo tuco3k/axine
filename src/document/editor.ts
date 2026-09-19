@@ -2020,7 +2020,7 @@ export class DocumentEditor {
         if (this.caretEl) {
           const left = parseFloat(this.caretEl.style.left || '0');
           const top = parseFloat(this.caretEl.style.top || '0');
-          return { x: left, y: top };
+          return { x: left, y: top + 24 };
         }
         return { x: 50, y: 50 };
       }

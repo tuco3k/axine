@@ -10,7 +10,7 @@
  */
 
 import { DocumentBlock, BlockType } from "../block_model";
-import { typesetMath, escapeHtml } from "../../core/math_typeset";
+import { typesetMath } from "../../core/math_typeset";
 import { AutocompleteController, AutocompleteTarget } from "../autocomplete";
 
 export interface EquationBlockOptions {
@@ -108,36 +108,6 @@ export class EquationBlockComponent {
       return;
     }
 
-    const caret = this.textarea?.selectionStart ?? val.length;
-    const textBeforeCaret = val.substring(0, caret);
-
-    // Check if there is an incomplete backslash command: e.g. \fo
-    const incompleteMatch = textBeforeCaret.match(/(\\[a-zA-Z]*)$/);
-    if (incompleteMatch && incompleteMatch[1].length > 0) {
-      // mid-word backslash command: \fo stays literal while autocomplete is open
-      const cmd = incompleteMatch[1];
-      const prefixBeforeCmd = textBeforeCaret.substring(0, textBeforeCaret.length - cmd.length);
-      const textAfterCaret = val.substring(caret);
-
-      let prefixHtml = "";
-      try {
-        prefixHtml = prefixBeforeCmd.trim() ? typesetMath(prefixBeforeCmd, { displayMode: true }) : escapeHtml(prefixBeforeCmd);
-      } catch {
-        prefixHtml = escapeHtml(prefixBeforeCmd);
-      }
-
-      let suffixHtml = "";
-      try {
-        suffixHtml = textAfterCaret.trim() ? typesetMath(textAfterCaret, { displayMode: true }) : escapeHtml(textAfterCaret);
-      } catch {
-        suffixHtml = escapeHtml(textAfterCaret);
-      }
-
-      this.liveTypesetEl.innerHTML = `${prefixHtml}<span class="doc-literal-cmd">${escapeHtml(cmd)}</span>${suffixHtml}`;
-      return;
-    }
-
-    // Otherwise, typeset the equation live as typed
     try {
       this.liveTypesetEl.innerHTML = typesetMath(val, { displayMode: true });
     } catch {
@@ -254,8 +224,16 @@ export class EquationBlockComponent {
         }
       },
       getCaretCoordinates: () => {
-        const rect = this.textarea?.getBoundingClientRect() || this.el.getBoundingClientRect();
-        return { x: rect.left, y: rect.top };
+        const containerRect = this.editorContainer.getBoundingClientRect();
+        const cmdSpan = this.liveTypesetEl?.querySelector(".doc-literal-cmd");
+        if (cmdSpan) {
+          const spanRect = cmdSpan.getBoundingClientRect();
+          return {
+            x: Math.max(0, spanRect.left - containerRect.left),
+            y: Math.max(0, spanRect.bottom - containerRect.top + 4),
+          };
+        }
+        return { x: 0, y: 28 };
       },
     };
 
@@ -280,6 +258,7 @@ export class EquationBlockComponent {
     });
 
     this.textarea.addEventListener("keydown", (e: KeyboardEvent) => {
+      e.stopPropagation();
       if (this.autocomplete && this.autocomplete.handleKeydown(e, target)) {
         return;
       }

@@ -137,6 +137,7 @@ export class BlockDocumentEditor {
         onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
         onDeleteRequest: (id: string) => this.deleteBlock(id),
         onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
+        clickToEdit: true,
       });
       return heading;
     }
@@ -160,15 +161,15 @@ export class BlockDocumentEditor {
       onStepNext: () => this.stepNext(block.id),
       onStepPrev: () => this.stepPrev(block.id),
       onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
-      onDeleteRequest: (id: string) => this.deleteBlock(id),
       onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
+      onDeleteRequest: (id: string) => this.deleteBlock(id),
       isOnlyBlock: this.model.blocks.length === 1,
     });
     return para;
   }
 
   /**
-   * Transforms an existing block into a new block type while preserving caret routing
+   * Transforms a block into another block type preserving content
    */
   public transformBlock(
     blockId: string,
@@ -179,7 +180,6 @@ export class BlockDocumentEditor {
     const block = this.state.getBlock(blockId);
     if (!block) return;
 
-    // Update block state
     block.type = newType;
     block.source = newSource;
     block.lines = newSource.split("\n");
@@ -385,8 +385,11 @@ export class BlockDocumentEditor {
       }
     });
 
-    // Arrow navigation and typing activation when container has focus
+    // Arrow navigation and typing activation when container has focus (outside active inputs)
     this.container.addEventListener("keydown", (e: KeyboardEvent) => {
+      const isInput = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+      if (isInput) return;
+
       if (e.key === "ArrowDown") {
         if (this.selectedBlockId) {
           e.preventDefault();

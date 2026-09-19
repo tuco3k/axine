@@ -213,6 +213,7 @@ export class ParagraphBlockComponent {
     });
 
     this.textarea.addEventListener("keydown", (e: KeyboardEvent) => {
+      e.stopPropagation();
       if (e.key === "Escape") {
         e.preventDefault();
         this.exitEditMode(true);

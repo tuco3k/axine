@@ -177,7 +177,7 @@ export class AutocompleteController {
       if (target.getCaretCoordinates) {
         const coords = target.getCaretCoordinates();
         this.popoverEl.style.left = coords.x + "px";
-        this.popoverEl.style.top = (coords.y + 24) + "px";
+        this.popoverEl.style.top = coords.y + "px";
       }
 
       this.popoverEl.classList.remove("hidden");
