@@ -10,7 +10,7 @@
  */
 
 import { DocumentBlock, BlockType } from "../block_model";
-import { typesetMath } from "../../core/math_typeset";
+import { typesetMath, escapeHtml } from "../../core/math_typeset";
 import { AutocompleteController, AutocompleteTarget } from "../autocomplete";
 
 export interface EquationBlockOptions {
@@ -20,6 +20,7 @@ export interface EquationBlockOptions {
   onStepPrev?: () => void;
   onDeleteRequest?: (blockId: string) => void;
   onRequestTransform?: (blockId: string, targetType: BlockType, source: string, caretOffset?: number) => void;
+  clickToEdit?: boolean;
 }
 
 export class EquationBlockComponent {
@@ -28,6 +29,7 @@ export class EquationBlockComponent {
   private options: EquationBlockOptions;
   private renderedContainer: HTMLElement;
   private editorContainer: HTMLElement;
+  private liveTypesetEl: HTMLElement | null = null;
   private textarea: HTMLTextAreaElement | null = null;
   private autocomplete: AutocompleteController | null = null;
   private isEditing: boolean = false;
@@ -63,12 +65,96 @@ export class EquationBlockComponent {
     }
   }
 
+  private calculateCaretOffsetFromClick(e: MouseEvent): number | undefined {
+    if (typeof document === "undefined") return undefined;
+    if (document.caretRangeFromPoint) {
+      const range = document.caretRangeFromPoint(e.clientX, e.clientY);
+      if (range && this.renderedContainer.contains(range.startContainer)) {
+        let charCount = 0;
+        const walker = document.createTreeWalker(this.renderedContainer, NodeFilter.SHOW_TEXT);
+        let textNode: Node | null;
+        while ((textNode = walker.nextNode())) {
+          if (textNode === range.startContainer) {
+            charCount += range.startOffset;
+            break;
+          }
+          charCount += textNode.textContent?.length || 0;
+        }
+        return charCount;
+      }
+    } else if ((document as any).caretPositionFromPoint) {
+      const pos = (document as any).caretPositionFromPoint(e.clientX, e.clientY);
+      if (pos && this.renderedContainer.contains(pos.offsetNode)) {
+        let charCount = 0;
+        const walker = document.createTreeWalker(this.renderedContainer, NodeFilter.SHOW_TEXT);
+        let textNode: Node | null;
+        while ((textNode = walker.nextNode())) {
+          if (textNode === pos.offsetNode) {
+            charCount += pos.offset;
+            break;
+          }
+          charCount += textNode.textContent?.length || 0;
+        }
+        return charCount;
+      }
+    }
+    return undefined;
+  }
+
+  private renderLiveMath(val: string) {
+    if (!this.liveTypesetEl) return;
+    if (val.trim() === "") {
+      this.liveTypesetEl.innerHTML = '<span class="doc-equation-placeholder" style="color: var(--color-text-muted, #71717a); opacity: 0.5;">y = f(x)</span>';
+      return;
+    }
+
+    const caret = this.textarea?.selectionStart ?? val.length;
+    const textBeforeCaret = val.substring(0, caret);
+
+    // Check if there is an incomplete backslash command: e.g. \fo
+    const incompleteMatch = textBeforeCaret.match(/(\\[a-zA-Z]*)$/);
+    if (incompleteMatch && incompleteMatch[1].length > 0) {
+      // mid-word backslash command: \fo stays literal while autocomplete is open
+      const cmd = incompleteMatch[1];
+      const prefixBeforeCmd = textBeforeCaret.substring(0, textBeforeCaret.length - cmd.length);
+      const textAfterCaret = val.substring(caret);
+
+      let prefixHtml = "";
+      try {
+        prefixHtml = prefixBeforeCmd.trim() ? typesetMath(prefixBeforeCmd, { displayMode: true }) : escapeHtml(prefixBeforeCmd);
+      } catch {
+        prefixHtml = escapeHtml(prefixBeforeCmd);
+      }
+
+      let suffixHtml = "";
+      try {
+        suffixHtml = textAfterCaret.trim() ? typesetMath(textAfterCaret, { displayMode: true }) : escapeHtml(textAfterCaret);
+      } catch {
+        suffixHtml = escapeHtml(textAfterCaret);
+      }
+
+      this.liveTypesetEl.innerHTML = `${prefixHtml}<span class="doc-literal-cmd">${escapeHtml(cmd)}</span>${suffixHtml}`;
+      return;
+    }
+
+    // Otherwise, typeset the equation live as typed
+    try {
+      this.liveTypesetEl.innerHTML = typesetMath(val, { displayMode: true });
+    } catch {
+      this.liveTypesetEl.textContent = val;
+    }
+  }
+
   private bindEvents() {
-    // Single Click: Select atomic block
-    this.el.addEventListener("click", (_e) => {
+    // Single Click: Select atomic block, and enter edit mode if clickToEdit is enabled
+    this.el.addEventListener("click", (e: MouseEvent) => {
       if (!this.isEditing) {
         this.setSelected(true);
         this.options.onSelect?.(this.block.id);
+        if (this.options.clickToEdit) {
+          const offset = this.calculateCaretOffsetFromClick(e);
+          this.enterEditMode(offset);
+        }
       }
     });
 
@@ -130,13 +216,26 @@ export class EquationBlockComponent {
     this.el.removeAttribute("data-atomic");
 
     this.editorContainer.innerHTML = "";
+
+    // 1. Live typeset container rendering live mathematical typography as typed
+    this.liveTypesetEl = document.createElement("div");
+    this.liveTypesetEl.className = "doc-equation-live-typeset doc-equation-typeset-view";
+    this.editorContainer.appendChild(this.liveTypesetEl);
+
+    // 2. Input textarea sitting transparently directly above the typeset backdrop
     this.textarea = document.createElement("textarea");
-    this.textarea.className = "doc-block-source-input";
+    this.textarea.className = "doc-block-source-input doc-equation-input";
     this.textarea.value = this.block.source;
     this.textarea.rows = Math.max(1, this.block.source.split("\n").length);
     this.editorContainer.appendChild(this.textarea);
 
-    this.autocomplete = new AutocompleteController(this.editorContainer);
+    this.renderLiveMath(this.block.source);
+
+    this.autocomplete = new AutocompleteController(this.editorContainer, (_accepted) => {
+      if (this.textarea) {
+        this.renderLiveMath(this.textarea.value);
+      }
+    });
 
     const target: AutocompleteTarget = {
       getValue: () => this.textarea?.value || "",
@@ -144,6 +243,7 @@ export class EquationBlockComponent {
         if (this.textarea) {
           this.textarea.value = v;
           this.textarea.rows = Math.max(1, v.split("\n").length);
+          this.renderLiveMath(v);
         }
       },
       getSelectionStart: () => this.textarea?.selectionStart || 0,
@@ -172,6 +272,9 @@ export class EquationBlockComponent {
           this.options.onRequestTransform(this.block.id, "paragraph", val, caret);
           return;
         }
+
+        // Live math rendering while typing!
+        this.renderLiveMath(val);
       }
       this.autocomplete?.checkPrefix(target);
     });
@@ -224,6 +327,8 @@ export class EquationBlockComponent {
       this.autocomplete = null;
     }
 
+    this.liveTypesetEl = null;
+    this.editorContainer.innerHTML = "";
     this.editorContainer.classList.add("hidden");
     this.renderedContainer.classList.remove("hidden");
     this.el.classList.remove("editing");
@@ -267,6 +372,7 @@ export class EquationBlockComponent {
       this.autocomplete.dispose();
       this.autocomplete = null;
     }
+    this.liveTypesetEl = null;
     if (this.el.parentElement) {
       this.el.parentElement.removeChild(this.el);
     }

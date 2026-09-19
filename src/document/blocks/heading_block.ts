@@ -55,11 +55,50 @@ export class HeadingBlockComponent {
     this.renderedContainer.innerHTML = `<h${level} class="doc-heading-content">${text || '<span class="doc-heading-placeholder">Heading</span>'}</h${level}>`;
   }
 
+  private calculateCaretOffsetFromClick(e: MouseEvent): number | undefined {
+    if (typeof document === "undefined") return undefined;
+    if (document.caretRangeFromPoint) {
+      const range = document.caretRangeFromPoint(e.clientX, e.clientY);
+      if (range && this.renderedContainer.contains(range.startContainer)) {
+        let charCount = 0;
+        const walker = document.createTreeWalker(this.renderedContainer, NodeFilter.SHOW_TEXT);
+        let textNode: Node | null;
+        while ((textNode = walker.nextNode())) {
+          if (textNode === range.startContainer) {
+            charCount += range.startOffset;
+            break;
+          }
+          charCount += textNode.textContent?.length || 0;
+        }
+        return charCount;
+      }
+    } else if ((document as any).caretPositionFromPoint) {
+      const pos = (document as any).caretPositionFromPoint(e.clientX, e.clientY);
+      if (pos && this.renderedContainer.contains(pos.offsetNode)) {
+        let charCount = 0;
+        const walker = document.createTreeWalker(this.renderedContainer, NodeFilter.SHOW_TEXT);
+        let textNode: Node | null;
+        while ((textNode = walker.nextNode())) {
+          if (textNode === pos.offsetNode) {
+            charCount += pos.offset;
+            break;
+          }
+          charCount += textNode.textContent?.length || 0;
+        }
+        return charCount;
+      }
+    }
+    return undefined;
+  }
+
   private bindEvents() {
-    this.el.addEventListener("click", (_e) => {
+    this.el.addEventListener("click", (e: MouseEvent) => {
       if (!this.isEditing) {
         this.setSelected(true);
         this.options.onSelect?.(this.block.id);
+        const offset = this.calculateCaretOffsetFromClick(e);
+        const prefixLen = this.block.source.startsWith("### ") ? 4 : (this.block.source.startsWith("## ") ? 3 : (this.block.source.startsWith("# ") ? 2 : 0));
+        this.enterEditMode(offset !== undefined ? offset + prefixLen : undefined);
       }
     });
 
@@ -111,6 +150,7 @@ export class HeadingBlockComponent {
     this.input = document.createElement("input");
     this.input.type = "text";
     this.input.className = "doc-block-source-input doc-heading-input";
+    this.input.placeholder = "Heading...";
     this.input.value = this.block.source;
     this.el.appendChild(this.input);
 

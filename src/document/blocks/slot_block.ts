@@ -20,6 +20,7 @@ export interface SlotBlockOptions {
   onStepPrev?: () => void;
   onDeleteRequest?: (blockId: string) => void;
   onRequestTransform?: (blockId: string, targetType: BlockType, source: string, caretOffset?: number) => void;
+  clickToEdit?: boolean;
 }
 
 function escapeHtml(str: string): string {
@@ -87,11 +88,16 @@ export class SlotBlockComponent {
   }
 
   private bindEvents(): void {
-    // Single Click: Select atomic block
-    this.el.addEventListener("click", (_e) => {
+    // Single Click: Select atomic block, and enter edit mode if clickToEdit is enabled
+    this.el.addEventListener("click", (e: MouseEvent) => {
       if (!this.isEditing) {
         this.setSelected(true);
         this.options.onSelect?.(this.block.id);
+        if (this.options.clickToEdit) {
+          const cellEl = (e.target as HTMLElement).closest("[data-slot-id]") as HTMLElement | null;
+          const targetSlot = cellEl?.getAttribute("data-slot-id") || undefined;
+          this.enterEditMode(targetSlot);
+        }
       }
     });
 

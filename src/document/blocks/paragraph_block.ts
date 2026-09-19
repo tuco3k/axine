@@ -15,6 +15,7 @@ export interface ParagraphBlockOptions {
   onStepPrev?: () => void;
   onRequestTransform?: (blockId: string, targetType: BlockType, source: string, caretOffset?: number) => void;
   onDeleteRequest?: (blockId: string) => void;
+  isOnlyBlock?: boolean;
 }
 
 export class ParagraphBlockComponent {
@@ -46,7 +47,11 @@ export class ParagraphBlockComponent {
   private renderProse() {
     let text = this.block.source;
     if (text.trim() === "") {
-      this.renderedContainer.innerHTML = `<span class="doc-paragraph-placeholder">Write math expressions, definitions (x := 5), claims, or prose...</span>`;
+      if (this.options.isOnlyBlock) {
+        this.renderedContainer.innerHTML = `<span class="doc-paragraph-placeholder">Start typing...</span>`;
+      } else {
+        this.renderedContainer.innerHTML = `<br>`;
+      }
       return;
     }
 
@@ -66,14 +71,49 @@ export class ParagraphBlockComponent {
     this.renderedContainer.innerHTML = rendered;
   }
 
+  private calculateCaretOffsetFromClick(e: MouseEvent): number | undefined {
+    if (typeof document === "undefined") return undefined;
+    if (document.caretRangeFromPoint) {
+      const range = document.caretRangeFromPoint(e.clientX, e.clientY);
+      if (range && this.renderedContainer.contains(range.startContainer)) {
+        let charCount = 0;
+        const walker = document.createTreeWalker(this.renderedContainer, NodeFilter.SHOW_TEXT);
+        let textNode: Node | null;
+        while ((textNode = walker.nextNode())) {
+          if (textNode === range.startContainer) {
+            charCount += range.startOffset;
+            break;
+          }
+          charCount += textNode.textContent?.length || 0;
+        }
+        return charCount;
+      }
+    } else if ((document as any).caretPositionFromPoint) {
+      const pos = (document as any).caretPositionFromPoint(e.clientX, e.clientY);
+      if (pos && this.renderedContainer.contains(pos.offsetNode)) {
+        let charCount = 0;
+        const walker = document.createTreeWalker(this.renderedContainer, NodeFilter.SHOW_TEXT);
+        let textNode: Node | null;
+        while ((textNode = walker.nextNode())) {
+          if (textNode === pos.offsetNode) {
+            charCount += pos.offset;
+            break;
+          }
+          charCount += textNode.textContent?.length || 0;
+        }
+        return charCount;
+      }
+    }
+    return undefined;
+  }
+
   private bindEvents() {
-    this.el.addEventListener("click", (_e) => {
+    this.el.addEventListener("click", (e: MouseEvent) => {
       if (!this.isEditing) {
         this.setSelected(true);
         this.options.onSelect?.(this.block.id);
-        if (this.block.source.trim() === "") {
-          this.enterEditMode();
-        }
+        const offset = this.calculateCaretOffsetFromClick(e);
+        this.enterEditMode(offset);
       }
     });
 
@@ -120,7 +160,7 @@ export class ParagraphBlockComponent {
     this.renderedContainer.classList.add("hidden");
     this.textarea = document.createElement("textarea");
     this.textarea.className = "doc-block-source-input doc-paragraph-input";
-    this.textarea.placeholder = "Write math expressions, definitions (x := 5), claims, or prose...";
+    this.textarea.placeholder = "Start typing...";
 
     let initialOffset: number | undefined = undefined;
     let val = this.block.source;
@@ -163,7 +203,7 @@ export class ParagraphBlockComponent {
         return;
       }
       // 5. Equation: e.g. "x = 5" or ":var := 10"
-      if (/^(:?[a-zA-Z_][a-zA-Z0-9_]*(\([^)]*\))?\s*(:=|=|<=|>=|<|>)\s*.+)$/.test(trimmed)) {
+      if (/^(:?[a-zA-Z_][a-zA-Z0-9_]*(\([^)]*\))?\s*(:=|=|<=|>=|<|>)\s*.*)$/.test(trimmed)) {
         this.options.onRequestTransform?.(this.block.id, "equation", val, caret);
         return;
       }

@@ -4129,23 +4129,78 @@ input[type="number"]:focus {
   border-radius: var(--border-radius-sm);
   background: transparent;
   outline: none;
-  transition: background-color var(--duration-fast), border-color var(--duration-fast);
+  cursor: text;
 }
 
 .doc-block-equation:hover {
-  background: var(--color-bg-surface);
+  background: transparent;
 }
 
 .doc-block-equation:focus,
 .doc-block-equation.selected {
-  border-color: var(--color-accent);
-  background: var(--color-bg-surface);
-  box-shadow: 0 0 0 2px var(--color-accent-subtle);
+  border: 1px solid transparent;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
 }
 
 .doc-block-equation.editing {
-  border-color: var(--color-accent);
-  background: var(--color-bg-surface-elevated);
+  border: 1px solid transparent;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+}
+
+.doc-equation-editor-view {
+  position: relative;
+  width: 100%;
+  min-height: 24px;
+}
+
+.doc-equation-live-typeset {
+  position: relative;
+  font-family: var(--font-family-math);
+  font-size: var(--font-size-base);
+  color: var(--color-text-primary);
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.doc-equation-input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  resize: none !important;
+  color: transparent !important;
+  caret-color: var(--color-text-primary) !important;
+  font-family: var(--font-family-math) !important;
+  font-size: var(--font-size-base) !important;
+  line-height: 24.5px !important;
+  z-index: 2;
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+  -webkit-text-fill-color: transparent;
+}
+
+.doc-equation-input::selection {
+  background: var(--color-accent-subtle);
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.doc-literal-cmd {
+  font-family: var(--font-family-mono, monospace);
+  color: var(--color-accent, #2563eb);
+  font-weight: 500;
 }
 
 .doc-equation-typeset-view {
@@ -4172,6 +4227,12 @@ input[type="number"]:focus {
   margin: 0;
 }
 
+.doc-block-source-input::placeholder {
+  color: var(--color-text-muted, #71717a);
+  font-style: normal;
+  opacity: 0.5;
+}
+
 .doc-block-paragraph {
   margin: 8px 0;
   padding: 6px 12px;
@@ -4181,17 +4242,32 @@ input[type="number"]:focus {
   color: var(--color-text-primary);
   font-family: var(--font-family-sans, sans-serif);
   line-height: 1.6;
+  cursor: text;
 }
 
 .doc-block-paragraph:focus,
 .doc-block-paragraph.selected {
-  border-color: var(--color-accent-subtle);
-  background: var(--color-bg-surface);
+  border: 1px solid transparent;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+}
+
+.doc-paragraph-input {
+  font-family: var(--font-family-sans, sans-serif);
+  font-size: var(--font-size-base);
+  line-height: 1.6;
+  color: var(--color-text-primary);
+  caret-color: var(--color-text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
 }
 
 .doc-paragraph-placeholder {
   color: var(--color-text-muted, #71717a);
-  font-style: italic;
+  font-style: normal;
+  opacity: 0.5;
   pointer-events: none;
   user-select: none;
 }
@@ -4234,12 +4310,15 @@ input[type="number"]:focus {
   border-radius: var(--border-radius-sm);
   outline: none;
   color: var(--color-text-primary);
+  cursor: text;
 }
 
 .doc-block-heading:focus,
 .doc-block-heading.selected {
-  border-color: var(--color-accent-subtle);
-  background: var(--color-bg-surface);
+  border: 1px solid transparent;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
 }
 
 .doc-heading-content {
@@ -4270,16 +4349,23 @@ h3.doc-heading-content {
 }
 
 .doc-heading-placeholder {
-  color: var(--color-text-tertiary, #8c867e);
-  font-style: italic;
+  color: var(--color-text-muted, #71717a);
+  font-style: normal;
+  opacity: 0.5;
   font-weight: normal;
 }
 
 .doc-heading-input {
+  font-family: var(--font-family-ui, sans-serif);
   font-size: 20px;
   font-weight: 600;
   padding: 4px 0;
   width: 100%;
+  border: none;
+  background: transparent;
+  outline: none;
+  color: var(--color-text-primary);
+  caret-color: var(--color-text-primary);
 }
 
 @media (max-width: 768px) {
@@ -4322,19 +4408,22 @@ h3.doc-heading-content {
   border: 1px solid transparent;
   border-radius: var(--border-radius-md);
   outline: none;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
-  cursor: default;
+  cursor: text;
 }
 
 .doc-block-slot:focus,
 .doc-block-slot.selected {
-  border-color: var(--color-accent-subtle);
-  background: var(--color-bg-surface);
+  border: 1px solid transparent;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
 }
 
 .doc-block-slot.editing {
-  border-color: var(--color-accent);
-  background: var(--color-bg-surface);
+  border: 1px solid transparent;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
   cursor: text;
 }
 
@@ -4365,9 +4454,9 @@ h3.doc-heading-content {
   font-size: 14px;
   line-height: 20px;
   padding: 3px 6px;
-  background: var(--color-bg-base);
+  background: transparent;
   color: var(--color-text-primary);
-  border: 1px solid var(--color-border);
+  border: 1px solid transparent;
   border-radius: var(--border-radius-sm);
   outline: none;
   min-width: 60px;
@@ -4377,8 +4466,8 @@ h3.doc-heading-content {
 }
 
 .doc-slot-input:focus {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 1.5px var(--color-accent);
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .doc-slot-placeholder {

@@ -245,9 +245,9 @@ export function parseAxDocument(text: string): DocumentModel {
       continue;
     }
 
-    // Equation
-    if (currentType && currentType !== "equation") flush();
-    currentType = "equation";
+    const classified = classifyBlockType(line);
+    if (currentType && currentType !== classified) flush();
+    currentType = classified;
     currentLines.push(line);
     flush();
   }

@@ -98,6 +98,7 @@ export class BlockDocumentEditor {
         onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
         onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
         onDeleteRequest: (id: string) => this.deleteBlock(id),
+        isOnlyBlock: this.model.blocks.length === 1,
       });
       return p;
     }
@@ -123,6 +124,7 @@ export class BlockDocumentEditor {
         onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
         onDeleteRequest: (id: string) => this.deleteBlock(id),
         onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
+        clickToEdit: true,
       });
       return eq;
     }
@@ -147,6 +149,7 @@ export class BlockDocumentEditor {
         onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
         onDeleteRequest: (id: string) => this.deleteBlock(id),
         onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
+        clickToEdit: true,
       });
       return slot;
     }
@@ -159,6 +162,7 @@ export class BlockDocumentEditor {
       onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
       onDeleteRequest: (id: string) => this.deleteBlock(id),
       onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
+      isOnlyBlock: this.model.blocks.length === 1,
     });
     return para;
   }
@@ -275,6 +279,13 @@ export class BlockDocumentEditor {
     this.selectedBlockId = blockId;
 
     for (const [id, comp] of this.blockComponents.entries()) {
+      if (id !== blockId) {
+        if ("getIsEditing" in comp && typeof (comp as any).getIsEditing === "function" && (comp as any).getIsEditing()) {
+          if ("exitEditMode" in comp && typeof (comp as any).exitEditMode === "function") {
+            (comp as any).exitEditMode(true);
+          }
+        }
+      }
       if ("setSelected" in comp && typeof comp.setSelected === "function") {
         comp.setSelected(id === blockId);
       }
