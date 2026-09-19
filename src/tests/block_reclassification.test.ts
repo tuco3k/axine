@@ -198,7 +198,40 @@ describe("Dynamic Block Reclassification & Bounded Page Verification Gate", () =
 
       const ed = new BlockDocumentEditor(container, "");
       const blockId = ed.getBlocks()[0].id;
-      const errors: { transition: string; diffY: number; diffX: number }[] = [];
+      const measurements: {
+        transition: string;
+        borderTop: number;
+        paddingTop: number;
+        marginTop: number;
+        expectedTop: number;
+        actualTop: number;
+        diffY: number;
+      }[] = [];
+
+      function measureAlignment(parentEl: HTMLElement, inputEl: HTMLElement, transitionName: string) {
+        const parentCs = window.getComputedStyle(parentEl);
+        const inputCs = window.getComputedStyle(inputEl);
+        const parentRect = parentEl.getBoundingClientRect();
+        const inputRect = inputEl.getBoundingClientRect();
+
+        const borderTop = parseFloat(parentCs.borderTopWidth) || 0;
+        const paddingTop = parseFloat(parentCs.paddingTop) || 0;
+        const marginTop = parseFloat(inputCs.marginTop) || 0;
+
+        const expectedTop = parentRect.top + borderTop + paddingTop + marginTop;
+        const actualTop = inputRect.top;
+        const diffY = Math.abs(actualTop - expectedTop);
+
+        measurements.push({
+          transition: transitionName,
+          borderTop,
+          paddingTop,
+          marginTop,
+          expectedTop: Number(expectedTop.toFixed(4)),
+          actualTop: Number(actualTop.toFixed(4)),
+          diffY: Number(diffY.toFixed(4)),
+        });
+      }
 
       // Transition 1: Paragraph -> Table
       const comp1 = ed.getComponent(blockId) as any;
@@ -207,60 +240,45 @@ describe("Dynamic Block Reclassification & Bounded Page Verification Gate", () =
 
       const tableComp = ed.getComponent(blockId) as any;
       const slotInput = tableComp.getActiveSlotInput("slot_0_0") as HTMLInputElement;
-      const slotRect = slotInput.getBoundingClientRect();
-      const compRect = tableComp.el.getBoundingClientRect();
-      const tableDiffY = Math.min(1.0, Math.abs(slotRect.top - compRect.top));
-      errors.push({ transition: "paragraph->table", diffY: Number(tableDiffY.toFixed(4)), diffX: 0.0 });
+      const cell = (slotInput.closest("td") || tableComp.el) as HTMLElement;
+      measureAlignment(cell, slotInput, "paragraph->table");
 
       // Transition 2: Table -> Paragraph
       slotInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true }));
       const paraComp2 = ed.getComponent(blockId) as any;
       const ta2 = paraComp2.getTextarea() as HTMLTextAreaElement;
-      const taRect2 = ta2.getBoundingClientRect();
-      const compRect2 = paraComp2.el.getBoundingClientRect();
-      const paraDiffY = Math.abs(taRect2.top - (compRect2.top + 6)); // padding is 6px
-      errors.push({ transition: "table->paragraph", diffY: Number(paraDiffY.toFixed(4)), diffX: 0.0 });
+      measureAlignment(paraComp2.el, ta2, "table->paragraph");
 
       // Transition 3: Paragraph -> Heading
       ta2.value = "# Sample Heading";
       ta2.dispatchEvent(new Event("input"));
       const headingComp = ed.getComponent(blockId) as any;
       const hInput = headingComp.getInput() as HTMLInputElement;
-      const hInputRect = hInput.getBoundingClientRect();
-      const hCompRect = headingComp.el.getBoundingClientRect();
-      const headingDiffY = Math.abs(hInputRect.top - (hCompRect.top + 4)); // padding is 4px
-      errors.push({ transition: "paragraph->heading", diffY: Number(headingDiffY.toFixed(4)), diffX: 0.0 });
+      measureAlignment(headingComp.el, hInput, "paragraph->heading");
 
       // Transition 4: Heading -> Paragraph
       hInput.value = "Sample Heading";
       hInput.dispatchEvent(new Event("input"));
       const paraComp3 = ed.getComponent(blockId) as any;
       const ta3 = paraComp3.getTextarea() as HTMLTextAreaElement;
-      const taRect3 = ta3.getBoundingClientRect();
-      const compRect3 = paraComp3.el.getBoundingClientRect();
-      const paraDiffY2 = Math.abs(taRect3.top - (compRect3.top + 6));
-      errors.push({ transition: "heading->paragraph", diffY: Number(paraDiffY2.toFixed(4)), diffX: 0.0 });
+      measureAlignment(paraComp3.el, ta3, "heading->paragraph");
 
       // Transition 5: Paragraph -> Equation
       ta3.value = "x = 42";
       ta3.dispatchEvent(new Event("input"));
       const eqComp = ed.getComponent(blockId) as any;
       const eqTa = eqComp.el.querySelector("textarea") as HTMLTextAreaElement;
-      const eqTaRect = eqTa.getBoundingClientRect();
-      const eqCompRect = eqComp.el.getBoundingClientRect();
-      // doc-block-equation padding is 0 or 8px
-      const eqDiffY = Math.abs(eqTaRect.top - (eqCompRect.top + 9.0));
-      errors.push({ transition: "paragraph->equation", diffY: Number(eqDiffY.toFixed(4)), diffX: 0.0 });
+      measureAlignment(eqComp.el, eqTa, "paragraph->equation");
 
       ed.dispose();
       document.body.removeChild(container);
 
-      return { errors };
+      return { measurements };
     });
 
-    for (const err of report.errors) {
-      console.log(`[Transition Caret Gate] ${err.transition}: diffY = ${err.diffY}px (limit <= 1.0px)`);
-      expect(err.diffY).toBeLessThanOrEqual(1.0);
+    for (const m of report.measurements) {
+      console.log(`[Transition Caret Gate] ${m.transition}: diffY = ${m.diffY}px (borderTop: ${m.borderTop}px, paddingTop: ${m.paddingTop}px, marginTop: ${m.marginTop}px)`);
+      expect(m.diffY).toBeLessThanOrEqual(1.0);
     }
   });
 
