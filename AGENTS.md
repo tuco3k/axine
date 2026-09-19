@@ -132,3 +132,18 @@ render. A usable tool is the goal, not the milestone.
 Read VOICE.md before writing any user-facing text: labels, errors,
 menu items, panel headers, documentation, or comments in shipped .ax
 files.
+
+## Commit and push, every time
+Every session ends with the work committed and pushed to origin/main.
+Not when asked — always.
+
+  git add -A
+  git commit -m "<what changed>"
+  git push origin main
+
+Then confirm the push succeeded and report the commit hash. A session
+that produced changes and did not push has not finished, regardless of
+what else it accomplished.
+
+If the working tree is clean because nothing changed, say so. If a push
+fails, report the error rather than moving on.
