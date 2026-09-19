@@ -147,3 +147,18 @@ what else it accomplished.
 
 If the working tree is clean because nothing changed, say so. If a push
 fails, report the error rather than moving on.
+
+## The file is complete
+Everything about a document is in its text. Copy an .ax file into any
+implementation that knows Axine and it produces the same result —
+including how it renders.
+
+Nothing lives in editor state. No figure positions in localStorage, no
+layout the file does not describe, no display that depends on something
+outside the text.
+
+This applies to the render language as much as to the math. If a table
+renders a particular way, the file says so. If a figure sits somewhere,
+the file says so.
+
+The IDE is one interpretation. The file is the truth.
