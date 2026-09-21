@@ -268,7 +268,9 @@ export const casesCommand: SlotCommandDeclaration = {
   renderStatic(data: SlotCommandData): string {
     const branches = data.params.branches || 2;
 
-    let html = '<div class="doc-slot-cases-wrapper"><div class="doc-cases-brace">{</div><div class="doc-cases-branches">';
+    const braceSvg = `<svg class="doc-cases-brace-svg" viewBox="0 0 14 100" preserveAspectRatio="none" aria-hidden="true" role="presentation"><path d="M 13,1 C 7,2 5,8 5,14 L 5,42 C 5,47 1,49 1,50 C 1,51 5,53 5,58 L 5,86 C 5,92 7,98 13,99" vector-effect="non-scaling-stroke" /></svg>`;
+
+    let html = `<div class="doc-slot-cases-wrapper"><div class="doc-cases-brace">${braceSvg}</div><div class="doc-cases-branches">`;
     for (let b = 0; b < branches; b++) {
       const valRaw = data.slots[`slot_${b}_val`]?.trim() || "";
       const condRaw = data.slots[`slot_${b}_cond`]?.trim() || "";
@@ -293,8 +295,10 @@ export const casesCommand: SlotCommandDeclaration = {
   ): string {
     const branches = data.params.branches || 2;
 
+    const braceSvg = `<svg class="doc-cases-brace-svg" viewBox="0 0 14 100" preserveAspectRatio="none" aria-hidden="true" role="presentation"><path d="M 13,1 C 7,2 5,8 5,14 L 5,42 C 5,47 1,49 1,50 C 1,51 5,53 5,58 L 5,86 C 5,92 7,98 13,99" vector-effect="non-scaling-stroke" /></svg>`;
+
     let html = '<div class="doc-slot-cases-wrapper editing">';
-    html += '<div class="doc-cases-scaffold-brace">{</div>';
+    html += `<div class="doc-cases-scaffold-brace">${braceSvg}</div>`;
     html += '<div class="doc-cases-scaffold-branches">';
 
     for (let b = 0; b < branches; b++) {

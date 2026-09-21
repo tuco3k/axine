@@ -3999,6 +3999,22 @@ input[type="number"]:focus {
   color: var(--color-accent);
 }
 
+.doc-autocomplete-badge {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  padding: 1px 5px;
+  border-radius: var(--border-radius-xs, 2px);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.doc-autocomplete-badge-ds {
+  background: var(--color-accent-subtle, rgba(234, 138, 56, 0.15));
+  color: var(--color-accent, #ea8a38);
+  border: 1px solid var(--color-accent-border, rgba(234, 138, 56, 0.3));
+}
+
 .doc-autocomplete-label,
 .doc-autocomplete-desc {
   margin-left: auto;
@@ -4510,19 +4526,34 @@ h3.doc-heading-content {
 }
 
 .doc-slot-cases-wrapper {
-  display: flex;
-  align-items: center;
+  display: inline-flex;
+  align-items: stretch;
   margin: 6px 0;
 }
 
 .doc-cases-scaffold-brace,
 .doc-cases-brace {
-  font-size: 42px;
-  line-height: 1;
-  font-family: var(--font-family-math, serif);
+  display: flex;
+  align-items: stretch;
+  align-self: stretch;
+  width: 14px;
+  min-width: 14px;
   margin-right: 12px;
   color: var(--color-text-primary);
   user-select: none;
+  flex-shrink: 0;
+}
+
+.doc-cases-brace-svg {
+  width: 14px;
+  height: 100%;
+  display: block;
+  overflow: visible;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .doc-cases-scaffold-branches,

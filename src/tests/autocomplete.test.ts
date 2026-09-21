@@ -100,4 +100,89 @@ describe("Autocomplete & Incomplete Command Controller Gate", () => {
 
     controller.dispose();
   });
+
+  it("includes all first-class data structures and ranks them by cosine similarity", () => {
+    // 1. Check that all essential data structures are registered
+    const allRoot = findMatchingCommands("\\");
+    const dataStructures = allRoot.filter(item => item.category === "data_structure");
+    const dsCommands = dataStructures.map(ds => ds.command);
+
+    expect(dsCommands).toContain("\\cases");
+    expect(dsCommands).toContain("\\table");
+    expect(dsCommands).toContain("\\matrix");
+    expect(dsCommands).toContain("\\list");
+    expect(dsCommands).toContain("\\tuple");
+    expect(dsCommands).toContain("\\record");
+    expect(dsCommands).toContain("\\struct");
+    expect(dsCommands).toContain("\\set");
+    expect(dsCommands).toContain("\\multiset");
+    expect(dsCommands).toContain("\\dict");
+    expect(dsCommands).toContain("\\vector");
+    expect(dsCommands).toContain("\\tensor");
+    expect(dsCommands).toContain("\\series");
+    expect(dsCommands).toContain("\\tree");
+    expect(dsCommands).toContain("\\trajectory");
+    expect(dsCommands).toContain("\\space");
+    expect(dsCommands).toContain("\\figure");
+    expect(dsCommands).toContain("\\derive");
+
+    // 2. Querying \foo returns prefix matches then data structures sorted by cosine similarity
+    const foMatches = findMatchingCommands("\\fo");
+    expect(foMatches[0].command).toBe("\\forall");
+    expect(foMatches[1].command).toBe("\\form");
+
+    // Every single data structure is present in foMatches so user can navigate all of them!
+    for (const dsCmd of dsCommands) {
+      expect(foMatches.some(m => m.command === dsCmd)).toBe(true);
+    }
+
+    // 3. Querying \cas ranks \cases at top
+    const casMatches = findMatchingCommands("\\cas");
+    expect(casMatches[0].command).toBe("\\cases");
+
+    // 4. Querying \tab ranks \table at top
+    const tabMatches = findMatchingCommands("\\tab");
+    expect(tabMatches[0].command).toBe("\\table");
+
+    // 5. Querying \mat ranks \match and \matrix at top
+    const matMatches = findMatchingCommands("\\mat");
+    expect(matMatches.map(m => m.command)).toContain("\\matrix");
+    expect(matMatches[0].command.startsWith("\\mat")).toBe(true);
+  });
+
+  it("allows navigating through all data structures and wraps around", () => {
+    const controller = new AutocompleteController(null as any);
+
+    let val = "\\fo";
+    let caret = 3;
+
+    const target: AutocompleteTarget = {
+      getValue: () => val,
+      setValue: (v: string) => { val = v; },
+      getSelectionStart: () => caret,
+      setSelection: (s: number) => { caret = s; },
+    };
+
+    controller.checkPrefix(target);
+    const totalMatches = controller.getMatches().length;
+    expect(totalMatches).toBeGreaterThan(20);
+
+    // Navigate down 10 times to verify scrolling past the initial 8 items
+    for (let step = 0; step < 10; step++) {
+      controller.handleKeydown({ key: "ArrowDown", preventDefault: () => {} } as KeyboardEvent, target);
+    }
+    expect(controller.getSelectedIndex()).toBe(10);
+
+    // Navigate all the way to end
+    for (let step = 10; step < totalMatches - 1; step++) {
+      controller.handleKeydown({ key: "ArrowDown", preventDefault: () => {} } as KeyboardEvent, target);
+    }
+    expect(controller.getSelectedIndex()).toBe(totalMatches - 1);
+
+    // One more ArrowDown wraps back to 0
+    controller.handleKeydown({ key: "ArrowDown", preventDefault: () => {} } as KeyboardEvent, target);
+    expect(controller.getSelectedIndex()).toBe(0);
+
+    controller.dispose();
+  });
 });

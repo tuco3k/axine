@@ -7,6 +7,7 @@
 
 import { DocumentBlock, BlockType } from "../block_model";
 import { typesetMath } from "../../core/math_typeset";
+import { AutocompleteController, AutocompleteTarget } from "../autocomplete";
 
 export interface ParagraphBlockOptions {
   onSelect?: (blockId: string) => void;
@@ -24,6 +25,7 @@ export class ParagraphBlockComponent {
   private options: ParagraphBlockOptions;
   private renderedContainer: HTMLElement;
   private textarea: HTMLTextAreaElement | null = null;
+  private autocomplete: AutocompleteController | null = null;
   private isEditing: boolean = false;
   private isSelected: boolean = false;
 
@@ -183,9 +185,67 @@ export class ParagraphBlockComponent {
     };
     autoResize();
 
+    this.autocomplete = new AutocompleteController(this.el, (_accepted) => {
+      if (!this.textarea) return;
+      autoResize();
+      const val = this.textarea.value;
+      const trimmed = val.trim();
+      const caret = this.textarea.selectionStart ?? val.length;
+
+      // 1. \table
+      if (trimmed === "\\table" || trimmed.startsWith("\\table ") || trimmed.startsWith("\\table(")) {
+        this.options.onRequestTransform?.(this.block.id, "slot", val, caret);
+        return;
+      }
+      // 2. \cases
+      if (trimmed === "\\cases" || trimmed.startsWith("\\cases ") || trimmed.startsWith("\\cases(")) {
+        this.options.onRequestTransform?.(this.block.id, "slot", val, caret);
+        return;
+      }
+      // 3. \figure
+      if (trimmed === "\\figure" || trimmed.startsWith("\\figure ") || trimmed.startsWith("\\figure(")) {
+        this.options.onRequestTransform?.(this.block.id, "figure", val, caret);
+        return;
+      }
+      this.block.source = this.textarea.value;
+      this.options.onCommit?.(this.block.id, this.textarea.value);
+    });
+
+    const target: AutocompleteTarget = {
+      getValue: () => this.textarea?.value || "",
+      setValue: (v: string) => {
+        if (this.textarea) {
+          this.textarea.value = v;
+          autoResize();
+        }
+      },
+      getSelectionStart: () => this.textarea?.selectionStart || 0,
+      setSelection: (s: number, e: number) => {
+        if (this.textarea) {
+          this.textarea.selectionStart = s;
+          this.textarea.selectionEnd = e;
+        }
+      },
+      getCaretCoordinates: () => {
+        if (!this.textarea) return { x: 12, y: 28 };
+        const textBefore = this.textarea.value.substring(0, this.textarea.selectionStart || 0);
+        const lines = textBefore.split("\n");
+        const currentLine = lines[lines.length - 1];
+        const lineIdx = lines.length - 1;
+        const charWidth = 8.5;
+        const lineHeight = 25.6;
+        const x = Math.max(12, Math.min(this.textarea.offsetWidth - 280, currentLine.length * charWidth + 12));
+        const y = lineIdx * lineHeight + 28;
+        return { x, y };
+      },
+    };
+
     this.textarea.addEventListener("input", () => {
       if (!this.textarea) return;
       autoResize();
+      if (this.autocomplete) {
+        this.autocomplete.checkPrefix(target);
+      }
       const val = this.textarea.value;
       const trimmed = val.trim();
       const caret = this.textarea.selectionStart ?? val.length;
@@ -221,6 +281,10 @@ export class ParagraphBlockComponent {
     });
 
     this.textarea.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (this.autocomplete && this.autocomplete.handleKeydown(e, target)) {
+        e.stopPropagation();
+        return;
+      }
       e.stopPropagation();
       if (e.key === "Escape") {
         e.preventDefault();
@@ -238,8 +302,15 @@ export class ParagraphBlockComponent {
       }
     });
 
-    this.textarea.addEventListener("blur", () => {
-      this.exitEditMode(true);
+    this.textarea.addEventListener("blur", (e: FocusEvent) => {
+      if (e.relatedTarget && (e.relatedTarget as HTMLElement).closest(".doc-autocomplete-popover")) {
+        return;
+      }
+      setTimeout(() => {
+        if (this.isEditing && (!this.autocomplete || !this.autocomplete.getIsOpen())) {
+          this.exitEditMode(true);
+        }
+      }, 150);
     });
 
     if (typeof this.textarea.focus === "function") {
@@ -275,6 +346,11 @@ export class ParagraphBlockComponent {
       this.textarea = null;
     }
 
+    if (this.autocomplete) {
+      this.autocomplete.dispose();
+      this.autocomplete = null;
+    }
+
     this.renderedContainer.classList.remove("hidden");
     this.renderProse();
     this.setSelected(true);
@@ -305,6 +381,10 @@ export class ParagraphBlockComponent {
   }
 
   public dispose() {
+    if (this.autocomplete) {
+      this.autocomplete.dispose();
+      this.autocomplete = null;
+    }
     if (this.el.parentElement) {
       this.el.parentElement.removeChild(this.el);
     }
