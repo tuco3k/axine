@@ -38,6 +38,7 @@ dropped.
 - Pause = cooperative yield. Stop = worker.terminate(). Both are required.
 - Values that cannot be represented (complex eigenvalues, sqrt of negative)
   return `unknown(requires-unavailable-theory)`, never a partial number.
+- The zero-dependency rule covers the LANGUAGE CORE (`src/core`). MathLive is permitted for the editor's equation input surface only. Nothing in `src/core` may import it.
 
 ## Process rules
 - TARGETED EDITS ONLY. Never rewrite a file wholesale with a heredoc.
