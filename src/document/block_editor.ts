@@ -200,9 +200,8 @@ export class BlockDocumentEditor {
     }
 
     this.blockComponents.set(blockId, newComp);
-    this.selectBlock(blockId);
 
-    // Route focus & caret based on new block type
+    // Route focus & caret based on new block type FIRST to establish editing state
     if (newType === "slot") {
       const slotComp = newComp as SlotBlockComponent;
       const decl = (slotComp as any).decl;
@@ -224,6 +223,8 @@ export class BlockDocumentEditor {
       paraComp.enterEditMode(caretOffset ?? newSource.length);
     }
 
+    this.selectBlock(blockId);
+
     this.options.onChange?.(this.state.toText());
   }
 
@@ -231,13 +232,8 @@ export class BlockDocumentEditor {
    * Handles changes committed from an active editing block
    */
   private handleBlockCommit(blockId: string, newSource: string): void {
-    const res = this.state.updateBlock(blockId, newSource);
+    this.state.updateBlock(blockId, newSource);
     this.model = this.state.getModel();
-
-    if (res && res.typeChanged) {
-      this.transformBlock(blockId, res.newType, newSource);
-      return;
-    }
 
     // Update status indicators on figure blocks
     for (const [id, comp] of this.blockComponents.entries()) {
@@ -422,8 +418,22 @@ export class BlockDocumentEditor {
 
     // Arrow navigation and typing activation when container has focus (outside active inputs)
     this.container.addEventListener("keydown", (e: KeyboardEvent) => {
-      const isInput = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+      const el = e.target as HTMLElement;
+      const isInput =
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLTextAreaElement ||
+        el?.tagName?.toLowerCase() === "math-field" ||
+        Boolean(el?.closest?.("math-field")) ||
+        Boolean(el?.closest?.(".doc-block-source-input")) ||
+        Boolean(el?.closest?.(".editing"));
       if (isInput) return;
+
+      // If any block is currently in edit mode, container level navigation must not interfere
+      for (const comp of this.blockComponents.values()) {
+        if ("getIsEditing" in comp && typeof (comp as any).getIsEditing === "function" && (comp as any).getIsEditing()) {
+          return;
+        }
+      }
 
       if (e.key === "ArrowDown") {
         if (this.selectedBlockId) {

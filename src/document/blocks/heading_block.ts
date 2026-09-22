@@ -244,7 +244,9 @@ export class HeadingBlockComponent {
     this.isSelected = selected;
     if (selected) {
       this.el.classList.add("selected");
-      this.el.focus();
+      if (!this.isEditing && typeof this.el.focus === "function") {
+        this.el.focus();
+      }
     } else {
       this.el.classList.remove("selected");
     }

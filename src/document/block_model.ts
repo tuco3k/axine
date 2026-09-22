@@ -65,11 +65,15 @@ export function classifyBlockType(source: string): BlockType {
   if (trimmed.startsWith("#")) {
     return "paragraph";
   }
-  // Relational definitions or equations: e.g. "x = 5", ":x := 10", "y = mx + b", "a <= b", "y'' + 4y' + 13y = 0"
-  if (/^(:?[a-zA-Z_][a-zA-Z0-9_]*(\([^)]*\))?\s*(:=|=|<=|>=|<|>)\s*.+)$/.test(trimmed)) {
-    return "equation";
+  // Relational definitions or equations: e.g. "x = 5", ":x := 10", "y = mx + b", "a <= b", "y'' + 4y' + 13y = 0", "y(t) = "
+  if (/^(:?[a-zA-Z_][a-zA-Z0-9_]*(\([^)]*\)|[\x27]+)*\s*(:=|=|<=|>=|<|>)\s*.*)$/.test(trimmed)) {
+    const relIdx = trimmed.search(/(:=|=|<=|>=|<|>)/);
+    const lhs = trimmed.substring(0, relIdx).trim();
+    if (!/\b[a-zA-Z]{2,}\s+[a-zA-Z]{2,}\b/.test(lhs)) {
+      return "equation";
+    }
   }
-  const relMatch = trimmed.match(/^(.+?)\s*(:=|=|<=|>=|!=|<|>)\s*(.+)$/);
+  const relMatch = trimmed.match(/^(.+?)\s*(:=|=|<=|>=|!=|<|>)\s*(.*)$/);
   if (relMatch) {
     const lhs = relMatch[1].trim();
     const rhs = relMatch[3].trim();

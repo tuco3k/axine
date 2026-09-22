@@ -140,7 +140,8 @@ function typesetASTNode(node: ASTNode, options: TypesetOptions): string {
     }
 
     case 'FunctionCall': {
-      const fnName = node.callee;
+      let fnName = node.callee;
+      if (fnName.startsWith(':')) fnName = fnName.slice(1);
 
       // Square root
       if (fnName === 'sqrt' && node.args.length === 1) {
@@ -610,12 +611,12 @@ function findTopLevelFrac(str: string): number {
 }
 
 function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
-  const tokenRegex = /(\s+)|("[^"]*"|'[^']*')|(-?\b\d+\s*\/\s*\d+\b)|(\.\.)|(\b[a-zA-Z]_(?:\{[^}]*\}|\([^)]*\)|[a-zA-Z0-9]+))|(sqrt\((?:[^()]+|\([^()]*\))*\))|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(_(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b(?:sin|cos|tan|ln|exp|det|sqrt|pi|inf)\b)|(\\[a-zA-Z]*)|(\b[a-zA-Z][a-zA-Z0-9_]*\b)|([()\[\],'{}:.])|([\u2200-\u23FF\u27C0-\u27EF\u2980-\u2AFF\u2016\u2020\u00B7\u2100-\u214F\u0370-\u03FF])/g;
+  const tokenRegex = /(\s+)|("[^"]*")|(-?\b\d+\s*\/\s*\d+\b)|(\.\.)|(\b[a-zA-Z]_(?:\{[^}]*\}|\([^)]*\)|[a-zA-Z0-9]+))|(sqrt\((?:[^()]+|\([^()]*\))*\))|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(_(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|&minus;|&sdot;)|(\d+(?:\.\d+)?)|(?::)?(\b(?:sin|cos|tan|ln|exp|det|sqrt|pi|inf)\b)|(\\[a-zA-Z]*)|([a-zA-Z][a-zA-Z0-9_]*)|(\x27+)|([()\[\],{}:.])|([\u2200-\u23FF\u27C0-\u27EF\u2980-\u2AFF\u2016\u2020\u00B7\u2100-\u214F\u0370-\u03FF])/g;
 
   let out = '';
   let match: RegExpExecArray | null;
   while ((match = tokenRegex.exec(str)) !== null) {
-    const [, wsTok, strTok, fracTok, dotDotTok, subVarTok, sqrtTok, supTok, subTok, deltaTok, entityTok, relTok, binTok, numTok, fnTok, cmdTok, identTok, puncTok, mathSymTok] = match;
+    const [, wsTok, strTok, fracTok, dotDotTok, subVarTok, sqrtTok, supTok, subTok, deltaTok, entityTok, relTok, binTok, numTok, fnTok, cmdTok, identTok, primeTok, puncTok, mathSymTok] = match;
 
     if (wsTok) {
       out += wsTok;
@@ -672,10 +673,11 @@ function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
     } else if (numTok) {
       out += `<span class="tm-num">${escapeHtml(numTok)}</span>`;
     } else if (fnTok) {
-      if (fnTok === 'pi') out += `<span class="tm-const">&pi;</span>`;
-      else if (fnTok === 'inf') out += `<span class="tm-const">&infin;</span>`;
-      else if (fnTok === 'lim') out += `<span class="tm-fn">${escapeHtml(fnTok)}</span>`;
-      else out += `<span class="tm-fn">${escapeHtml(fnTok)}</span>`;
+      const cleanFn = fnTok.startsWith(':') ? fnTok.slice(1) : fnTok;
+      if (cleanFn === 'pi') out += `<span class="tm-const">&pi;</span>`;
+      else if (cleanFn === 'inf') out += `<span class="tm-const">&infin;</span>`;
+      else if (cleanFn === 'lim') out += `<span class="tm-fn">${escapeHtml(cleanFn)}</span>`;
+      else out += `<span class="tm-fn">${escapeHtml(cleanFn)}</span>`;
     } else if (cmdTok) {
       out += `<span class="doc-literal-cmd">${escapeHtml(cmdTok)}</span>`;
     } else if (identTok) {
@@ -689,9 +691,10 @@ function tokenizeAndRenderMath(str: string, options: TypesetOptions): string {
       } else {
         out += `<span class="tm-var">${escapeHtml(identTok)}</span>`;
       }
+    } else if (primeTok) {
+      out += `<span class="tm-prime">${'&prime;'.repeat(primeTok.length)}</span>`;
     } else if (puncTok) {
-      if (puncTok === "'") out += `<span class="tm-prime">&prime;</span>`;
-      else if (puncTok === '(' || puncTok === ')') out += `<span class="tm-paren">${escapeHtml(puncTok)}</span>`;
+      if (puncTok === '(' || puncTok === ')') out += `<span class="tm-paren">${escapeHtml(puncTok)}</span>`;
       else if (puncTok === '[' || puncTok === ']') out += `<span class="tm-bracket">${escapeHtml(puncTok)}</span>`;
       else out += escapeHtml(puncTok);
     } else if (mathSymTok) {
@@ -745,12 +748,12 @@ function renderCodeShapedLine(rawLine: string): string {
 }
 
 function renderMathShapedLine(rawLine: string, options: TypesetOptions): string {
-  const tokenRegex = /(\s+)|("[^"]*"|'[^']*')|(d\/\/d[a-zA-Z][a-zA-Z0-9_]*|\b\u2202\/\/\u2202[a-zA-Z][a-zA-Z0-9_]*)|(-?\b\d+\s*(?:\/|\/\/)\s*\d+\b)|(\.\.)|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|\/\/|\/|&minus;|&sdot;)|(\b\d+(?:\.\d+)?\b)|(\b[a-zA-Z][a-zA-Z0-9_]*\b)|([()\[\],'{}:.])|([\u2200-\u23FF\u27C0-\u27EF\u2980-\u2AFF\u2016\u2020\u00B7\u2100-\u214F\u0370-\u03FF])/g;
+  const tokenRegex = /(\s+)|("[^"]*")|(d\/\/d[a-zA-Z][a-zA-Z0-9_]*|\b\u2202\/\/\u2202[a-zA-Z][a-zA-Z0-9_]*)|(-?\b\d+\s*(?:\/|\/\/)\s*\d+\b)|(\.\.)|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|\/\/|\/|&minus;|&sdot;)|(\d+(?:\.\d+)?)|([a-zA-Z][a-zA-Z0-9_]*)|(\x27+)|([()\[\],{}:.])|([\u2200-\u23FF\u27C0-\u27EF\u2980-\u2AFF\u2016\u2020\u00B7\u2100-\u214F\u0370-\u03FF])/g;
 
   let out = '';
   let match: RegExpExecArray | null;
   while ((match = tokenRegex.exec(rawLine)) !== null) {
-    const [, wsTok, strTok, diffTok, fracTok, dotDotTok, supTok, deltaTok, entityTok, relTok, binTok, numTok, identTok, puncTok, mathSymTok] = match;
+    const [, wsTok, strTok, diffTok, fracTok, dotDotTok, supTok, deltaTok, entityTok, relTok, binTok, numTok, identTok, primeTok, puncTok, mathSymTok] = match;
 
     if (wsTok) {
       out += wsTok;
@@ -801,9 +804,10 @@ function renderMathShapedLine(rawLine: string, options: TypesetOptions): string 
       else if (identTok === 'inf') out += `<span class="tm-const">&infin;</span>`;
       else if (mathFns.has(identTok)) out += `<span class="tm-fn">${escapeHtml(identTok)}</span>`;
       else out += `<span class="tm-var">${escapeHtml(identTok)}</span>`;
+    } else if (primeTok) {
+      out += `<span class="tm-prime">${'&prime;'.repeat(primeTok.length)}</span>`;
     } else if (puncTok) {
-      if (puncTok === "'") out += `<span class="tm-prime">&prime;</span>`;
-      else if (puncTok === '(' || puncTok === ')') out += `<span class="tm-paren">${escapeHtml(puncTok)}</span>`;
+      if (puncTok === '(' || puncTok === ')') out += `<span class="tm-paren">${escapeHtml(puncTok)}</span>`;
       else if (puncTok === '[' || puncTok === ']') out += `<span class="tm-bracket">${escapeHtml(puncTok)}</span>`;
       else out += escapeHtml(puncTok);
     } else if (mathSymTok) {

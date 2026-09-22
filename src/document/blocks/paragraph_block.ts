@@ -28,6 +28,7 @@ export class ParagraphBlockComponent {
   private autocomplete: AutocompleteController | null = null;
   private isEditing: boolean = false;
   private isSelected: boolean = false;
+  private blurTimer: any = null;
 
   constructor(block: DocumentBlock, options: ParagraphBlockOptions = {}) {
     this.block = block;
@@ -271,14 +272,35 @@ export class ParagraphBlockComponent {
       }
       // 4. Heading: # a heading
       if (val.startsWith("# ") || val.startsWith("## ") || val.startsWith("### ")) {
+        if (this.blurTimer) {
+          clearTimeout(this.blurTimer);
+          this.blurTimer = null;
+        }
+        this.isEditing = false;
         this.options.onRequestTransform?.(this.block.id, "heading", val, caret);
         return;
       }
-      // 5. Equation: e.g. "x = 5" or ":var := 10" or "y'' + 4y' + 13y = 0"
-      const classified = classifyBlockType(trimmed);
-      if (classified === "equation" && trimmed !== "") {
-        this.options.onRequestTransform?.(this.block.id, "equation", val, caret);
+      // 5. Explicit equation triggers: \eq or $$
+      if (trimmed === "\\eq" || trimmed === "$$") {
+        if (this.blurTimer) {
+          clearTimeout(this.blurTimer);
+          this.blurTimer = null;
+        }
+        this.isEditing = false;
+        this.options.onRequestTransform?.(this.block.id, "equation", "", 0);
         return;
+      }
+      if (/(:=|=|<=|>=|!=|<|>)/.test(trimmed)) {
+        const classified = classifyBlockType(trimmed);
+        if (classified === "equation" && trimmed !== "") {
+          if (this.blurTimer) {
+            clearTimeout(this.blurTimer);
+            this.blurTimer = null;
+          }
+          this.isEditing = false;
+          this.options.onRequestTransform?.(this.block.id, "equation", val, caret);
+          return;
+        }
       }
 
       this.block.source = this.textarea.value;
@@ -303,6 +325,7 @@ export class ParagraphBlockComponent {
         if (classified !== "paragraph" && trimmed !== "") {
           e.preventDefault();
           this.options.onRequestTransform?.(this.block.id, classified, val);
+          this.options.onStepNext?.();
           return;
         }
         e.preventDefault();
@@ -361,7 +384,11 @@ export class ParagraphBlockComponent {
       if (e.relatedTarget && (e.relatedTarget as HTMLElement).closest(".doc-autocomplete-popover")) {
         return;
       }
-      setTimeout(() => {
+      if (this.blurTimer) {
+        clearTimeout(this.blurTimer);
+      }
+      this.blurTimer = setTimeout(() => {
+        this.blurTimer = null;
         if (this.isEditing && (!this.autocomplete || !this.autocomplete.getIsOpen())) {
           this.exitEditMode(true);
         }
@@ -385,6 +412,10 @@ export class ParagraphBlockComponent {
   }
 
   public exitEditMode(commit: boolean = true) {
+    if (this.blurTimer) {
+      clearTimeout(this.blurTimer);
+      this.blurTimer = null;
+    }
     if (!this.isEditing) return;
     this.isEditing = false;
 
@@ -392,6 +423,20 @@ export class ParagraphBlockComponent {
       const newSource = this.textarea.value;
       if (newSource !== this.block.source) {
         this.block.source = newSource;
+        const trimmed = newSource.trim();
+        const classified = classifyBlockType(trimmed);
+        if (classified === "equation" && trimmed !== "") {
+          if (this.textarea) {
+            this.el.removeChild(this.textarea);
+            this.textarea = null;
+          }
+          if (this.autocomplete) {
+            this.autocomplete.dispose();
+            this.autocomplete = null;
+          }
+          this.options.onRequestTransform?.(this.block.id, "equation", newSource);
+          return;
+        }
         this.options.onCommit?.(this.block.id, newSource);
       }
     }
@@ -415,7 +460,7 @@ export class ParagraphBlockComponent {
     this.isSelected = selected;
     if (selected) {
       this.el.classList.add("selected");
-      if (typeof this.el.focus === "function") {
+      if (!this.isEditing && typeof this.el.focus === "function") {
         this.el.focus();
       }
     } else {
@@ -436,6 +481,11 @@ export class ParagraphBlockComponent {
   }
 
   public dispose() {
+    this.isEditing = false;
+    if (this.blurTimer) {
+      clearTimeout(this.blurTimer);
+      this.blurTimer = null;
+    }
     if (this.autocomplete) {
       this.autocomplete.dispose();
       this.autocomplete = null;

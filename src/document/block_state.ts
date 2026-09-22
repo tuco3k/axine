@@ -5,18 +5,22 @@
  * and state invalidation (stale/error/verified).
  */
 
-import { DocumentModel, DocumentBlock, BlockType, parseAxDocument, serializeAxDocument, extractDefinedSymbol, extractReferencedSymbols, classifyBlockType } from "./block_model";
+import { DocumentModel, DocumentBlock, BlockType, parseAxDocument, serializeAxDocument, extractDefinedSymbol, extractReferencedSymbols } from "./block_model";
 
 export type BlockStateListener = (model: DocumentModel) => void;
 
 export class BlockState {
   private model: DocumentModel;
-  private listeners: Set<BlockStateListener> = new Set();
+  private listeners: BlockStateListener[] = [];
   private symbolDefinitions: Map<string, string> = new Map(); // symbol -> blockId
   private symbolDependencies: Map<string, Set<string>> = new Map(); // symbol -> Set<blockId>
 
-  constructor(initialText: string = "") {
-    this.model = parseAxDocument(initialText);
+  constructor(initialDocumentOrModel: string | DocumentModel) {
+    if (typeof initialDocumentOrModel === "string") {
+      this.model = parseAxDocument(initialDocumentOrModel);
+    } else {
+      this.model = initialDocumentOrModel;
+    }
     this.rebuildSymbolGraphs();
   }
 
@@ -43,13 +47,19 @@ export class BlockState {
   }
 
   public subscribe(listener: BlockStateListener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter(l => l !== listener);
+    };
   }
 
   private notify() {
-    for (const l of this.listeners) {
-      l(this.model);
+    for (const listener of this.listeners) {
+      try {
+        listener(this.model);
+      } catch (err) {
+        console.error("BlockState listener error:", err);
+      }
     }
   }
 
@@ -62,11 +72,11 @@ export class BlockState {
         this.symbolDefinitions.set(b.definedSymbol, b.id);
       }
       if (b.referencedSymbols) {
-        for (const sym of b.referencedSymbols) {
-          let set = this.symbolDependencies.get(sym);
+        for (const ref of b.referencedSymbols) {
+          let set = this.symbolDependencies.get(ref);
           if (!set) {
             set = new Set();
-            this.symbolDependencies.set(sym, set);
+            this.symbolDependencies.set(ref, set);
           }
           set.add(b.id);
         }
@@ -81,14 +91,9 @@ export class BlockState {
     this.notify();
   }
 
-  public updateBlock(id: string, newSource: string): { typeChanged: boolean; oldType: BlockType; newType: BlockType } | undefined {
+  public updateBlock(id: string, newSource: string): void {
     const b = this.getBlock(id);
-    if (!b) return undefined;
-
-    const oldType = b.type;
-    const newType = classifyBlockType(newSource);
-    const typeChanged = oldType !== newType;
-    b.type = newType;
+    if (!b) return;
 
     const oldDef = b.definedSymbol;
     b.source = newSource;
@@ -130,7 +135,6 @@ export class BlockState {
     }
 
     this.notify();
-    return { typeChanged, oldType, newType };
   }
 
   public deleteBlock(id: string) {

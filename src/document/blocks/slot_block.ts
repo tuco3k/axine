@@ -274,7 +274,7 @@ export class SlotBlockComponent {
     this.isSelected = selected;
     if (selected) {
       this.el.classList.add("selected");
-      if (typeof this.el.focus === "function") {
+      if (!this.isEditing && typeof this.el.focus === "function") {
         this.el.focus();
       }
     } else {

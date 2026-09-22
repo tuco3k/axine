@@ -35,6 +35,7 @@ export class EquationBlockComponent {
   private autocomplete: AutocompleteController | null = null;
   private isEditing: boolean = false;
   private isSelected: boolean = false;
+  private blurTimer: any = null;
 
   constructor(block: DocumentBlock, options: EquationBlockOptions = {}) {
     this.block = block;
@@ -143,9 +144,8 @@ export class EquationBlockComponent {
       mfEl = document.createElement("math-field") as any;
       mfEl.className = "doc-block-source-input doc-equation-mathfield";
       mfEl.mathVirtualKeyboardPolicy = "manual";
-      mfEl.menuItems = [];
-      mfEl.value = axineToLatex(this.block.source);
       this.editorContainer.appendChild(mfEl);
+      mfEl.value = axineToLatex(this.block.source);
     } catch {
       mfEl = null;
     }
@@ -179,30 +179,32 @@ export class EquationBlockComponent {
       }
     });
 
-    const target: AutocompleteTarget = {
-      getValue: () => (mfEl ? latexToAxine(mfEl.value) : this.textarea?.value || ""),
+    const mfTarget: AutocompleteTarget = {
+      getValue: () => (mfEl ? latexToAxine(mfEl.value) : ""),
       setValue: (v: string) => {
+        if (mfEl) {
+          mfEl.value = axineToLatex(v);
+        }
         if (this.textarea) {
           this.textarea.value = v;
           this.textarea.rows = Math.max(1, v.split("\n").length);
-        }
-        if (mfEl) {
-          mfEl.value = axineToLatex(v);
         }
         this.block.source = v;
         this.options.onCommit?.(this.block.id, v);
       },
       getSelectionStart: () => {
-        if (mfEl && typeof mfEl.position === "number") return mfEl.position;
-        return this.textarea?.selectionStart || 0;
+        if (mfEl && typeof mfEl.position === "number") {
+          return mfEl.position;
+        }
+        return 0;
       },
-      setSelection: (s: number, e: number) => {
+      setSelection: (s: number, _e: number) => {
         if (mfEl && typeof mfEl.position === "number") {
           mfEl.position = s;
         }
         if (this.textarea) {
           this.textarea.selectionStart = s;
-          this.textarea.selectionEnd = e;
+          this.textarea.selectionEnd = s;
         }
       },
       getCaretCoordinates: () => {
@@ -218,6 +220,38 @@ export class EquationBlockComponent {
       },
     };
 
+    const taTarget: AutocompleteTarget = {
+      getValue: () => this.textarea?.value || "",
+      setValue: (v: string) => {
+        if (this.textarea) {
+          this.textarea.value = v;
+          this.textarea.rows = Math.max(1, v.split("\n").length);
+        }
+        if (mfEl) {
+          mfEl.value = axineToLatex(v);
+        }
+        this.block.source = v;
+        this.options.onCommit?.(this.block.id, v);
+      },
+      getSelectionStart: () => {
+        if (!this.textarea) return 0;
+        return this.textarea.selectionStart || this.textarea.value.length;
+      },
+      setSelection: (s: number, e: number) => {
+        if (this.textarea) {
+          this.textarea.selectionStart = s;
+          this.textarea.selectionEnd = e;
+        }
+        if (mfEl && typeof mfEl.position === "number") {
+          mfEl.position = s;
+        }
+      },
+      getCaretCoordinates: () => {
+        const containerRect = this.editorContainer.getBoundingClientRect();
+        return { x: 0, y: Math.max(28, containerRect.height) };
+      },
+    };
+
     if (mfEl) {
       mfEl.addEventListener("input", () => {
         const latex = mfEl.value;
@@ -228,10 +262,12 @@ export class EquationBlockComponent {
         }
         this.block.source = axine;
         this.options.onCommit?.(this.block.id, axine);
+        this.autocomplete?.checkPrefix(mfTarget);
       });
 
       // Boundary Seam Crossing via MathLive move-out
       mfEl.addEventListener("move-out", (e: any) => {
+        if (!this.isEditing) return;
         const dir = e.detail?.direction;
         if (dir === "forward" || dir === "downward") {
           this.exitEditMode(true);
@@ -243,7 +279,8 @@ export class EquationBlockComponent {
       });
 
       mfEl.addEventListener("keydown", (e: KeyboardEvent) => {
-        if (this.autocomplete && this.autocomplete.handleKeydown(e, target)) {
+        if (!this.isEditing) return;
+        if (this.autocomplete && this.autocomplete.handleKeydown(e, mfTarget)) {
           e.stopPropagation();
           return;
         }
@@ -256,6 +293,28 @@ export class EquationBlockComponent {
           e.stopPropagation();
           this.exitEditMode(true);
           this.options.onStepNext?.();
+        } else if (e.key === "ArrowDown") {
+          const oldPos = mfEl.position;
+          if (typeof mfEl.executeCommand === "function") {
+            mfEl.executeCommand("moveDown");
+          }
+          if (this.isEditing && mfEl.position === oldPos) {
+            e.preventDefault();
+            e.stopPropagation();
+            this.exitEditMode(true);
+            this.options.onStepNext?.();
+          }
+        } else if (e.key === "ArrowUp") {
+          const oldPos = mfEl.position;
+          if (typeof mfEl.executeCommand === "function") {
+            mfEl.executeCommand("moveUp");
+          }
+          if (this.isEditing && mfEl.position === oldPos) {
+            e.preventDefault();
+            e.stopPropagation();
+            this.exitEditMode(true);
+            this.options.onStepPrev?.();
+          }
         } else if (e.key === "Backspace" && (!mfEl.value || mfEl.value.trim() === "")) {
           e.preventDefault();
           e.stopPropagation();
@@ -277,14 +336,19 @@ export class EquationBlockComponent {
           mfEl.value = axineToLatex(val);
         }
         this.block.source = val;
+        const trimmed = val.trim();
+        if (/\b[a-zA-Z]{2,}\s+[a-zA-Z]{2,}\b/.test(trimmed)) {
+          this.options.onRequestTransform?.(this.block.id, "paragraph", val, this.textarea.selectionStart);
+          return;
+        }
         this.options.onCommit?.(this.block.id, val);
       }
-      this.autocomplete?.checkPrefix(target);
+      this.autocomplete?.checkPrefix(taTarget);
     });
 
     this.textarea.addEventListener("keydown", (e: KeyboardEvent) => {
       e.stopPropagation();
-      if (this.autocomplete && this.autocomplete.handleKeydown(e, target)) {
+      if (this.autocomplete && this.autocomplete.handleKeydown(e, taTarget)) {
         return;
       }
       if (e.key === "Escape") {
@@ -294,6 +358,44 @@ export class EquationBlockComponent {
         e.preventDefault();
         this.exitEditMode(true);
         this.options.onStepNext?.();
+      } else if (e.key === "ArrowDown") {
+        if (!this.textarea) return;
+        const val = this.textarea.value;
+        const selStart = this.textarea.selectionStart;
+        const textAfter = val.substring(selStart);
+        if (!textAfter.includes("\n")) {
+          e.stopPropagation();
+          e.preventDefault();
+          this.exitEditMode(true);
+          this.options.onStepNext?.();
+        }
+      } else if (e.key === "ArrowUp") {
+        if (!this.textarea) return;
+        const val = this.textarea.value;
+        const selStart = this.textarea.selectionStart;
+        const textBefore = val.substring(0, selStart);
+        if (!textBefore.includes("\n")) {
+          e.stopPropagation();
+          e.preventDefault();
+          this.exitEditMode(true);
+          this.options.onStepPrev?.();
+        }
+      } else if (e.key === "ArrowRight") {
+        if (!this.textarea) return;
+        if (this.textarea.selectionStart === this.textarea.value.length && this.textarea.selectionEnd === this.textarea.value.length) {
+          e.stopPropagation();
+          e.preventDefault();
+          this.exitEditMode(true);
+          this.options.onStepNext?.();
+        }
+      } else if (e.key === "ArrowLeft") {
+        if (!this.textarea) return;
+        if (this.textarea.selectionStart === 0 && this.textarea.selectionEnd === 0) {
+          e.stopPropagation();
+          e.preventDefault();
+          this.exitEditMode(true);
+          this.options.onStepPrev?.();
+        }
       } else if (e.key === "Backspace" && this.textarea) {
         if (this.textarea.value === "") {
           e.preventDefault();
@@ -303,24 +405,37 @@ export class EquationBlockComponent {
     });
 
     const blurHandler = (e: FocusEvent) => {
-      if (e.relatedTarget && (e.relatedTarget as HTMLElement).closest(".doc-autocomplete-popover")) {
+      if (e.relatedTarget && (
+        (e.relatedTarget as HTMLElement).closest(".doc-autocomplete-popover") ||
+        this.editorContainer.contains(e.relatedTarget as Node)
+      )) {
         return;
       }
-      setTimeout(() => {
-        if (this.isEditing && !this.autocomplete?.getIsOpen()) {
-          this.exitEditMode(true);
+      if (this.blurTimer) {
+        clearTimeout(this.blurTimer);
+      }
+      this.blurTimer = setTimeout(() => {
+        this.blurTimer = null;
+        if (!this.isEditing) return;
+        if (this.autocomplete?.getIsOpen()) return;
+        if (typeof document !== "undefined" && document.activeElement && this.editorContainer.contains(document.activeElement)) {
+          return;
         }
+        this.exitEditMode(true);
       }, 150);
     };
 
     if (mfEl) {
-      mfEl.addEventListener("blur", blurHandler);
+      mfEl.addEventListener("focusout", blurHandler);
+    } else {
+      this.textarea.addEventListener("blur", blurHandler);
     }
-    this.textarea.addEventListener("blur", blurHandler);
 
     // Focus and position caret
+    const scrollX = typeof window !== "undefined" ? window.scrollX : 0;
+    const scrollY = typeof window !== "undefined" ? window.scrollY : 0;
     if (mfEl && typeof mfEl.focus === "function") {
-      mfEl.focus();
+      mfEl.focus({ preventScroll: true });
       if (typeof caretPosition === "object" && caretPosition !== null && "x" in caretPosition) {
         if (typeof mfEl.getOffsetFromPoint === "function") {
           const offset = mfEl.getOffsetFromPoint(caretPosition.x, caretPosition.y);
@@ -337,21 +452,36 @@ export class EquationBlockComponent {
           mfEl.executeCommand("moveToMathfieldEnd");
         }
       }
-    } else {
-      this.textarea.focus();
+    } else if (this.textarea) {
+      this.textarea.focus({ preventScroll: true });
       const targetOffset = typeof caretPosition === "number" ? caretPosition : this.textarea.value.length;
       if (typeof this.textarea.setSelectionRange === "function") {
         this.textarea.setSelectionRange(targetOffset, targetOffset);
       }
     }
+    if (typeof window !== "undefined" && (window.scrollY !== scrollY || window.scrollX !== scrollX)) {
+      window.scrollTo(scrollX, scrollY);
+    }
   }
 
   public exitEditMode(commit: boolean = true) {
+    if (this.blurTimer) {
+      clearTimeout(this.blurTimer);
+      this.blurTimer = null;
+    }
     if (!this.isEditing) return;
     this.isEditing = false;
 
-    if (commit && this.textarea) {
-      const newSource = this.textarea.value;
+    if (commit) {
+      let newSource = this.block.source;
+      const mfEl = this.editorContainer.querySelector("math-field") as any;
+      if (this.textarea && this.textarea.value !== this.block.source) {
+        newSource = this.textarea.value;
+      } else if (mfEl && typeof mfEl.value === "string" && mfEl.value.trim() !== "") {
+        newSource = latexToAxine(mfEl.value);
+      } else if (this.textarea) {
+        newSource = this.textarea.value;
+      }
       if (newSource !== this.block.source) {
         this.block.source = newSource;
         this.options.onCommit?.(this.block.id, newSource);
@@ -377,7 +507,9 @@ export class EquationBlockComponent {
     this.isSelected = selected;
     if (selected) {
       this.el.classList.add("selected");
-      this.el.focus();
+      if (!this.isEditing && typeof this.el.focus === "function") {
+        this.el.focus();
+      }
     } else {
       this.el.classList.remove("selected");
     }
@@ -403,6 +535,11 @@ export class EquationBlockComponent {
   }
 
   public dispose() {
+    this.isEditing = false;
+    if (this.blurTimer) {
+      clearTimeout(this.blurTimer);
+      this.blurTimer = null;
+    }
     if (this.autocomplete) {
       this.autocomplete.dispose();
       this.autocomplete = null;
