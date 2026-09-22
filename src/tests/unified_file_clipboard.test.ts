@@ -268,4 +268,152 @@ describe("Unified File Presentation & Clipboard Processing Gate", () => {
     expect(result.hasHeading).toBe(true);
     expect(result.hasODE).toBe(true);
   });
+
+  it("moves through text boxes backwards when holding delete on empty box", async () => {
+    const result = await page.evaluate(async () => {
+      const mod = await (window as any).eval('import("/src/document/block_editor.ts")');
+      const { BlockDocumentEditor } = mod;
+
+      const initialDoc = "# Section 1\ny = 2x + 1\nFinal note";
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      const editor = new BlockDocumentEditor(container, initialDoc);
+
+      const initialCount = editor.getBlocks().length;
+
+      // 1. Enter edit mode on last block (paragraph)
+      const lastBlock = editor.getBlocks()[initialCount - 1];
+      const lastComp = editor.getComponent(lastBlock.id);
+      lastComp.enterEditMode();
+
+      // Simulate deleting all text on paragraph
+      const ta = lastComp.el.querySelector("textarea") as HTMLTextAreaElement;
+      ta.value = "";
+
+      // Dispatch Backspace (holding delete without shift)
+      const bsEvt1 = new KeyboardEvent("keydown", { key: "Backspace", shiftKey: false, bubbles: true, cancelable: true });
+      ta.dispatchEvent(bsEvt1);
+
+      // Paragraph should be deleted, now initialCount - 1 blocks left
+      const countAfter1 = editor.getBlocks().length;
+      const activeBlockAfter1 = editor.getSelectedBlockId();
+      const eqBlock = editor.getBlocks()[countAfter1 - 1];
+      const eqComp = editor.getComponent(eqBlock.id);
+      const isEqEditing = eqComp.getIsEditing();
+
+      // Clear equation and dispatch Backspace again without shift
+      if (eqComp.mfEl) {
+        eqComp.mfEl.value = "";
+      } else if (eqComp.textarea) {
+        eqComp.textarea.value = "";
+      }
+      const activeEl = eqComp.mfEl || eqComp.textarea || eqComp.el;
+      const bsEvt2 = new KeyboardEvent("keydown", { key: "Backspace", shiftKey: false, bubbles: true, cancelable: true });
+      activeEl.dispatchEvent(bsEvt2);
+
+      // Equation should be deleted, only heading remains and is in edit mode
+      const countAfter2 = editor.getBlocks().length;
+      const headingBlock = editor.getBlocks()[0];
+      const headingComp = editor.getComponent(headingBlock.id);
+      const isHeadingEditing = headingComp.getIsEditing();
+
+      editor.dispose();
+      document.body.removeChild(container);
+
+      return {
+        initialCount,
+        countAfter1,
+        activeBlockAfter1,
+        eqBlockId: eqBlock.id,
+        isEqEditing,
+        countAfter2,
+        isHeadingEditing,
+      };
+    });
+
+    expect(result.countAfter1).toBe(result.initialCount - 1);
+    expect(result.activeBlockAfter1).toBe(result.eqBlockId);
+    expect(result.isEqEditing).toBe(true);
+    expect(result.countAfter2).toBe(result.initialCount - 2);
+    expect(result.isHeadingEditing).toBe(true);
+  });
+
+  it("stops at the start of the block and does not delete or go to previous line when shift is held", async () => {
+    const result = await page.evaluate(async () => {
+      const mod = await (window as any).eval('import("/src/document/block_editor.ts")');
+      const { BlockDocumentEditor } = mod;
+
+      const initialDoc = "# Section 1\nParagraph text";
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      const editor = new BlockDocumentEditor(container, initialDoc);
+
+      const initialCount = editor.getBlocks().length;
+      const paraBlock = editor.getBlocks()[initialCount - 1];
+      const comp = editor.getComponent(paraBlock.id);
+      comp.enterEditMode();
+
+      const ta = comp.el.querySelector("textarea") as HTMLTextAreaElement;
+      ta.value = "";
+
+      // Dispatch Shift+Backspace
+      const shiftBsEvt = new KeyboardEvent("keydown", { key: "Backspace", shiftKey: true, bubbles: true, cancelable: true });
+      ta.dispatchEvent(shiftBsEvt);
+
+      // Block count must still be unchanged (stopped before going to previous line)
+      const countAfter = editor.getBlocks().length;
+      const isStillEditing = comp.getIsEditing();
+
+      editor.dispose();
+      document.body.removeChild(container);
+
+      return {
+        initialCount,
+        countAfter,
+        isStillEditing,
+      };
+    });
+
+    expect(result.countAfter).toBe(result.initialCount);
+    expect(result.isStillEditing).toBe(true);
+  });
+
+  it("maintains highlighting when letting go of mouse (mouseup) until the next mouse click", async () => {
+    const result = await page.evaluate(async () => {
+      const mod = await (window as any).eval('import("/src/document/block_editor.ts")');
+      const { BlockDocumentEditor } = mod;
+
+      const initialDoc = "# Heading\n\nParagraph 1\n\nParagraph 2\n\nParagraph 3";
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      const editor = new BlockDocumentEditor(container, initialDoc);
+
+      // Start drag on block 1
+      editor.selectRange(1, 2);
+      const initialSelectedCount = editor.pageSheet.querySelectorAll(".doc-block-range-selected").length;
+
+      // Simulate mouseup (letting go of what you are highlighting)
+      window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      const afterMouseUpSelectedCount = editor.pageSheet.querySelectorAll(".doc-block-range-selected").length;
+
+      // Simulate the next mouse click outside the selection
+      const nextClickEvt = new MouseEvent("click", { bubbles: true, cancelable: true });
+      editor.container.dispatchEvent(nextClickEvt);
+      const afterNextClickSelectedCount = editor.pageSheet.querySelectorAll(".doc-block-range-selected").length;
+
+      editor.dispose();
+      document.body.removeChild(container);
+
+      return {
+        initialSelectedCount,
+        afterMouseUpSelectedCount,
+        afterNextClickSelectedCount,
+      };
+    });
+
+    expect(result.initialSelectedCount).toBe(2);
+    expect(result.afterMouseUpSelectedCount).toBe(2); // Stays highlighted after letting go
+    expect(result.afterNextClickSelectedCount).toBe(0); // Cleared on next mouse click
+  });
 });
+

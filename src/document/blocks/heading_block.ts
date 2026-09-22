@@ -13,7 +13,7 @@ export interface HeadingBlockOptions {
   onStepNext?: () => void;
   onStepPrev?: () => void;
   onRequestTransform?: (blockId: string, targetType: BlockType, source: string, caretOffset?: number) => void;
-  onDeleteRequest?: (blockId: string) => void;
+  onDeleteRequest?: (blockId: string, direction?: "prev" | "next") => void;
   onRequestSelectAll?: () => void;
   clickToEdit?: boolean;
 }
@@ -186,9 +186,13 @@ export class HeadingBlockComponent {
         e.preventDefault();
         this.exitEditMode(true);
         this.options.onStepPrev?.();
-      } else if (e.key === "Backspace" && this.input && this.input.value === "") {
+      } else if ((e.key === "Backspace" || e.key === "Delete") && this.input && (this.input.value === "" || this.input.value === "#" || this.input.value === "##" || this.input.value === "###")) {
         e.preventDefault();
-        this.options.onDeleteRequest?.(this.block.id);
+        e.stopPropagation();
+        if (!e.shiftKey) {
+          this.exitEditMode(false);
+          this.options.onDeleteRequest?.(this.block.id, "prev");
+        }
       }
     });
 

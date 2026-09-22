@@ -16,7 +16,7 @@ import { SpaceViewport } from "../../plot/space_viewport";
 export interface FigureBlockOptions {
   onSelect?: (blockId: string) => void;
   onNavigateToSource?: (symbolName: string) => void;
-  onDeleteRequest?: (blockId: string) => void;
+  onDeleteRequest?: (blockId: string, direction?: "prev" | "next") => void;
   onStepNext?: () => void;
   onStepPrev?: () => void;
   onCommit?: (blockId: string, newSource: string) => void;
@@ -160,17 +160,11 @@ export class FigureBlockComponent {
           this.options.onStepPrev?.();
           return;
         }
-        if (e.key === "Delete") {
+        if (e.key === "Delete" || e.key === "Backspace") {
           e.preventDefault();
-          this.options.onDeleteRequest?.(this.block.id);
-          return;
-        }
-        if (e.key === "Backspace") {
-          e.preventDefault();
-          if (this.options.onRequestTransform) {
-            this.options.onRequestTransform(this.block.id, "paragraph", "", 0);
-          } else {
-            this.options.onDeleteRequest?.(this.block.id);
+          e.stopPropagation();
+          if (!e.shiftKey) {
+            this.options.onDeleteRequest?.(this.block.id, "prev");
           }
           return;
         }

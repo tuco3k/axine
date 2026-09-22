@@ -42,6 +42,8 @@ export class BlockDocumentEditor {
   private selectedRange: [number, number] | null = null;
   private isMouseDownOnSheet: boolean = false;
   private dragStartIdx: number | null = null;
+  private hasDraggedAcrossBlocks: boolean = false;
+  private suppressNextClick: boolean = false;
   private options: BlockEditorOptions;
 
   constructor(container: HTMLElement, initialText: string = "", options: BlockEditorOptions = {}) {
@@ -101,7 +103,7 @@ export class BlockDocumentEditor {
         onStepPrev: () => this.stepPrev(block.id),
         onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
         onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
-        onDeleteRequest: (id: string) => this.deleteBlock(id),
+        onDeleteRequest: (id: string, dir: "prev" | "next" = "prev") => this.deleteBlock(id, dir),
         onRequestSelectAll: () => this.selectAll(),
         isOnlyBlock: this.model.blocks.length === 1,
       });
@@ -114,7 +116,7 @@ export class BlockDocumentEditor {
         onStepNext: () => this.stepNext(block.id),
         onStepPrev: () => this.stepPrev(block.id),
         onNavigateToSource: (sym: string) => this.navigateToSource(sym),
-        onDeleteRequest: (id: string) => this.deleteBlock(id),
+        onDeleteRequest: (id: string, dir: "prev" | "next" = "prev") => this.deleteBlock(id, dir),
         onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
         onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
       });
@@ -127,7 +129,7 @@ export class BlockDocumentEditor {
         onStepNext: () => this.stepNext(block.id),
         onStepPrev: () => this.stepPrev(block.id),
         onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
-        onDeleteRequest: (id: string) => this.deleteBlock(id),
+        onDeleteRequest: (id: string, dir: "prev" | "next" = "prev") => this.deleteBlock(id, dir),
         onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
         onRequestSelectAll: () => this.selectAll(),
         clickToEdit: true,
@@ -141,7 +143,7 @@ export class BlockDocumentEditor {
         onStepNext: () => this.stepNext(block.id),
         onStepPrev: () => this.stepPrev(block.id),
         onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
-        onDeleteRequest: (id: string) => this.deleteBlock(id),
+        onDeleteRequest: (id: string, dir: "prev" | "next" = "prev") => this.deleteBlock(id, dir),
         onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
         onRequestSelectAll: () => this.selectAll(),
         clickToEdit: true,
@@ -155,7 +157,7 @@ export class BlockDocumentEditor {
         onStepNext: () => this.stepNext(block.id),
         onStepPrev: () => this.stepPrev(block.id),
         onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
-        onDeleteRequest: (id: string) => this.deleteBlock(id),
+        onDeleteRequest: (id: string, dir: "prev" | "next" = "prev") => this.deleteBlock(id, dir),
         onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
         onRequestSelectAll: () => this.selectAll(),
         clickToEdit: true,
@@ -170,7 +172,7 @@ export class BlockDocumentEditor {
       onStepPrev: () => this.stepPrev(block.id),
       onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
       onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
-      onDeleteRequest: (id: string) => this.deleteBlock(id),
+      onDeleteRequest: (id: string, dir: "prev" | "next" = "prev") => this.deleteBlock(id, dir),
       onRequestSelectAll: () => this.selectAll(),
       isOnlyBlock: this.model.blocks.length === 1,
     });
@@ -257,27 +259,35 @@ export class BlockDocumentEditor {
   }
 
   /**
-   * Delete a block from the document
+   * Delete a block from the document and navigate smoothly
    */
-  public deleteBlock(blockId: string): void {
+  public deleteBlock(blockId: string, direction: "prev" | "next" = "prev"): void {
     const idx = this.model.blocks.findIndex((b) => b.id === blockId);
     if (idx === -1) return;
 
     if (this.model.blocks.length === 1) {
       this.transformBlock(blockId, "paragraph", "");
+      const comp = this.blockComponents.get(blockId);
+      if (comp && "enterEditMode" in comp && typeof (comp as any).enterEditMode === "function") {
+        (comp as any).enterEditMode(0);
+      }
       return;
     }
 
-    const nextSelectId = idx + 1 < this.model.blocks.length
-      ? this.model.blocks[idx + 1].id
-      : (idx > 0 ? this.model.blocks[idx - 1].id : null);
+    const targetId = direction === "prev"
+      ? (idx > 0 ? this.model.blocks[idx - 1].id : (idx + 1 < this.model.blocks.length ? this.model.blocks[idx + 1].id : null))
+      : (idx + 1 < this.model.blocks.length ? this.model.blocks[idx + 1].id : (idx > 0 ? this.model.blocks[idx - 1].id : null));
 
     this.state.deleteBlock(blockId);
     this.model = this.state.getModel();
     this.renderAllBlocks();
 
-    if (nextSelectId) {
-      this.selectBlock(nextSelectId);
+    if (targetId) {
+      this.selectBlock(targetId);
+      const comp = this.blockComponents.get(targetId);
+      if (comp && "enterEditMode" in comp && typeof (comp as any).enterEditMode === "function") {
+        (comp as any).enterEditMode(direction === "prev" ? "end" : 0);
+      }
     }
     this.options.onChange?.(this.state.toText());
   }
@@ -507,10 +517,20 @@ export class BlockDocumentEditor {
   }
 
   private bindGlobalEvents(): void {
-    // Clicking empty space in container or page sheet activates the last block into edit mode
+    // Capture-phase click handler: suppress trailing click after drag selection,
+    // and deselect range on background click
     this.container.addEventListener("click", (e) => {
-      if (this.isAllSelected) {
-        this.deselectAll();
+      if (this.suppressNextClick) {
+        this.suppressNextClick = false;
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (this.isAllSelected || this.selectedRange) {
+        const target = e.target as HTMLElement;
+        if (!target.closest(".doc-block")) {
+          this.deselectAll();
+        }
       }
       if (e.target === this.container || e.target === this.pageSheet) {
         const lastBlock = this.model.blocks[this.model.blocks.length - 1];
@@ -522,13 +542,10 @@ export class BlockDocumentEditor {
           }
         }
       }
-    });
+    }, true);
 
-    // Mouse drag selection across multiple blocks
+    // Mouse drag selection across multiple blocks (capture phase)
     this.pageSheet.addEventListener("mousedown", (e) => {
-      if (this.isAllSelected) {
-        this.deselectAll();
-      }
       const blockEl = (e.target as HTMLElement).closest(".doc-block");
       if (blockEl) {
         const blockId = blockEl.getAttribute("data-block-id");
@@ -536,9 +553,10 @@ export class BlockDocumentEditor {
         if (idx !== -1) {
           this.dragStartIdx = idx;
           this.isMouseDownOnSheet = true;
+          this.hasDraggedAcrossBlocks = false;
         }
       }
-    });
+    }, true);
 
     window.addEventListener("mousemove", (e) => {
       if (!this.isMouseDownOnSheet || this.dragStartIdx === null) return;
@@ -548,6 +566,7 @@ export class BlockDocumentEditor {
         const blockId = blockEl.getAttribute("data-block-id");
         const currentIdx = this.model.blocks.findIndex((b) => b.id === blockId);
         if (currentIdx !== -1 && currentIdx !== this.dragStartIdx) {
+          this.hasDraggedAcrossBlocks = true;
           // Exit edit mode if any block was active
           if (this.selectedBlockId) {
             const comp = this.blockComponents.get(this.selectedBlockId);
@@ -555,14 +574,22 @@ export class BlockDocumentEditor {
               (comp as any).exitEditMode(false);
             }
           }
+          window.getSelection()?.removeAllRanges();
           this.selectRange(this.dragStartIdx, currentIdx);
         }
       }
     });
 
     window.addEventListener("mouseup", () => {
+      if (this.hasDraggedAcrossBlocks) {
+        this.suppressNextClick = true;
+        setTimeout(() => {
+          this.suppressNextClick = false;
+        }, 300);
+      }
       this.isMouseDownOnSheet = false;
       this.dragStartIdx = null;
+      this.hasDraggedAcrossBlocks = false;
     });
 
     // Global document copy handler (capture phase)

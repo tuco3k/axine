@@ -15,7 +15,7 @@ export interface ParagraphBlockOptions {
   onStepNext?: () => void;
   onStepPrev?: () => void;
   onRequestTransform?: (blockId: string, targetType: BlockType, source: string, caretOffset?: number) => void;
-  onDeleteRequest?: (blockId: string) => void;
+  onDeleteRequest?: (blockId: string, direction?: "prev" | "next") => void;
   onRequestSelectAll?: () => void;
   isOnlyBlock?: boolean;
 }
@@ -380,12 +380,15 @@ export class ParagraphBlockComponent {
           this.exitEditMode(true);
           this.options.onStepPrev?.();
         }
-      } else if (e.key === "Backspace") {
+      } else if (e.key === "Backspace" || e.key === "Delete") {
         if (!this.textarea) return;
         if (this.textarea.value === "") {
           e.stopPropagation();
           e.preventDefault();
-          this.options.onDeleteRequest?.(this.block.id);
+          if (!e.shiftKey) {
+            this.exitEditMode(false);
+            this.options.onDeleteRequest?.(this.block.id, "prev");
+          }
         }
       }
     });

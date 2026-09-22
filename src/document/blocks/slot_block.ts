@@ -18,7 +18,7 @@ export interface SlotBlockOptions {
   onCommit?: (blockId: string, newSource: string) => void;
   onStepNext?: () => void;
   onStepPrev?: () => void;
-  onDeleteRequest?: (blockId: string) => void;
+  onDeleteRequest?: (blockId: string, direction?: "prev" | "next") => void;
   onRequestTransform?: (blockId: string, targetType: BlockType, source: string, caretOffset?: number) => void;
   onRequestSelectAll?: () => void;
   clickToEdit?: boolean;
@@ -147,7 +147,12 @@ export class SlotBlockComponent {
     this.buildEditorScaffold();
 
     const slotIds = this.decl.getSlotIds(this.data);
-    const initialSlot = targetSlotId || slotIds[0];
+    let initialSlot = targetSlotId;
+    if (targetSlotId === "end") {
+      initialSlot = slotIds[slotIds.length - 1];
+    } else if (!initialSlot) {
+      initialSlot = slotIds[0];
+    }
     if (initialSlot) {
       this.focusSlot(initialSlot, false, caretOffset);
     }
@@ -218,12 +223,17 @@ export class SlotBlockComponent {
           } else {
             this.exitEditMode(true);
           }
-        } else if (e.key === "Backspace") {
+        } else if (e.key === "Backspace" || e.key === "Delete") {
           const slotIds = this.decl.getSlotIds(this.data);
           const isFirstSlot = slotId === slotIds[0];
-          if (isFirstSlot && input.selectionStart === 0 && input.selectionEnd === 0 && input.value === "") {
+          const allSlotsEmpty = slotIds.every((sid) => !this.data.slots[sid] || this.data.slots[sid].trim() === "");
+          if (allSlotsEmpty || (isFirstSlot && input.selectionStart === 0 && input.selectionEnd === 0 && input.value === "")) {
             e.preventDefault();
-            this.options.onRequestTransform?.(this.block.id, "paragraph", "", 0);
+            e.stopPropagation();
+            if (!e.shiftKey) {
+              this.exitEditMode(false);
+              this.options.onDeleteRequest?.(this.block.id, "prev");
+            }
             return;
           }
         }

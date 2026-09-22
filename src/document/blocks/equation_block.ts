@@ -20,7 +20,7 @@ export interface EquationBlockOptions {
   onCommit?: (blockId: string, newSource: string) => void;
   onStepNext?: () => void;
   onStepPrev?: () => void;
-  onDeleteRequest?: (blockId: string) => void;
+  onDeleteRequest?: (blockId: string, direction?: "prev" | "next") => void;
   onRequestTransform?: (blockId: string, targetType: BlockType, source: string, caretOffset?: number) => void;
   onRequestSelectAll?: () => void;
   clickToEdit?: boolean;
@@ -323,14 +323,12 @@ export class EquationBlockComponent {
             this.exitEditMode(true);
             this.options.onStepPrev?.();
           }
-        } else if (e.key === "Backspace" && (!mfEl.value || mfEl.value.trim() === "")) {
+        } else if ((e.key === "Backspace" || e.key === "Delete") && (!mfEl.value || mfEl.value.trim() === "" || mfEl.value === "$$" || mfEl.value === "\\placeholder{}")) {
           e.preventDefault();
           e.stopPropagation();
-          this.exitEditMode(false);
-          if (this.options.onRequestTransform) {
-            this.options.onRequestTransform(this.block.id, "paragraph", "", 0);
-          } else {
-            this.options.onDeleteRequest?.(this.block.id);
+          if (!e.shiftKey) {
+            this.exitEditMode(false);
+            this.options.onDeleteRequest?.(this.block.id, "prev");
           }
         }
       });
@@ -412,10 +410,14 @@ export class EquationBlockComponent {
           this.exitEditMode(true);
           this.options.onStepPrev?.();
         }
-      } else if (e.key === "Backspace" && this.textarea) {
+      } else if ((e.key === "Backspace" || e.key === "Delete") && this.textarea) {
         if (this.textarea.value === "") {
           e.preventDefault();
-          this.options.onRequestTransform?.(this.block.id, "paragraph", "", 0);
+          e.stopPropagation();
+          if (!e.shiftKey) {
+            this.exitEditMode(false);
+            this.options.onDeleteRequest?.(this.block.id, "prev");
+          }
         }
       }
     });
