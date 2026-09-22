@@ -12,6 +12,8 @@
 import { DocumentBlock, BlockType } from "../block_model";
 import { typesetMath } from "../../core/math_typeset";
 import { AutocompleteController, AutocompleteTarget } from "../autocomplete";
+import { axineToLatex, latexToAxine } from "../axine_latex_bridge";
+import "mathlive";
 
 export interface EquationBlockOptions {
   onSelect?: (blockId: string) => void;
@@ -29,7 +31,6 @@ export class EquationBlockComponent {
   private options: EquationBlockOptions;
   private renderedContainer: HTMLElement;
   private editorContainer: HTMLElement;
-  private liveTypesetEl: HTMLElement | null = null;
   private textarea: HTMLTextAreaElement | null = null;
   private autocomplete: AutocompleteController | null = null;
   private isEditing: boolean = false;
@@ -65,56 +66,6 @@ export class EquationBlockComponent {
     }
   }
 
-  private calculateCaretOffsetFromClick(e: MouseEvent): number | undefined {
-    if (typeof document === "undefined") return undefined;
-    if (document.caretRangeFromPoint) {
-      const range = document.caretRangeFromPoint(e.clientX, e.clientY);
-      if (range && this.renderedContainer.contains(range.startContainer)) {
-        let charCount = 0;
-        const walker = document.createTreeWalker(this.renderedContainer, NodeFilter.SHOW_TEXT);
-        let textNode: Node | null;
-        while ((textNode = walker.nextNode())) {
-          if (textNode === range.startContainer) {
-            charCount += range.startOffset;
-            break;
-          }
-          charCount += textNode.textContent?.length || 0;
-        }
-        return charCount;
-      }
-    } else if ((document as any).caretPositionFromPoint) {
-      const pos = (document as any).caretPositionFromPoint(e.clientX, e.clientY);
-      if (pos && this.renderedContainer.contains(pos.offsetNode)) {
-        let charCount = 0;
-        const walker = document.createTreeWalker(this.renderedContainer, NodeFilter.SHOW_TEXT);
-        let textNode: Node | null;
-        while ((textNode = walker.nextNode())) {
-          if (textNode === pos.offsetNode) {
-            charCount += pos.offset;
-            break;
-          }
-          charCount += textNode.textContent?.length || 0;
-        }
-        return charCount;
-      }
-    }
-    return undefined;
-  }
-
-  private renderLiveMath(val: string) {
-    if (!this.liveTypesetEl) return;
-    if (val.trim() === "") {
-      this.liveTypesetEl.innerHTML = '<span class="doc-equation-placeholder" style="color: var(--color-text-muted, #71717a); opacity: 0.5;">y = f(x)</span>';
-      return;
-    }
-
-    try {
-      this.liveTypesetEl.innerHTML = typesetMath(val, { displayMode: true });
-    } catch {
-      this.liveTypesetEl.textContent = val;
-    }
-  }
-
   private bindEvents() {
     // Single Click: Select atomic block, and enter edit mode if clickToEdit is enabled
     this.el.addEventListener("click", (e: MouseEvent) => {
@@ -122,8 +73,7 @@ export class EquationBlockComponent {
         this.setSelected(true);
         this.options.onSelect?.(this.block.id);
         if (this.options.clickToEdit) {
-          const offset = this.calculateCaretOffsetFromClick(e);
-          this.enterEditMode(offset);
+          this.enterEditMode({ x: e.clientX, y: e.clientY });
         }
       }
     });
@@ -139,7 +89,7 @@ export class EquationBlockComponent {
       if (!this.isEditing) {
         if (e.key === "Enter") {
           e.preventDefault();
-          this.enterEditMode();
+          this.enterEditMode("start");
           return;
         }
         if (e.key === "ArrowDown" || e.key === "ArrowRight") {
@@ -176,7 +126,7 @@ export class EquationBlockComponent {
     });
   }
 
-  public enterEditMode(caretOffset?: number) {
+  public enterEditMode(caretPosition?: number | string | { x: number; y: number }) {
     if (this.isEditing) return;
     this.isEditing = true;
 
@@ -187,74 +137,147 @@ export class EquationBlockComponent {
 
     this.editorContainer.innerHTML = "";
 
-    // 1. Live typeset container rendering live mathematical typography as typed
-    this.liveTypesetEl = document.createElement("div");
-    this.liveTypesetEl.className = "doc-equation-live-typeset doc-equation-typeset-view";
-    this.editorContainer.appendChild(this.liveTypesetEl);
+    // 1. MathLive math-field element for structured, seam-aware math editing
+    let mfEl: any = null;
+    try {
+      mfEl = document.createElement("math-field") as any;
+      mfEl.className = "doc-block-source-input doc-equation-mathfield";
+      mfEl.mathVirtualKeyboardPolicy = "manual";
+      mfEl.menuItems = [];
+      mfEl.value = axineToLatex(this.block.source);
+      this.editorContainer.appendChild(mfEl);
+    } catch {
+      mfEl = null;
+    }
 
-    // 2. Input textarea sitting transparently directly above the typeset backdrop
+    // 2. Backing textarea for accessibility, headless tests, and full Axine source synchronization
     this.textarea = document.createElement("textarea");
     this.textarea.className = "doc-block-source-input doc-equation-input";
     this.textarea.value = this.block.source;
     this.textarea.style.overflow = "hidden";
     this.textarea.style.resize = "none";
     this.textarea.rows = Math.max(1, this.block.source.split("\n").length);
+    if (mfEl) {
+      this.textarea.style.position = "absolute";
+      this.textarea.style.top = "0";
+      this.textarea.style.left = "0";
+      this.textarea.style.width = "100%";
+      this.textarea.style.height = "100%";
+      this.textarea.style.opacity = "0";
+      this.textarea.style.pointerEvents = "none";
+    }
     this.editorContainer.appendChild(this.textarea);
-
-    this.renderLiveMath(this.block.source);
 
     this.autocomplete = new AutocompleteController(this.editorContainer, (_accepted) => {
       if (this.textarea) {
-        this.renderLiveMath(this.textarea.value);
+        const val = this.textarea.value;
+        if (mfEl) {
+          mfEl.value = axineToLatex(val);
+        }
+        this.block.source = val;
+        this.options.onCommit?.(this.block.id, val);
       }
     });
 
     const target: AutocompleteTarget = {
-      getValue: () => this.textarea?.value || "",
+      getValue: () => (mfEl ? latexToAxine(mfEl.value) : this.textarea?.value || ""),
       setValue: (v: string) => {
         if (this.textarea) {
           this.textarea.value = v;
           this.textarea.rows = Math.max(1, v.split("\n").length);
-          this.renderLiveMath(v);
         }
+        if (mfEl) {
+          mfEl.value = axineToLatex(v);
+        }
+        this.block.source = v;
+        this.options.onCommit?.(this.block.id, v);
       },
-      getSelectionStart: () => this.textarea?.selectionStart || 0,
+      getSelectionStart: () => {
+        if (mfEl && typeof mfEl.position === "number") return mfEl.position;
+        return this.textarea?.selectionStart || 0;
+      },
       setSelection: (s: number, e: number) => {
+        if (mfEl && typeof mfEl.position === "number") {
+          mfEl.position = s;
+        }
         if (this.textarea) {
           this.textarea.selectionStart = s;
           this.textarea.selectionEnd = e;
         }
       },
       getCaretCoordinates: () => {
-        const containerRect = this.editorContainer.getBoundingClientRect();
-        const cmdSpan = this.liveTypesetEl?.querySelector(".doc-literal-cmd");
-        if (cmdSpan) {
-          const spanRect = cmdSpan.getBoundingClientRect();
+        if (mfEl && typeof mfEl.getBoundingClientRect === "function") {
+          const containerRect = this.editorContainer.getBoundingClientRect();
+          const mfRect = mfEl.getBoundingClientRect();
           return {
-            x: Math.max(0, spanRect.left - containerRect.left),
-            y: Math.max(0, spanRect.bottom - containerRect.top + 4),
+            x: Math.max(0, mfRect.left - containerRect.left),
+            y: Math.max(0, mfRect.bottom - containerRect.top + 4),
           };
         }
         return { x: 0, y: 28 };
       },
     };
 
+    if (mfEl) {
+      mfEl.addEventListener("input", () => {
+        const latex = mfEl.value;
+        const axine = latexToAxine(latex);
+        if (this.textarea) {
+          this.textarea.value = axine;
+          this.textarea.rows = Math.max(1, axine.split("\n").length);
+        }
+        this.block.source = axine;
+        this.options.onCommit?.(this.block.id, axine);
+      });
+
+      // Boundary Seam Crossing via MathLive move-out
+      mfEl.addEventListener("move-out", (e: any) => {
+        const dir = e.detail?.direction;
+        if (dir === "forward" || dir === "downward") {
+          this.exitEditMode(true);
+          this.options.onStepNext?.();
+        } else if (dir === "backward" || dir === "upward") {
+          this.exitEditMode(true);
+          this.options.onStepPrev?.();
+        }
+      });
+
+      mfEl.addEventListener("keydown", (e: KeyboardEvent) => {
+        if (this.autocomplete && this.autocomplete.handleKeydown(e, target)) {
+          e.stopPropagation();
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          this.exitEditMode(true);
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          e.stopPropagation();
+          this.exitEditMode(true);
+          this.options.onStepNext?.();
+        } else if (e.key === "Backspace" && (!mfEl.value || mfEl.value.trim() === "")) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.exitEditMode(false);
+          if (this.options.onRequestTransform) {
+            this.options.onRequestTransform(this.block.id, "paragraph", "", 0);
+          } else {
+            this.options.onDeleteRequest?.(this.block.id);
+          }
+        }
+      });
+    }
+
     this.textarea.addEventListener("input", () => {
       if (this.textarea) {
         this.textarea.rows = Math.max(1, this.textarea.value.split("\n").length);
         const val = this.textarea.value;
-        const trimmed = val.trim();
-        const caret = this.textarea.selectionStart ?? val.length;
-
-        // Check if reverted to plain prose text (no relations or math operators)
-        const hasRelationOrMath = /[=:<>+\-*/^\\_]/.test(val);
-        if (!hasRelationOrMath && trimmed !== "" && this.options.onRequestTransform) {
-          this.options.onRequestTransform(this.block.id, "paragraph", val, caret);
-          return;
+        if (mfEl) {
+          mfEl.value = axineToLatex(val);
         }
-
-        // Live math rendering while typing!
-        this.renderLiveMath(val);
+        this.block.source = val;
+        this.options.onCommit?.(this.block.id, val);
       }
       this.autocomplete?.checkPrefix(target);
     });
@@ -267,6 +290,10 @@ export class EquationBlockComponent {
       if (e.key === "Escape") {
         e.preventDefault();
         this.exitEditMode(true);
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        this.exitEditMode(true);
+        this.options.onStepNext?.();
       } else if (e.key === "Backspace" && this.textarea) {
         if (this.textarea.value === "") {
           e.preventDefault();
@@ -275,19 +302,47 @@ export class EquationBlockComponent {
       }
     });
 
-    this.textarea.addEventListener("blur", () => {
-      // Delay slightly in case autocomplete item was clicked
+    const blurHandler = (e: FocusEvent) => {
+      if (e.relatedTarget && (e.relatedTarget as HTMLElement).closest(".doc-autocomplete-popover")) {
+        return;
+      }
       setTimeout(() => {
         if (this.isEditing && !this.autocomplete?.getIsOpen()) {
           this.exitEditMode(true);
         }
       }, 150);
-    });
+    };
 
-    this.textarea.focus();
-    const targetOffset = caretOffset !== undefined ? caretOffset : this.textarea.value.length;
-    if (typeof this.textarea.setSelectionRange === "function") {
-      this.textarea.setSelectionRange(targetOffset, targetOffset);
+    if (mfEl) {
+      mfEl.addEventListener("blur", blurHandler);
+    }
+    this.textarea.addEventListener("blur", blurHandler);
+
+    // Focus and position caret
+    if (mfEl && typeof mfEl.focus === "function") {
+      mfEl.focus();
+      if (typeof caretPosition === "object" && caretPosition !== null && "x" in caretPosition) {
+        if (typeof mfEl.getOffsetFromPoint === "function") {
+          const offset = mfEl.getOffsetFromPoint(caretPosition.x, caretPosition.y);
+          if (offset >= 0 && typeof mfEl.position === "number") {
+            mfEl.position = offset;
+          }
+        }
+      } else if (caretPosition === "start" || caretPosition === 0) {
+        if (typeof mfEl.executeCommand === "function") {
+          mfEl.executeCommand("moveToMathfieldStart");
+        }
+      } else {
+        if (typeof mfEl.executeCommand === "function") {
+          mfEl.executeCommand("moveToMathfieldEnd");
+        }
+      }
+    } else {
+      this.textarea.focus();
+      const targetOffset = typeof caretPosition === "number" ? caretPosition : this.textarea.value.length;
+      if (typeof this.textarea.setSelectionRange === "function") {
+        this.textarea.setSelectionRange(targetOffset, targetOffset);
+      }
     }
   }
 
@@ -308,7 +363,6 @@ export class EquationBlockComponent {
       this.autocomplete = null;
     }
 
-    this.liveTypesetEl = null;
     this.editorContainer.innerHTML = "";
     this.editorContainer.classList.add("hidden");
     this.renderedContainer.classList.remove("hidden");
@@ -353,7 +407,6 @@ export class EquationBlockComponent {
       this.autocomplete.dispose();
       this.autocomplete = null;
     }
-    this.liveTypesetEl = null;
     if (this.el.parentElement) {
       this.el.parentElement.removeChild(this.el);
     }

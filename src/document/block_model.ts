@@ -65,12 +65,21 @@ export function classifyBlockType(source: string): BlockType {
   if (trimmed.startsWith("#")) {
     return "paragraph";
   }
-  // Relational definitions or equations: e.g. "x = 5", ":x := 10", "y = mx + b", "a <= b"
+  // Relational definitions or equations: e.g. "x = 5", ":x := 10", "y = mx + b", "a <= b", "y'' + 4y' + 13y = 0"
   if (/^(:?[a-zA-Z_][a-zA-Z0-9_]*(\([^)]*\))?\s*(:=|=|<=|>=|<|>)\s*.+)$/.test(trimmed)) {
     return "equation";
   }
-  // Pure math expressions with operators (e.g. x^2 + y^2, 2 + 2)
-  if (/^[a-zA-Z0-9_]+(\s*[\^+\-*/]\s*[a-zA-Z0-9_]+)+$/.test(trimmed)) {
+  const relMatch = trimmed.match(/^(.+?)\s*(:=|=|<=|>=|!=|<|>)\s*(.+)$/);
+  if (relMatch) {
+    const lhs = relMatch[1].trim();
+    const rhs = relMatch[3].trim();
+    // Exclude prose sentences where words are separated by spaces
+    if (!/\b[a-zA-Z]{2,}\s+[a-zA-Z]{2,}\b/.test(lhs) && !/\b[a-zA-Z]{2,}\s+[a-zA-Z]{2,}\b/.test(rhs)) {
+      return "equation";
+    }
+  }
+  // Pure math expressions with operators (e.g. x^2 + y^2, 2 + 2, y'')
+  if (/^[a-zA-Z0-9_\x27]+(\s*[\^+\-*/]\s*[a-zA-Z0-9_\x27]+)+$/.test(trimmed)) {
     return "equation";
   }
   return "paragraph";

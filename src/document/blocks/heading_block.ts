@@ -169,6 +169,17 @@ export class HeadingBlockComponent {
         e.preventDefault();
         this.exitEditMode(true);
         this.options.onStepNext?.();
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        this.exitEditMode(true);
+        this.options.onStepNext?.();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        this.exitEditMode(true);
+        this.options.onStepPrev?.();
+      } else if (e.key === "Backspace" && this.input && this.input.value === "") {
+        e.preventDefault();
+        this.options.onDeleteRequest?.(this.block.id);
       }
     });
 
@@ -177,7 +188,14 @@ export class HeadingBlockComponent {
     });
 
     this.input.focus();
-    const offset = targetCaretOffset !== undefined ? targetCaretOffset : this.input.value.length;
+    let offset = this.input.value.length;
+    if (typeof targetCaretOffset === "number") {
+      offset = targetCaretOffset;
+    } else if (targetCaretOffset === "start") {
+      offset = 0;
+    } else if (targetCaretOffset === "end") {
+      offset = this.input.value.length;
+    }
     if (typeof this.input.setSelectionRange === "function") {
       this.input.setSelectionRange(offset, offset);
     }

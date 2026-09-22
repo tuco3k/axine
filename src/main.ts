@@ -4,6 +4,7 @@ import { Evaluator, evaluate, createInitialEnvironment } from './core/evaluator'
 import { FileManager } from './document/file_manager';
 import { typesetMath } from './core/math_typeset';
 import { SpaceViewport } from './plot/space_viewport';
+import 'mathlive';
 import './styles/main.css';
 
 (window as any).Evaluator = Evaluator;

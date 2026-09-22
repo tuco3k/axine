@@ -39,12 +39,22 @@ export function replaceLatexFractions(str: string): string {
   while (idx !== -1) {
     let p1 = idx + CMD_FRAC.length;
     while (p1 < str.length && /\s/.test(str[p1])) p1++;
-    const num = parseBalancedBraces(str, p1);
+    let num: { content: string; endIdx: number } | null = null;
+    if (str[p1] === "{") {
+      num = parseBalancedBraces(str, p1);
+    } else if (p1 < str.length && str[p1] !== "}") {
+      num = { content: str[p1], endIdx: p1 };
+    }
     if (!num) break;
 
     let p2 = num.endIdx + 1;
     while (p2 < str.length && /\s/.test(str[p2])) p2++;
-    const den = parseBalancedBraces(str, p2);
+    let den: { content: string; endIdx: number } | null = null;
+    if (str[p2] === "{") {
+      den = parseBalancedBraces(str, p2);
+    } else if (p2 < str.length && str[p2] !== "}") {
+      den = { content: str[p2], endIdx: p2 };
+    }
     if (!den) break;
 
     let replacement = "";
@@ -131,10 +141,12 @@ export function latexToAxine(latex: string): string {
   // 2. Convert LaTeX fractions to Axine division or derivatives
   s = replaceLatexFractions(s);
 
-  // 3. Primes: ^{\prime\prime} -> '', ^{\prime} -> '
+  // 3. Primes: ^{\prime\prime} -> '', ^{\prime} -> ', \doubleprime -> ''
   s = s.replace(/\^\{\\prime\\prime\}/g, "''");
+  s = s.replace(/\^\{\\doubleprime\}/g, "''");
   s = s.replace(/\^\{\\prime\}/g, "'");
   s = s.replace(/\\prime\\prime/g, "''");
+  s = s.replace(/\\doubleprime/g, "''");
   s = s.replace(/\\prime/g, "'");
 
   // 4. Multiplication operators: \cdot, \times -> *

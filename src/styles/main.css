@@ -4173,6 +4173,37 @@ input[type="number"]:focus {
   min-height: 24px;
 }
 
+math-field.doc-equation-mathfield {
+  display: block;
+  width: 100%;
+  font-family: var(--font-family-math);
+  font-size: 18px;
+  color: var(--color-text-primary);
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  padding: 0;
+  margin: 0;
+  caret-color: var(--color-text-primary) !important;
+  --caret-color: var(--color-text-primary) !important;
+  --selection-background-color: var(--color-accent-subtle);
+  --selection-color: inherit;
+  --contains-highlight-backgound-color: transparent;
+}
+
+math-field.doc-equation-mathfield:focus,
+math-field.doc-equation-mathfield:focus-within {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+math-field::part(virtual-keyboard-toggle),
+math-field::part(menu-toggle) {
+  display: none !important;
+}
+
 .doc-equation-live-typeset {
   position: relative;
   font-family: var(--font-family-math);

@@ -162,6 +162,33 @@ export class BlockState {
     this.notify();
   }
 
+  public insertBlock(afterId: string | null, type: BlockType = "paragraph", source: string = ""): DocumentBlock {
+    const newBlock: DocumentBlock = {
+      id: "block_" + Math.random().toString(36).substring(2, 9),
+      type,
+      source,
+      lines: source.split("\n"),
+      startLine: 1,
+      endLine: 1,
+      status: "verified",
+      definedSymbol: extractDefinedSymbol(source),
+      referencedSymbols: extractReferencedSymbols(source),
+    };
+    if (!afterId) {
+      this.model.blocks.push(newBlock);
+    } else {
+      const idx = this.model.blocks.findIndex(b => b.id === afterId);
+      if (idx === -1) {
+        this.model.blocks.push(newBlock);
+      } else {
+        this.model.blocks.splice(idx + 1, 0, newBlock);
+      }
+    }
+    this.rebuildSymbolGraphs();
+    this.notify();
+    return newBlock;
+  }
+
   public getDependentBlocks(symbol: string): DocumentBlock[] {
     const ids = this.symbolDependencies.get(symbol);
     if (!ids) return [];

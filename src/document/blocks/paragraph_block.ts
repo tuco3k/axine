@@ -5,7 +5,7 @@
  * Double-click to edit, Escape to commit and render.
  */
 
-import { DocumentBlock, BlockType } from "../block_model";
+import { DocumentBlock, BlockType, classifyBlockType } from "../block_model";
 import { typesetMath } from "../../core/math_typeset";
 import { AutocompleteController, AutocompleteTarget } from "../autocomplete";
 
@@ -169,6 +169,10 @@ export class ParagraphBlockComponent {
 
     if (typeof initialCharOrOffset === "number") {
       initialOffset = initialCharOrOffset;
+    } else if (initialCharOrOffset === "start") {
+      initialOffset = 0;
+    } else if (initialCharOrOffset === "end") {
+      initialOffset = val.length;
     } else if (typeof initialCharOrOffset === "string") {
       val = val ? val + initialCharOrOffset : initialCharOrOffset;
     }
@@ -270,8 +274,9 @@ export class ParagraphBlockComponent {
         this.options.onRequestTransform?.(this.block.id, "heading", val, caret);
         return;
       }
-      // 5. Equation: e.g. "x = 5" or ":var := 10"
-      if (/^(:?[a-zA-Z_][a-zA-Z0-9_]*(\([^)]*\))?\s*(:=|=|<=|>=|<|>)\s*.*)$/.test(trimmed)) {
+      // 5. Equation: e.g. "x = 5" or ":var := 10" or "y'' + 4y' + 13y = 0"
+      const classified = classifyBlockType(trimmed);
+      if (classified === "equation" && trimmed !== "") {
         this.options.onRequestTransform?.(this.block.id, "equation", val, caret);
         return;
       }
@@ -285,19 +290,69 @@ export class ParagraphBlockComponent {
         e.stopPropagation();
         return;
       }
-      e.stopPropagation();
       if (e.key === "Escape") {
+        e.stopPropagation();
         e.preventDefault();
         this.exitEditMode(true);
       } else if (e.key === "Enter" && !e.shiftKey) {
+        e.stopPropagation();
         if (!this.textarea) return;
         const val = this.textarea.value;
         const trimmed = val.trim();
-        if (/^(:?[a-zA-Z_][a-zA-Z0-9_]*(\([^)]*\))?\s*(:=|=|<=|>=|<|>)\s*.+)$/.test(trimmed) ||
-            /^[a-zA-Z0-9_]+(\s*[\^+\-*/]\s*[a-zA-Z0-9_]+)+$/.test(trimmed)) {
+        const classified = classifyBlockType(trimmed);
+        if (classified !== "paragraph" && trimmed !== "") {
           e.preventDefault();
-          this.options.onRequestTransform?.(this.block.id, "equation", val);
+          this.options.onRequestTransform?.(this.block.id, classified, val);
           return;
+        }
+        e.preventDefault();
+        this.exitEditMode(true);
+        this.options.onStepNext?.();
+      } else if (e.key === "ArrowDown") {
+        if (!this.textarea) return;
+        const val = this.textarea.value;
+        const selStart = this.textarea.selectionStart;
+        const textAfter = val.substring(selStart);
+        if (!textAfter.includes("\n")) {
+          e.stopPropagation();
+          e.preventDefault();
+          this.exitEditMode(true);
+          this.options.onStepNext?.();
+        }
+      } else if (e.key === "ArrowUp") {
+        if (!this.textarea) return;
+        const val = this.textarea.value;
+        const selStart = this.textarea.selectionStart;
+        const textBefore = val.substring(0, selStart);
+        if (!textBefore.includes("\n")) {
+          e.stopPropagation();
+          e.preventDefault();
+          this.exitEditMode(true);
+          this.options.onStepPrev?.();
+        }
+      } else if (e.key === "ArrowRight") {
+        if (!this.textarea) return;
+        const val = this.textarea.value;
+        if (this.textarea.selectionStart === val.length && this.textarea.selectionEnd === val.length) {
+          e.stopPropagation();
+          e.preventDefault();
+          this.exitEditMode(true);
+          this.options.onStepNext?.();
+        }
+      } else if (e.key === "ArrowLeft") {
+        if (!this.textarea) return;
+        if (this.textarea.selectionStart === 0 && this.textarea.selectionEnd === 0) {
+          e.stopPropagation();
+          e.preventDefault();
+          this.exitEditMode(true);
+          this.options.onStepPrev?.();
+        }
+      } else if (e.key === "Backspace") {
+        if (!this.textarea) return;
+        if (this.textarea.value === "") {
+          e.stopPropagation();
+          e.preventDefault();
+          this.options.onDeleteRequest?.(this.block.id);
         }
       }
     });
@@ -324,7 +379,7 @@ export class ParagraphBlockComponent {
       this.textarea.selectionEnd = targetSel;
     }
 
-    if (typeof initialCharOrOffset === "string") {
+    if (typeof initialCharOrOffset === "string" && initialCharOrOffset !== "start" && initialCharOrOffset !== "end") {
       this.options.onCommit?.(this.block.id, this.textarea.value);
     }
   }

@@ -258,6 +258,11 @@ export class BlockDocumentEditor {
     const idx = this.model.blocks.findIndex((b) => b.id === blockId);
     if (idx === -1) return;
 
+    if (this.model.blocks.length === 1) {
+      this.transformBlock(blockId, "paragraph", "");
+      return;
+    }
+
     const nextSelectId = idx + 1 < this.model.blocks.length
       ? this.model.blocks[idx + 1].id
       : (idx > 0 ? this.model.blocks[idx - 1].id : null);
@@ -270,6 +275,23 @@ export class BlockDocumentEditor {
       this.selectBlock(nextSelectId);
     }
     this.options.onChange?.(this.state.toText());
+  }
+
+  /**
+   * Inserts a new block after the given block and immediately enters edit mode
+   */
+  public insertBlockAfter(currentBlockId: string, type: BlockType = "paragraph", source: string = ""): DocumentBlock {
+    const newBlock = this.state.insertBlock(currentBlockId, type, source);
+    this.model = this.state.getModel();
+    this.renderAllBlocks();
+    this.selectBlock(newBlock.id);
+    this.scrollToBlock(newBlock.id);
+    const comp = this.blockComponents.get(newBlock.id);
+    if (comp && "enterEditMode" in comp && typeof (comp as any).enterEditMode === "function") {
+      (comp as any).enterEditMode(0);
+    }
+    this.options.onChange?.(this.state.toText());
+    return newBlock;
   }
 
   /**
@@ -297,24 +319,37 @@ export class BlockDocumentEditor {
   /**
    * Steps focus to the next block in the document flow
    */
-  public stepNext(currentBlockId: string): void {
+  public stepNext(currentBlockId: string, position: "start" | "end" = "start"): void {
     const idx = this.model.blocks.findIndex((b) => b.id === currentBlockId);
-    if (idx !== -1 && idx + 1 < this.model.blocks.length) {
-      const nextId = this.model.blocks[idx + 1].id;
-      this.selectBlock(nextId);
-      this.scrollToBlock(nextId);
+    if (idx !== -1) {
+      if (idx + 1 < this.model.blocks.length) {
+        const nextId = this.model.blocks[idx + 1].id;
+        this.selectBlock(nextId);
+        this.scrollToBlock(nextId);
+        const comp = this.blockComponents.get(nextId);
+        if (comp && "enterEditMode" in comp && typeof (comp as any).enterEditMode === "function") {
+          (comp as any).enterEditMode(position === "start" ? 0 : "end");
+        }
+      } else {
+        // At the bottom: insert a new paragraph block and focus it
+        this.insertBlockAfter(currentBlockId);
+      }
     }
   }
 
   /**
    * Steps focus to the previous block in the document flow
    */
-  public stepPrev(currentBlockId: string): void {
+  public stepPrev(currentBlockId: string, position: "start" | "end" = "end"): void {
     const idx = this.model.blocks.findIndex((b) => b.id === currentBlockId);
     if (idx > 0) {
       const prevId = this.model.blocks[idx - 1].id;
       this.selectBlock(prevId);
       this.scrollToBlock(prevId);
+      const comp = this.blockComponents.get(prevId);
+      if (comp && "enterEditMode" in comp && typeof (comp as any).enterEditMode === "function") {
+        (comp as any).enterEditMode(position === "end" ? "end" : 0);
+      }
     }
   }
 
