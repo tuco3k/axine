@@ -457,6 +457,47 @@ export class BlockDocumentEditor {
         }
       }
     });
+
+    // Multi-line paste handler: parse and integrate multi-line pasted text into structured blocks
+    this.container.addEventListener("paste", (e: ClipboardEvent) => {
+      const pasteText = e.clipboardData?.getData("text/plain");
+      if (!pasteText || !pasteText.includes("\n")) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Exit edit mode on active block
+      if (this.selectedBlockId) {
+        const comp = this.blockComponents.get(this.selectedBlockId);
+        if (comp && "exitEditMode" in comp && typeof (comp as any).exitEditMode === "function") {
+          (comp as any).exitEditMode(false);
+        }
+      }
+
+      const isOnlyBlank = this.model.blocks.length <= 1 && (!this.model.blocks[0] || this.model.blocks[0].source.trim() === "");
+      if (isOnlyBlank) {
+        this.setText(pasteText);
+        return;
+      }
+
+      const targetBlockId = this.selectedBlockId || (this.model.blocks.length > 0 ? this.model.blocks[this.model.blocks.length - 1].id : null);
+      const targetIdx = this.model.blocks.findIndex((b) => b.id === targetBlockId);
+      if (targetIdx !== -1) {
+        const targetBlock = this.model.blocks[targetIdx];
+        const isTargetEmpty = targetBlock.source.trim() === "";
+
+        const beforeBlocks = this.model.blocks.slice(0, isTargetEmpty ? targetIdx : targetIdx + 1);
+        const afterBlocks = this.model.blocks.slice(targetIdx + 1);
+
+        const beforeText = beforeBlocks.map((b) => b.source).join("\n\n");
+        const afterText = afterBlocks.map((b) => b.source).join("\n\n");
+
+        const combined = [beforeText, pasteText, afterText].filter((s) => s.trim() !== "").join("\n\n");
+        this.setText(combined);
+      } else {
+        this.setText(pasteText);
+      }
+    }, true);
   }
 
   /**

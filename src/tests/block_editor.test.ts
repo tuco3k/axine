@@ -161,4 +161,51 @@ describe("Stage 5 Gate: BlockDocumentEditor Orchestration & Word's Atomic Object
     expect(result.blocksAfterDelete).toBe(result.blocksBeforeDelete - 1);
     expect(result.figureDeleted).toBe(true);
   });
+
+  it("handles multi-line paste cleanly by parsing text into structured blocks", async () => {
+    const pasteResult = await page.evaluate(async () => {
+      const mod = await (window as any).eval('import("/src/document/block_editor.ts")');
+      const { BlockDocumentEditor } = mod;
+
+      const container = document.createElement("div");
+      container.id = "test-paste-container";
+      document.body.appendChild(container);
+
+      const editor = new BlockDocumentEditor(container, "", {});
+
+      // Simulate a multi-line paste event
+      const sampleAx = [
+        "# Differential Equation Test",
+        "# Testing second-order system with $y'' + 4y = 0$",
+        "d//d:time :x = :v",
+      ].join("\n\n");
+
+      const pasteEvent = new Event("paste", { bubbles: true, cancelable: true }) as any;
+      pasteEvent.clipboardData = {
+        getData: (type: string) => (type === "text/plain" ? sampleAx : ""),
+      };
+
+      editor.container.dispatchEvent(pasteEvent);
+
+      const blocks = editor.getBlocks().filter((b: any) => b.type !== "blank");
+      const types = blocks.map((b: any) => b.type);
+      const text = editor.getText();
+
+      editor.dispose();
+      document.body.removeChild(container);
+
+      return {
+        blockCount: blocks.length,
+        types,
+        text,
+      };
+    });
+
+    expect(pasteResult.blockCount).toBe(3);
+    expect(pasteResult.types[0]).toBe("heading");
+    expect(pasteResult.types[1]).toBe("paragraph");
+    expect(pasteResult.types[2]).toBe("equation");
+    expect(pasteResult.text).toContain("# Differential Equation Test");
+    expect(pasteResult.text).toContain("d//d:time :x = :v");
+  });
 });
