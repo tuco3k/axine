@@ -38,6 +38,10 @@ export class BlockDocumentEditor {
   private state: BlockState;
   private blockComponents: Map<string, BlockComponent> = new Map();
   private selectedBlockId: string | null = null;
+  private isAllSelected: boolean = false;
+  private selectedRange: [number, number] | null = null;
+  private isMouseDownOnSheet: boolean = false;
+  private dragStartIdx: number | null = null;
   private options: BlockEditorOptions;
 
   constructor(container: HTMLElement, initialText: string = "", options: BlockEditorOptions = {}) {
@@ -98,6 +102,7 @@ export class BlockDocumentEditor {
         onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
         onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
         onDeleteRequest: (id: string) => this.deleteBlock(id),
+        onRequestSelectAll: () => this.selectAll(),
         isOnlyBlock: this.model.blocks.length === 1,
       });
       return p;
@@ -124,6 +129,7 @@ export class BlockDocumentEditor {
         onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
         onDeleteRequest: (id: string) => this.deleteBlock(id),
         onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
+        onRequestSelectAll: () => this.selectAll(),
         clickToEdit: true,
       });
       return eq;
@@ -137,6 +143,7 @@ export class BlockDocumentEditor {
         onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
         onDeleteRequest: (id: string) => this.deleteBlock(id),
         onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
+        onRequestSelectAll: () => this.selectAll(),
         clickToEdit: true,
       });
       return heading;
@@ -150,6 +157,7 @@ export class BlockDocumentEditor {
         onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
         onDeleteRequest: (id: string) => this.deleteBlock(id),
         onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
+        onRequestSelectAll: () => this.selectAll(),
         clickToEdit: true,
       });
       return slot;
@@ -163,6 +171,7 @@ export class BlockDocumentEditor {
       onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
       onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
       onDeleteRequest: (id: string) => this.deleteBlock(id),
+      onRequestSelectAll: () => this.selectAll(),
       isOnlyBlock: this.model.blocks.length === 1,
     });
     return para;
@@ -294,6 +303,9 @@ export class BlockDocumentEditor {
    * Sets selection on a single block, deselecting others
    */
   public selectBlock(blockId: string | null): void {
+    if (this.isAllSelected || this.selectedRange) {
+      this.deselectAll();
+    }
     this.selectedBlockId = blockId;
 
     for (const [id, comp] of this.blockComponents.entries()) {
@@ -310,6 +322,99 @@ export class BlockDocumentEditor {
     }
 
     this.options.onSelectBlock?.(blockId);
+  }
+
+  /**
+   * Selects all blocks across the entire document
+   */
+  public selectAll(): void {
+    if (this.selectedBlockId) {
+      const comp = this.blockComponents.get(this.selectedBlockId);
+      if (comp && "exitEditMode" in comp && typeof (comp as any).exitEditMode === "function") {
+        (comp as any).exitEditMode(false);
+      }
+    }
+    this.isAllSelected = true;
+    this.selectedRange = [0, Math.max(0, this.model.blocks.length - 1)];
+    this.selectedBlockId = null;
+    this.pageSheet.classList.add("all-selected");
+    for (const comp of this.blockComponents.values()) {
+      comp.el.classList.add("doc-block-range-selected");
+    }
+    this.container.focus();
+  }
+
+  /**
+   * Clears document-wide selection
+   */
+  public deselectAll(): void {
+    this.isAllSelected = false;
+    this.selectedRange = null;
+    this.pageSheet.classList.remove("all-selected");
+    for (const comp of this.blockComponents.values()) {
+      comp.el.classList.remove("doc-block-range-selected");
+    }
+  }
+
+  /**
+   * Selects a contiguous range of blocks by index
+   */
+  public selectRange(startIdx: number, endIdx: number): void {
+    const min = Math.max(0, Math.min(startIdx, endIdx));
+    const max = Math.min(this.model.blocks.length - 1, Math.max(startIdx, endIdx));
+    if (min === 0 && max === this.model.blocks.length - 1) {
+      this.selectAll();
+      return;
+    }
+    this.deselectAll();
+    this.selectedRange = [min, max];
+    for (let i = min; i <= max; i++) {
+      const b = this.model.blocks[i];
+      if (b) {
+        const comp = this.blockComponents.get(b.id);
+        comp?.el.classList.add("doc-block-range-selected");
+      }
+    }
+  }
+
+  /**
+   * Deletes a range of blocks and maintains clean document state
+   */
+  public deleteRange(startIdx: number, endIdx: number): void {
+    const min = Math.max(0, Math.min(startIdx, endIdx));
+    const max = Math.min(this.model.blocks.length - 1, Math.max(startIdx, endIdx));
+    const remaining = [
+      ...this.model.blocks.slice(0, min),
+      ...this.model.blocks.slice(max + 1),
+    ];
+    this.deselectAll();
+    if (remaining.length === 0) {
+      this.setText("");
+      return;
+    }
+    const newText = remaining.map((b) => b.source).join("\n\n");
+    this.setText(newText);
+    const targetBlock = this.model.blocks[Math.min(min, this.model.blocks.length - 1)];
+    if (targetBlock) {
+      this.selectBlock(targetBlock.id);
+    }
+  }
+
+  /**
+   * Replaces a range of blocks with parsed pasted text
+   */
+  public replaceRangeWithText(startIdx: number, endIdx: number, text: string): void {
+    const min = Math.max(0, Math.min(startIdx, endIdx));
+    const max = Math.min(this.model.blocks.length - 1, Math.max(startIdx, endIdx));
+    const beforeBlocks = this.model.blocks.slice(0, min);
+    const afterBlocks = this.model.blocks.slice(max + 1);
+
+    const beforeText = beforeBlocks.map((b) => b.source).join("\n\n");
+    const afterText = afterBlocks.map((b) => b.source).join("\n\n");
+
+    const combined = [beforeText, text, afterText].filter((s) => s.trim() !== "").join("\n\n");
+    this.deselectAll();
+    this.setText(combined);
   }
 
   /**
@@ -404,6 +509,9 @@ export class BlockDocumentEditor {
   private bindGlobalEvents(): void {
     // Clicking empty space in container or page sheet activates the last block into edit mode
     this.container.addEventListener("click", (e) => {
+      if (this.isAllSelected) {
+        this.deselectAll();
+      }
       if (e.target === this.container || e.target === this.pageSheet) {
         const lastBlock = this.model.blocks[this.model.blocks.length - 1];
         if (lastBlock) {
@@ -416,8 +524,190 @@ export class BlockDocumentEditor {
       }
     });
 
-    // Arrow navigation and typing activation when container has focus (outside active inputs)
+    // Mouse drag selection across multiple blocks
+    this.pageSheet.addEventListener("mousedown", (e) => {
+      if (this.isAllSelected) {
+        this.deselectAll();
+      }
+      const blockEl = (e.target as HTMLElement).closest(".doc-block");
+      if (blockEl) {
+        const blockId = blockEl.getAttribute("data-block-id");
+        const idx = this.model.blocks.findIndex((b) => b.id === blockId);
+        if (idx !== -1) {
+          this.dragStartIdx = idx;
+          this.isMouseDownOnSheet = true;
+        }
+      }
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      if (!this.isMouseDownOnSheet || this.dragStartIdx === null) return;
+      const targetEl = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement;
+      const blockEl = targetEl?.closest?.(".doc-block");
+      if (blockEl) {
+        const blockId = blockEl.getAttribute("data-block-id");
+        const currentIdx = this.model.blocks.findIndex((b) => b.id === blockId);
+        if (currentIdx !== -1 && currentIdx !== this.dragStartIdx) {
+          // Exit edit mode if any block was active
+          if (this.selectedBlockId) {
+            const comp = this.blockComponents.get(this.selectedBlockId);
+            if (comp && "exitEditMode" in comp && typeof (comp as any).exitEditMode === "function") {
+              (comp as any).exitEditMode(false);
+            }
+          }
+          this.selectRange(this.dragStartIdx, currentIdx);
+        }
+      }
+    });
+
+    window.addEventListener("mouseup", () => {
+      this.isMouseDownOnSheet = false;
+      this.dragStartIdx = null;
+    });
+
+    // Global document copy handler (capture phase)
+    this.container.addEventListener("copy", (e: ClipboardEvent) => {
+      if (this.isAllSelected) {
+        e.preventDefault();
+        e.stopPropagation();
+        const text = this.getText();
+        e.clipboardData?.setData("text/plain", text);
+        try {
+          navigator.clipboard?.writeText(text);
+        } catch {}
+        return;
+      }
+      if (this.selectedRange) {
+        e.preventDefault();
+        e.stopPropagation();
+        const [start, end] = this.selectedRange;
+        const text = this.model.blocks.slice(start, end + 1).map((b) => b.source).join("\n\n");
+        e.clipboardData?.setData("text/plain", text);
+        try {
+          navigator.clipboard?.writeText(text);
+        } catch {}
+        return;
+      }
+      if (this.selectedBlockId) {
+        // If an entire block is selected without active text selection inside input
+        const comp = this.blockComponents.get(this.selectedBlockId);
+        const isEditing = comp && "getIsEditing" in comp && typeof (comp as any).getIsEditing === "function" && (comp as any).getIsEditing();
+        if (!isEditing) {
+          const block = this.model.blocks.find((b) => b.id === this.selectedBlockId);
+          if (block) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.clipboardData?.setData("text/plain", block.source);
+            try {
+              navigator.clipboard?.writeText(block.source);
+            } catch {}
+            return;
+          }
+        }
+      }
+    }, true);
+
+    // Global document cut handler (capture phase)
+    this.container.addEventListener("cut", (e: ClipboardEvent) => {
+      if (this.isAllSelected) {
+        e.preventDefault();
+        e.stopPropagation();
+        const text = this.getText();
+        e.clipboardData?.setData("text/plain", text);
+        try {
+          navigator.clipboard?.writeText(text);
+        } catch {}
+        this.deselectAll();
+        this.setText("");
+        return;
+      }
+      if (this.selectedRange) {
+        e.preventDefault();
+        e.stopPropagation();
+        const [start, end] = this.selectedRange;
+        const text = this.model.blocks.slice(start, end + 1).map((b) => b.source).join("\n\n");
+        e.clipboardData?.setData("text/plain", text);
+        try {
+          navigator.clipboard?.writeText(text);
+        } catch {}
+        this.deleteRange(start, end);
+        return;
+      }
+    }, true);
+
+    // Keyboard shortcuts & typing activation
     this.container.addEventListener("keydown", (e: KeyboardEvent) => {
+      // Document-wide Cmd+A / Ctrl+A
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+        const el = e.target as HTMLElement;
+        const isInput =
+          el instanceof HTMLInputElement ||
+          el instanceof HTMLTextAreaElement ||
+          el?.tagName?.toLowerCase() === "math-field" ||
+          Boolean(el?.closest?.("math-field"));
+        if (!isInput) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.selectAll();
+          return;
+        }
+      }
+
+      if (this.isAllSelected) {
+        if (e.key === "Backspace" || e.key === "Delete") {
+          e.preventDefault();
+          e.stopPropagation();
+          this.deselectAll();
+          this.setText("");
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          this.deselectAll();
+          return;
+        }
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          e.stopPropagation();
+          this.deselectAll();
+          const targetId = e.key === "ArrowDown" ? this.model.blocks[0]?.id : this.model.blocks[this.model.blocks.length - 1]?.id;
+          if (targetId) this.selectBlock(targetId);
+          return;
+        }
+        if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.deselectAll();
+          this.setText(e.key);
+          const firstBlock = this.model.blocks[0];
+          if (firstBlock) {
+            this.selectBlock(firstBlock.id);
+            const comp = this.blockComponents.get(firstBlock.id);
+            if (comp && "enterEditMode" in comp && typeof (comp as any).enterEditMode === "function") {
+              (comp as any).enterEditMode();
+            }
+          }
+          return;
+        }
+      }
+
+      if (this.selectedRange) {
+        if (e.key === "Backspace" || e.key === "Delete") {
+          e.preventDefault();
+          e.stopPropagation();
+          const [start, end] = this.selectedRange;
+          this.deleteRange(start, end);
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          this.deselectAll();
+          return;
+        }
+      }
+
       const el = e.target as HTMLElement;
       const isInput =
         el instanceof HTMLInputElement ||
@@ -458,44 +748,63 @@ export class BlockDocumentEditor {
       }
     });
 
-    // Multi-line paste handler: parse and integrate multi-line pasted text into structured blocks
+    // Paste handler: parse and integrate pasted text into structured blocks or full document
     this.container.addEventListener("paste", (e: ClipboardEvent) => {
       const pasteText = e.clipboardData?.getData("text/plain");
-      if (!pasteText || !pasteText.includes("\n")) return;
+      if (!pasteText) return;
 
-      e.preventDefault();
-      e.stopPropagation();
-
-      // Exit edit mode on active block
-      if (this.selectedBlockId) {
-        const comp = this.blockComponents.get(this.selectedBlockId);
-        if (comp && "exitEditMode" in comp && typeof (comp as any).exitEditMode === "function") {
-          (comp as any).exitEditMode(false);
-        }
-      }
-
-      const isOnlyBlank = this.model.blocks.length <= 1 && (!this.model.blocks[0] || this.model.blocks[0].source.trim() === "");
-      if (isOnlyBlank) {
+      if (this.isAllSelected) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.deselectAll();
         this.setText(pasteText);
         return;
       }
 
-      const targetBlockId = this.selectedBlockId || (this.model.blocks.length > 0 ? this.model.blocks[this.model.blocks.length - 1].id : null);
-      const targetIdx = this.model.blocks.findIndex((b) => b.id === targetBlockId);
-      if (targetIdx !== -1) {
-        const targetBlock = this.model.blocks[targetIdx];
-        const isTargetEmpty = targetBlock.source.trim() === "";
+      if (this.selectedRange) {
+        e.preventDefault();
+        e.stopPropagation();
+        const [start, end] = this.selectedRange;
+        this.replaceRangeWithText(start, end, pasteText);
+        return;
+      }
 
-        const beforeBlocks = this.model.blocks.slice(0, isTargetEmpty ? targetIdx : targetIdx + 1);
-        const afterBlocks = this.model.blocks.slice(targetIdx + 1);
+      // If pasting multi-line or whole .ax document
+      if (pasteText.includes("\n") || pasteText.startsWith("---") || pasteText.startsWith("#")) {
+        e.preventDefault();
+        e.stopPropagation();
 
-        const beforeText = beforeBlocks.map((b) => b.source).join("\n\n");
-        const afterText = afterBlocks.map((b) => b.source).join("\n\n");
+        // Exit edit mode on active block
+        if (this.selectedBlockId) {
+          const comp = this.blockComponents.get(this.selectedBlockId);
+          if (comp && "exitEditMode" in comp && typeof (comp as any).exitEditMode === "function") {
+            (comp as any).exitEditMode(false);
+          }
+        }
 
-        const combined = [beforeText, pasteText, afterText].filter((s) => s.trim() !== "").join("\n\n");
-        this.setText(combined);
-      } else {
-        this.setText(pasteText);
+        const isOnlyBlank = this.model.blocks.length <= 1 && (!this.model.blocks[0] || this.model.blocks[0].source.trim() === "");
+        if (isOnlyBlank) {
+          this.setText(pasteText);
+          return;
+        }
+
+        const targetBlockId = this.selectedBlockId || (this.model.blocks.length > 0 ? this.model.blocks[this.model.blocks.length - 1].id : null);
+        const targetIdx = this.model.blocks.findIndex((b) => b.id === targetBlockId);
+        if (targetIdx !== -1) {
+          const targetBlock = this.model.blocks[targetIdx];
+          const isTargetEmpty = targetBlock.source.trim() === "";
+
+          const beforeBlocks = this.model.blocks.slice(0, isTargetEmpty ? targetIdx : targetIdx + 1);
+          const afterBlocks = this.model.blocks.slice(targetIdx + 1);
+
+          const beforeText = beforeBlocks.map((b) => b.source).join("\n\n");
+          const afterText = afterBlocks.map((b) => b.source).join("\n\n");
+
+          const combined = [beforeText, pasteText, afterText].filter((s) => s.trim() !== "").join("\n\n");
+          this.setText(combined);
+        } else {
+          this.setText(pasteText);
+        }
       }
     }, true);
   }

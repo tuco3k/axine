@@ -20,6 +20,7 @@ export interface SlotBlockOptions {
   onStepPrev?: () => void;
   onDeleteRequest?: (blockId: string) => void;
   onRequestTransform?: (blockId: string, targetType: BlockType, source: string, caretOffset?: number) => void;
+  onRequestSelectAll?: () => void;
   clickToEdit?: boolean;
 }
 
@@ -192,6 +193,14 @@ export class SlotBlockComponent {
 
       input.addEventListener("keydown", (e: KeyboardEvent) => {
         e.stopPropagation();
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+          if (input.selectionStart === 0 && input.selectionEnd === input.value.length) {
+            e.preventDefault();
+            this.exitEditMode(false);
+            this.options.onRequestSelectAll?.();
+            return;
+          }
+        }
         if (e.key === "Tab") {
           e.preventDefault();
           const nextSlot = this.decl.getNextSlotId(slotId, this.data, e.shiftKey);

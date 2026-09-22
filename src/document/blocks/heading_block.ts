@@ -14,6 +14,7 @@ export interface HeadingBlockOptions {
   onStepPrev?: () => void;
   onRequestTransform?: (blockId: string, targetType: BlockType, source: string, caretOffset?: number) => void;
   onDeleteRequest?: (blockId: string) => void;
+  onRequestSelectAll?: () => void;
   clickToEdit?: boolean;
 }
 
@@ -162,6 +163,14 @@ export class HeadingBlockComponent {
 
     this.input.addEventListener("keydown", (e: KeyboardEvent) => {
       e.stopPropagation();
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+        if (this.input && this.input.selectionStart === 0 && this.input.selectionEnd === this.input.value.length) {
+          e.preventDefault();
+          this.exitEditMode(false);
+          this.options.onRequestSelectAll?.();
+          return;
+        }
+      }
       if (e.key === "Escape") {
         e.preventDefault();
         this.exitEditMode(true);

@@ -22,6 +22,7 @@ export interface EquationBlockOptions {
   onStepPrev?: () => void;
   onDeleteRequest?: (blockId: string) => void;
   onRequestTransform?: (blockId: string, targetType: BlockType, source: string, caretOffset?: number) => void;
+  onRequestSelectAll?: () => void;
   clickToEdit?: boolean;
 }
 
@@ -284,6 +285,13 @@ export class EquationBlockComponent {
           e.stopPropagation();
           return;
         }
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+          e.preventDefault();
+          e.stopPropagation();
+          this.exitEditMode(false);
+          this.options.onRequestSelectAll?.();
+          return;
+        }
         if (e.key === "Escape") {
           e.preventDefault();
           e.stopPropagation();
@@ -350,6 +358,14 @@ export class EquationBlockComponent {
       e.stopPropagation();
       if (this.autocomplete && this.autocomplete.handleKeydown(e, taTarget)) {
         return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+        if (this.textarea && this.textarea.selectionStart === 0 && this.textarea.selectionEnd === this.textarea.value.length) {
+          e.preventDefault();
+          this.exitEditMode(false);
+          this.options.onRequestSelectAll?.();
+          return;
+        }
       }
       if (e.key === "Escape") {
         e.preventDefault();

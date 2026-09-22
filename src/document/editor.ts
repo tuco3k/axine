@@ -1221,6 +1221,10 @@ export class DocumentEditor {
               <button id="doc-clear-file-btn" class="doc-file-menu-item">
                 <span>Clear document</span>
               </button>
+              <button id="doc-copy-file-btn" class="doc-file-menu-item">
+                <span>Copy document</span>
+                <span class="doc-file-menu-shortcut">Cmd+A, Cmd+C</span>
+              </button>
               <div class="doc-file-menu-divider"></div>
               <div class="doc-file-menu-section-title">Export</div>
               <button id="doc-export-html-btn" class="doc-file-menu-item">
@@ -1634,6 +1638,22 @@ export class DocumentEditor {
 
     // Global keyboard shortcuts
     window.addEventListener('keydown', (e: KeyboardEvent) => {
+      // Cmd+A / Ctrl+A : Document-wide select all in block mode
+      if ((e.key === 'a' || e.key === 'A') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        if (this.editorMode === 'block' && this.blockEditor) {
+          const el = document.activeElement as HTMLElement;
+          const isInput =
+            el instanceof HTMLInputElement ||
+            el instanceof HTMLTextAreaElement ||
+            el?.tagName?.toLowerCase() === 'math-field' ||
+            Boolean(el?.closest?.('math-field'));
+          if (!isInput) {
+            e.preventDefault();
+            this.blockEditor.selectAll();
+            return;
+          }
+        }
+      }
       // Cmd+W / Ctrl+W : Close Tab
       if ((e.key === 'w' || e.key === 'W') && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
         e.preventDefault();
@@ -1740,6 +1760,25 @@ export class DocumentEditor {
         this.updateTypesetOverlay();
         this.updateCaret();
         this.state.setText('');
+      }
+      if (this.blockEditor) {
+        this.blockEditor.setText('');
+      }
+    });
+
+    // Copy document button (in File menu)
+    const copyFileBtn = this.container.querySelector('#doc-copy-file-btn') as HTMLButtonElement;
+    copyFileBtn?.addEventListener('click', async () => {
+      this.closeAllDropdowns();
+      const text = this.blockEditor ? this.blockEditor.getText() : (this.textarea ? this.textarea.value : '');
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {}
+      const label = copyFileBtn.querySelector('span');
+      if (label) {
+        const orig = label.textContent;
+        label.textContent = 'Copied!';
+        setTimeout(() => { label.textContent = orig; }, 1500);
       }
     });
 

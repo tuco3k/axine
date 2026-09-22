@@ -16,6 +16,7 @@ export interface ParagraphBlockOptions {
   onStepPrev?: () => void;
   onRequestTransform?: (blockId: string, targetType: BlockType, source: string, caretOffset?: number) => void;
   onDeleteRequest?: (blockId: string) => void;
+  onRequestSelectAll?: () => void;
   isOnlyBlock?: boolean;
 }
 
@@ -311,6 +312,15 @@ export class ParagraphBlockComponent {
       if (this.autocomplete && this.autocomplete.handleKeydown(e, target)) {
         e.stopPropagation();
         return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+        if (this.textarea && this.textarea.selectionStart === 0 && this.textarea.selectionEnd === this.textarea.value.length) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.exitEditMode(false);
+          this.options.onRequestSelectAll?.();
+          return;
+        }
       }
       if (e.key === "Escape") {
         e.stopPropagation();

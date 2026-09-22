@@ -4479,6 +4479,15 @@ h3.doc-heading-content {
 }
 
 /* ==========================================================================
+   Document-Wide Selection and Multi-Block Range Selection
+   ========================================================================== */
+.doc-page-sheet.all-selected .doc-block,
+.doc-block.doc-block-range-selected {
+  background: var(--color-accent-subtle, rgba(217, 119, 6, 0.15)) !important;
+  border-radius: var(--border-radius-sm, 3px);
+}
+
+/* ==========================================================================
    Slot Block & Insert Command Scaffold Styles
    ========================================================================== */
 .doc-block-slot {
