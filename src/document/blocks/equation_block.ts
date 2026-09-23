@@ -37,6 +37,13 @@ export class EquationBlockComponent {
   private isEditing: boolean = false;
   private isSelected: boolean = false;
   private blurTimer: any = null;
+  // Axine source most recently loaded into the math field, and the field's
+  // parsed content at load time. While the field's content is unchanged, the
+  // source is returned byte-for-byte; the field's LaTeX is translated back only
+  // after the content differs. An edit that restores the starting content also
+  // restores the original source.
+  private fieldSource: string = "";
+  private fieldBaseline: string | null = null;
 
   constructor(block: DocumentBlock, options: EquationBlockOptions = {}) {
     this.block = block;
@@ -58,6 +65,26 @@ export class EquationBlockComponent {
 
     this.renderTypesetMath();
     this.bindEvents();
+  }
+
+  // The field's parsed content. `value` returns the assigned string verbatim
+  // until the first edit and MathLive's normalization afterwards, so it cannot
+  // tell an edit apart; the expanded serialization of the parsed model can.
+  private fieldContent(mfEl: any): string {
+    return typeof mfEl.getValue === "function" ? mfEl.getValue("latex-expanded") : String(mfEl.value);
+  }
+
+  private loadSourceIntoField(mfEl: any, source: string) {
+    mfEl.value = axineToLatex(source);
+    this.fieldSource = source;
+    this.fieldBaseline = this.fieldContent(mfEl);
+  }
+
+  private sourceFromField(mfEl: any): string {
+    if (this.fieldContent(mfEl) === this.fieldBaseline) {
+      return this.fieldSource;
+    }
+    return latexToAxine(mfEl.value);
   }
 
   private renderTypesetMath() {
@@ -146,7 +173,7 @@ export class EquationBlockComponent {
       mfEl.className = "doc-block-source-input doc-equation-mathfield";
       mfEl.mathVirtualKeyboardPolicy = "manual";
       this.editorContainer.appendChild(mfEl);
-      mfEl.value = axineToLatex(this.block.source);
+      this.loadSourceIntoField(mfEl, this.block.source);
     } catch {
       mfEl = null;
     }
@@ -173,7 +200,7 @@ export class EquationBlockComponent {
       if (this.textarea) {
         const val = this.textarea.value;
         if (mfEl) {
-          mfEl.value = axineToLatex(val);
+          this.loadSourceIntoField(mfEl, val);
         }
         this.block.source = val;
         this.options.onCommit?.(this.block.id, val);
@@ -181,10 +208,10 @@ export class EquationBlockComponent {
     });
 
     const mfTarget: AutocompleteTarget = {
-      getValue: () => (mfEl ? latexToAxine(mfEl.value) : ""),
+      getValue: () => (mfEl ? this.sourceFromField(mfEl) : ""),
       setValue: (v: string) => {
         if (mfEl) {
-          mfEl.value = axineToLatex(v);
+          this.loadSourceIntoField(mfEl, v);
         }
         if (this.textarea) {
           this.textarea.value = v;
@@ -229,7 +256,7 @@ export class EquationBlockComponent {
           this.textarea.rows = Math.max(1, v.split("\n").length);
         }
         if (mfEl) {
-          mfEl.value = axineToLatex(v);
+          this.loadSourceIntoField(mfEl, v);
         }
         this.block.source = v;
         this.options.onCommit?.(this.block.id, v);
@@ -255,8 +282,7 @@ export class EquationBlockComponent {
 
     if (mfEl) {
       mfEl.addEventListener("input", () => {
-        const latex = mfEl.value;
-        const axine = latexToAxine(latex);
+        const axine = this.sourceFromField(mfEl);
         if (this.textarea) {
           this.textarea.value = axine;
           this.textarea.rows = Math.max(1, axine.split("\n").length);
@@ -339,7 +365,7 @@ export class EquationBlockComponent {
         this.textarea.rows = Math.max(1, this.textarea.value.split("\n").length);
         const val = this.textarea.value;
         if (mfEl) {
-          mfEl.value = axineToLatex(val);
+          this.loadSourceIntoField(mfEl, val);
         }
         this.block.source = val;
         const trimmed = val.trim();
@@ -496,7 +522,7 @@ export class EquationBlockComponent {
       if (this.textarea && this.textarea.value !== this.block.source) {
         newSource = this.textarea.value;
       } else if (mfEl && typeof mfEl.value === "string" && mfEl.value.trim() !== "") {
-        newSource = latexToAxine(mfEl.value);
+        newSource = this.sourceFromField(mfEl);
       } else if (this.textarea) {
         newSource = this.textarea.value;
       }
