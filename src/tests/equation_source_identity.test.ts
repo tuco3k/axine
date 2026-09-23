@@ -6,10 +6,12 @@ import path from "path";
 import { processDocumentLines } from "../core/worker";
 import { Evaluator } from "../core/evaluator";
 
-// Gate: opening an equation and leaving it without editing must leave the
-// document byte-identical. Every equation block in every documents/*.ax file
-// is clicked with a real mouse event, Escape is pressed, and the document
-// text read back from the running editor is compared to the file on disk.
+// Gate: the equation surface never changes source text a person did not
+// change. Every equation block in every documents/*.ax file is opened with a
+// real mouse click in Chromium and closed again, with and without a neutral
+// edit, and the document text read back from the running editor is compared
+// byte for byte with the file on disk. Edits that should change the source
+// must produce exactly the characters typed.
 
 const DOCUMENTS_DIR = path.resolve(__dirname, "../../documents");
 
@@ -31,7 +33,53 @@ function countErrors(text: string): number {
   return errors;
 }
 
-describe("Equation source identity: click + Escape without editing", () => {
+function lineDiff(original: string, after: string): string[] {
+  const a = original.split("\n");
+  const b = after.split("\n");
+  const diffs: string[] = [];
+  for (let l = 0; l < Math.max(a.length, b.length); l++) {
+    if (a[l] !== b[l]) diffs.push(`  L${l + 1}: ${JSON.stringify(a[l])} -> ${JSON.stringify(b[l])}`);
+  }
+  return diffs;
+}
+
+type Surface = { surface: "math" | "text"; reason: string };
+
+async function equationIds(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    Array.from(document.querySelectorAll<HTMLElement>(".doc-block-equation")).map((el) => el.dataset.blockId!)
+  );
+}
+
+// Clicks the block and waits until its editing surface has focus.
+async function openBlock(page: Page, id: string): Promise<Surface> {
+  const block = page.locator(`[data-block-id="${id}"]`);
+  await block.scrollIntoViewIfNeeded();
+  await block.click();
+  const handle = await page.waitForFunction(
+    (blockId) => {
+      const el = document.querySelector<HTMLElement>(`[data-block-id="${blockId}"]`);
+      const a = document.activeElement;
+      if (!el || !a || !el.contains(a)) return null;
+      if (a.tagName === "MATH-FIELD") return { surface: "math", reason: "" };
+      if (a.tagName === "TEXTAREA") return { surface: "text", reason: el.dataset.textEditReason ?? "" };
+      return null;
+    },
+    id,
+    { timeout: 5000 }
+  );
+  return (await handle.jsonValue()) as Surface;
+}
+
+async function waitClosed(page: Page, id: string): Promise<void> {
+  await page.waitForFunction(
+    (blockId) => !document.querySelector(`[data-block-id="${blockId}"]`)?.classList.contains("editing"),
+    id,
+    { timeout: 5000 }
+  );
+}
+
+describe("Equation source identity", () => {
   let server: ViteDevServer;
   let browser: Browser;
   let page: Page;
@@ -69,60 +117,139 @@ describe("Equation source identity: click + Escape without editing", () => {
     if (server) await server.close();
   });
 
-  it("leaves every document in documents/ byte-identical and evaluating identically", async () => {
+  async function loadDocument(src: string): Promise<void> {
+    await page.evaluate((s) => (window as any).editor.blockEditor.setText(s), src);
+  }
+
+  async function documentText(): Promise<string> {
+    return page.evaluate(() => (window as any).editor.blockEditor.getText());
+  }
+
+  it("leaves every document in documents/ byte-identical and evaluating identically after click + Escape", async () => {
     const failures: string[] = [];
-    let equationsClicked = 0;
+    let opened = 0;
 
     for (const file of files) {
       const rel = path.relative(DOCUMENTS_DIR, file);
       const original = fs.readFileSync(file, "utf8");
-      await page.evaluate((src) => (window as any).editor.blockEditor.setText(src), original);
-
-      const equations = page.locator(".doc-block-equation");
-      const count = await equations.count();
-      for (let i = 0; i < count; i++) {
-        const eq = equations.nth(i);
-        await eq.scrollIntoViewIfNeeded();
-        await eq.click();
-        await page.waitForFunction(
-          (idx) => {
-            const el = document.querySelectorAll(".doc-block-equation")[idx];
-            return !!el && el.classList.contains("editing") && document.activeElement?.tagName === "MATH-FIELD";
-          },
-          i,
-          { timeout: 5000 }
-        );
+      await loadDocument(original);
+      for (const id of await equationIds(page)) {
+        await openBlock(page, id);
         await page.keyboard.press("Escape");
-        await page.waitForFunction(
-          (idx) => !document.querySelectorAll(".doc-block-equation")[idx]?.classList.contains("editing"),
-          i,
-          { timeout: 5000 }
-        );
-        equationsClicked++;
+        await waitClosed(page, id);
+        opened++;
       }
-
-      const after: string = await page.evaluate(() => (window as any).editor.blockEditor.getText());
+      const after = await documentText();
       if (after !== original) {
-        const a = original.split("\n");
-        const b = after.split("\n");
-        const diffs: string[] = [];
-        for (let l = 0; l < Math.max(a.length, b.length); l++) {
-          if (a[l] !== b[l]) diffs.push(`  L${l + 1}: ${JSON.stringify(a[l])} -> ${JSON.stringify(b[l])}`);
-        }
-        failures.push(`${rel}: ${diffs.length} lines changed after ${count} equations\n${diffs.slice(0, 3).join("\n")}`);
+        const diffs = lineDiff(original, after);
+        failures.push(`${rel}: ${diffs.length} lines changed\n${diffs.slice(0, 3).join("\n")}`);
         continue;
       }
-
       const before = countErrors(original);
       const afterErrors = countErrors(after);
-      if (before !== afterErrors) {
-        failures.push(`${rel}: error count ${before} -> ${afterErrors}`);
+      if (before !== afterErrors) failures.push(`${rel}: error count ${before} -> ${afterErrors}`);
+    }
+
+    expect(opened).toBeGreaterThan(500);
+    expect(failures).toEqual([]);
+  }, 900000);
+
+  it("leaves every equation byte-identical after a character is typed and deleted", async () => {
+    const failures: string[] = [];
+    const textSurfaces: string[] = [];
+    let edited = 0;
+
+    for (const file of files) {
+      const rel = path.relative(DOCUMENTS_DIR, file);
+      const original = fs.readFileSync(file, "utf8");
+      await loadDocument(original);
+      for (const id of await equationIds(page)) {
+        const surface = await openBlock(page, id);
+        if (surface.surface === "text") {
+          const firstLine = (await page.locator(`[data-block-id="${id}"] textarea`).inputValue()).split("\n")[0];
+          textSurfaces.push(`${rel} (${surface.reason}): ${firstLine.slice(0, 50)}`);
+        }
+        await page.keyboard.type("7");
+        await page.keyboard.press("Backspace");
+        await page.keyboard.press("Escape");
+        await waitClosed(page, id);
+        edited++;
+      }
+      const after = await documentText();
+      if (after !== original) {
+        const diffs = lineDiff(original, after);
+        failures.push(`${rel}: ${diffs.length} lines changed\n${diffs.slice(0, 3).join("\n")}`);
       }
     }
 
-    expect(equationsClicked).toBeGreaterThan(500);
+    console.log(`[typed-and-deleted] ${edited} equations; ${textSurfaces.length} edited as text:\n  ${textSurfaces.join("\n  ")}`);
+    expect(edited).toBeGreaterThan(500);
     expect(failures).toEqual([]);
-  }, 600000);
+    // Only multi-line equation blocks may fall back to text editing; a
+    // single-line equation on the text surface means the bridge lost a construct.
+    expect(textSurfaces.filter((t) => !t.includes("spans more than one line"))).toEqual([]);
+  }, 900000);
+
+  // Each case: starting source, keys pressed after clicking into the equation,
+  // and the exact source a person pressing those keys has written.
+  const EDITS: { name: string; source: string; keys: string[]; expected: string }[] = [
+    { name: "append a digit", source: ":y_pos = 3", keys: ["End", "4"], expected: ":y_pos = 34" },
+    {
+      name: "change an operator",
+      source: ":total = :a + :b",
+      keys: ["End", "ArrowLeft", "ArrowLeft", "ArrowLeft", "Backspace", "-"],
+      expected: ":total = :a - :b",
+    },
+    { name: "add a term", source: "d//d:time :x = 10.0", keys: ["End", " + :v_0"], expected: "d//d:time :x = 10.0 + :v_0" },
+    { name: "add a term after an exponent", source: "\\forall x, :sq(x) = x^2", keys: ["End", " + 1"], expected: "\\forall x, :sq(x) = x^2 + 1" },
+    { name: "type a division", source: ":half = 1", keys: ["End", " / 2"], expected: ":half = 1 / 2" },
+    { name: "type a multiplication", source: ":area = :r", keys: ["End", " * :r"], expected: ":area = :r * :r" },
+    { name: "type a command", source: ":s = 1", keys: ["End", " \\in S"], expected: ":s = 1 \\in S" },
+    { name: "extend primes", source: "y'' + 4*y' = 0", keys: ["End", " + y"], expected: "y'' + 4*y' = 0 + y" },
+  ];
+
+  for (const edit of EDITS) {
+    it(`writes exactly what was typed: ${edit.name}`, async () => {
+      await loadDocument(edit.source);
+      const [id] = await equationIds(page);
+      const surface = await openBlock(page, id);
+      expect(surface.surface).toBe("math");
+      for (const k of edit.keys) {
+        if (/^[A-Z][A-Za-z]+$/.test(k)) await page.keyboard.press(k);
+        else await page.keyboard.type(k);
+      }
+      await page.keyboard.press("Escape");
+      await waitClosed(page, id);
+      expect(await documentText()).toBe(edit.expected);
+    }, 60000);
+  }
+
+  it("keeps every line when a multi-line prose block is edited so it starts with a heading marker", async () => {
+    const original = "Intro.\n\n#first line\nsecond line\nthird line";
+    await loadDocument(original);
+    const block = page.locator(".doc-block-paragraph", { hasText: "first line" });
+    expect(await block.count()).toBe(1);
+    await block.click();
+    await page.waitForFunction(() => document.activeElement?.tagName === "TEXTAREA");
+    // Put the caret after "#" and type a space: the text now starts with "# ".
+    await page.evaluate(() => (document.activeElement as HTMLTextAreaElement).setSelectionRange(1, 1));
+    await page.keyboard.type(" ");
+    await page.keyboard.press("Escape");
+    expect(await documentText()).toBe("Intro.\n\n# first line\nsecond line\nthird line");
+  }, 60000);
+
+  it("restores the original bytes when an edit is undone by hand", async () => {
+    const original = ":y_pos = 3\n\nd//d:time :x = 10.0";
+    await loadDocument(original);
+    const [id] = await equationIds(page);
+    await openBlock(page, id);
+    await page.keyboard.press("End");
+    await page.keyboard.type("4");
+    await page.keyboard.press("Backspace");
+    await page.keyboard.press("Escape");
+    await waitClosed(page, id);
+    expect(await documentText()).toBe(original);
+  }, 60000);
 
   // Documents chosen for identifiers with '_', ':'-prefixed names, d//d
   // operators, \if/\then/\else chains, \unit and \record lines.
@@ -134,39 +261,33 @@ describe("Equation source identity: click + Escape without editing", () => {
     "pendulum.ax",
   ];
 
-  const exits: { name: string; leave: (page: Page, idx: number) => Promise<void> }[] = [
-    { name: "Enter", leave: async (p) => { await p.keyboard.press("Enter"); } },
-    { name: "ArrowDown", leave: async (p) => { await p.keyboard.press("ArrowDown"); } },
+  // Enter and ArrowDown leave a MathLive field. In a multi-line equation on the
+  // text surface they add and move between lines instead; those blocks are
+  // covered by the Escape and click cases.
+  const exits: { name: string; mathOnly: boolean; leave: (id: string) => Promise<void> }[] = [
+    { name: "Enter", mathOnly: true, leave: async () => page.keyboard.press("Enter") },
+    { name: "ArrowDown", mathOnly: true, leave: async () => page.keyboard.press("ArrowDown") },
     {
       name: "click another block",
-      leave: async (p, idx) => {
+      mathOnly: false,
+      leave: async (id) => {
         // Click the nearest prose or heading block next to the equation.
-        await p.evaluate((i) => {
-          document.querySelectorAll("[data-gate-target]").forEach((el) => el.removeAttribute("data-gate-target"));
-          const eq = document.querySelectorAll(".doc-block-equation")[i];
-          const isText = (el: Element | null) => !!el && (el.classList.contains("doc-block-heading") || el.classList.contains("doc-block-paragraph"));
-          let target: Element | null = eq.previousElementSibling;
-          while (target && !isText(target)) target = target.previousElementSibling;
-          if (!target) {
-            target = eq.nextElementSibling;
-            while (target && !isText(target)) target = target.nextElementSibling;
+        const targetId = await page.evaluate((blockId) => {
+          const eq = document.querySelector(`[data-block-id="${blockId}"]`)!;
+          const isText = (el: Element | null) =>
+            !!el && (el.classList.contains("doc-block-heading") || el.classList.contains("doc-block-paragraph"));
+          let t: Element | null = eq.previousElementSibling;
+          while (t && !isText(t)) t = t.previousElementSibling;
+          if (!t) {
+            t = eq.nextElementSibling;
+            while (t && !isText(t)) t = t.nextElementSibling;
           }
-          target?.setAttribute("data-gate-target", "1");
-        }, idx);
-        await p.locator("[data-gate-target]").click();
-        // Close the clicked text block before the next equation is clicked. Two
-        // separate defects make the next click miss otherwise: a click within a
-        // few milliseconds of a text block taking focus is lost to its deferred
-        // focus handling (COHESION_AUDIT.md A1), and a heading is 12px taller
-        // while editing, so the layout shifts under the pointer when it closes.
-        // Neither affects source identity, which is what this test measures.
-        await p.waitForFunction(() => {
-          const a = document.activeElement;
-          return !!a && a.tagName !== "MATH-FIELD" && !!a.closest(".doc-block-heading, .doc-block-paragraph");
-        });
-        await p.waitForTimeout(150);
-        await p.keyboard.press("Escape");
-        await p.waitForFunction(() => !document.querySelector(".doc-block-heading.editing, .doc-block-paragraph.editing"));
+          return (t as HTMLElement | null)?.dataset.blockId ?? null;
+        }, id);
+        if (!targetId) return;
+        // The next equation is clicked immediately, while this text block is
+        // still being edited.
+        await page.locator(`[data-block-id="${targetId}"]`).click();
       },
     },
   ];
@@ -176,52 +297,19 @@ describe("Equation source identity: click + Escape without editing", () => {
       const failures: string[] = [];
       for (const rel of EXIT_SAMPLE) {
         const original = fs.readFileSync(path.join(DOCUMENTS_DIR, rel), "utf8");
-        await page.evaluate((src) => (window as any).editor.blockEditor.setText(src), original);
-        const count = await page.locator(".doc-block-equation").count();
-        for (let i = 0; i < count; i++) {
-          const eq = page.locator(".doc-block-equation").nth(i);
-          await eq.scrollIntoViewIfNeeded();
-          await eq.click();
-          await page.waitForFunction(() => document.activeElement?.tagName === "MATH-FIELD", undefined, { timeout: 5000 });
-          await exit.leave(page, i);
-          // Enter and ArrowDown step into the next block, which may itself be an
-          // equation that opens; only the equation just left must be closed.
-          await page.waitForFunction(
-            (idx) => !document.querySelectorAll(".doc-block-equation")[idx]?.classList.contains("editing"),
-            i,
-            { timeout: 5000 }
-          );
+        await loadDocument(original);
+        for (const id of await equationIds(page)) {
+          const surface = await openBlock(page, id);
+          if (exit.mathOnly && surface.surface !== "math") {
+            await page.keyboard.press("Escape");
+          } else {
+            await exit.leave(id);
+          }
+          await waitClosed(page, id);
         }
-        const after: string = await page.evaluate(() => (window as any).editor.blockEditor.getText());
-        if (after !== original) failures.push(rel);
+        if ((await documentText()) !== original) failures.push(rel);
       }
       expect(failures).toEqual([]);
     }, 300000);
   }
-
-  it("writes a real edit to the source, and restores the original bytes when the edit is undone by hand", async () => {
-    const original = ":y_pos = 3\n\nd//d:time :x = 10.0";
-    await page.evaluate((src) => (window as any).editor.blockEditor.setText(src), original);
-
-    const eq = page.locator(".doc-block-equation").first();
-    await eq.click();
-    await page.waitForFunction(() => document.activeElement?.tagName === "MATH-FIELD");
-    await page.keyboard.press("End");
-    await page.keyboard.type("4");
-    await page.keyboard.press("Backspace");
-    await page.keyboard.press("Escape");
-    await page.waitForFunction(() => !document.querySelector(".doc-block-equation.editing"));
-    const reverted: string = await page.evaluate(() => (window as any).editor.blockEditor.getText());
-    expect(reverted).toBe(original);
-
-    await eq.click();
-    await page.waitForFunction(() => document.activeElement?.tagName === "MATH-FIELD");
-    await page.keyboard.press("End");
-    await page.keyboard.type("4");
-    await page.keyboard.press("Escape");
-    await page.waitForFunction(() => !document.querySelector(".doc-block-equation.editing"));
-    const edited: string = await page.evaluate(() => (window as any).editor.blockEditor.getText());
-    expect(edited).not.toBe(original);
-    expect(edited.split("\n")[0]).toMatch(/34$/);
-  }, 60000);
 });

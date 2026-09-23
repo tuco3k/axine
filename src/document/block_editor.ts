@@ -190,6 +190,8 @@ export class BlockDocumentEditor {
   ): void {
     const block = this.state.getBlock(blockId);
     if (!block) return;
+    // A heading's editor is a single-line input and would drop line breaks.
+    if (newType === "heading" && newSource.includes("\n")) newType = "paragraph";
 
     block.type = newType;
     block.source = newSource;
@@ -322,7 +324,8 @@ export class BlockDocumentEditor {
       if (id !== blockId) {
         if ("getIsEditing" in comp && typeof (comp as any).getIsEditing === "function" && (comp as any).getIsEditing()) {
           if ("exitEditMode" in comp && typeof (comp as any).exitEditMode === "function") {
-            (comp as any).exitEditMode(true);
+            // Another block is taking the selection; this one must not take focus back.
+            (comp as any).exitEditMode(true, false);
           }
         }
       }

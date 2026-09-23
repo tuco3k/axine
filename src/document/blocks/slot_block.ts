@@ -245,7 +245,7 @@ export class SlotBlockComponent {
       // If focus moves outside editorContainer, exit edit mode
       setTimeout(() => {
         if (this.isEditing && !this.editorContainer.contains(document.activeElement)) {
-          this.exitEditMode(true);
+          this.exitEditMode(true, false);
         }
       }, 100);
     });
@@ -264,7 +264,7 @@ export class SlotBlockComponent {
     }
   }
 
-  public exitEditMode(commit: boolean = true): void {
+  public exitEditMode(commit: boolean = true, refocus: boolean = true): void {
     if (!this.isEditing) return;
     this.isEditing = false;
 
@@ -286,7 +286,8 @@ export class SlotBlockComponent {
     this.el.setAttribute("data-atomic", "true");
 
     this.renderStaticView();
-    this.setSelected(true);
+    // A block closed because focus moved elsewhere leaves focus there.
+    if (refocus) this.setSelected(true);
   }
 
   public setSelected(selected: boolean): void {

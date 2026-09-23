@@ -233,7 +233,7 @@ export class FigureBlockComponent {
     });
 
     this.textarea.addEventListener("blur", () => {
-      this.exitEditMode(true);
+      this.exitEditMode(true, false);
     });
 
     this.textarea.focus();
@@ -243,7 +243,7 @@ export class FigureBlockComponent {
     }
   }
 
-  public exitEditMode(commit: boolean = true) {
+  public exitEditMode(commit: boolean = true, refocus: boolean = true) {
     if (!this.isEditing) return;
     this.isEditing = false;
 
@@ -267,7 +267,8 @@ export class FigureBlockComponent {
     this.el.setAttribute("data-atomic", "true");
 
     this.updateBlock(this.block);
-    this.setSelected(true);
+    // A block closed because focus moved elsewhere leaves focus there.
+    if (refocus) this.setSelected(true);
   }
 
   public setSelected(selected: boolean) {

@@ -155,6 +155,7 @@ export class HeadingBlockComponent {
     this.input.className = "doc-block-source-input doc-heading-input";
     this.input.placeholder = "Heading...";
     this.input.value = this.block.source;
+    this.input.dataset.level = String(this.getHeadingLevel());
     this.el.appendChild(this.input);
 
     this.input.addEventListener("input", () => {
@@ -197,7 +198,7 @@ export class HeadingBlockComponent {
     });
 
     this.input.addEventListener("blur", () => {
-      this.exitEditMode(true);
+      this.exitEditMode(true, false);
     });
 
     this.input.focus();
@@ -227,10 +228,13 @@ export class HeadingBlockComponent {
     }
 
     this.block.source = val;
+    // The input keeps the rendered heading's size, so the layout does not move
+    // when editing starts or ends.
+    this.input.dataset.level = String(this.getHeadingLevel());
     this.options.onCommit?.(this.block.id, val);
   }
 
-  public exitEditMode(commit: boolean = true) {
+  public exitEditMode(commit: boolean = true, refocus: boolean = true) {
     if (!this.isEditing) return;
     this.isEditing = false;
     this.el.classList.remove("editing");
@@ -250,7 +254,8 @@ export class HeadingBlockComponent {
 
     this.renderedContainer.classList.remove("hidden");
     this.renderHeading();
-    this.setSelected(true);
+    // A block closed because focus moved elsewhere leaves focus there.
+    if (refocus) this.setSelected(true);
   }
 
   public setSelected(selected: boolean) {

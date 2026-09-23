@@ -160,6 +160,7 @@ export class ParagraphBlockComponent {
   public enterEditMode(initialCharOrOffset?: string | number) {
     if (this.isEditing) return;
     this.isEditing = true;
+    this.el.classList.add("editing");
 
     this.renderedContainer.classList.add("hidden");
     this.textarea = document.createElement("textarea");
@@ -271,13 +272,15 @@ export class ParagraphBlockComponent {
         this.options.onRequestTransform?.(this.block.id, "figure", val, caret);
         return;
       }
-      // 4. Heading: # a heading
-      if (val.startsWith("# ") || val.startsWith("## ") || val.startsWith("### ")) {
+      // 4. Heading: # a heading. A heading is one line; its editor is a
+      // single-line input, so multi-line text stays a paragraph.
+      if ((val.startsWith("# ") || val.startsWith("## ") || val.startsWith("### ")) && !val.includes("\n")) {
         if (this.blurTimer) {
           clearTimeout(this.blurTimer);
           this.blurTimer = null;
         }
         this.isEditing = false;
+        this.el.classList.remove("editing");
         this.options.onRequestTransform?.(this.block.id, "heading", val, caret);
         return;
       }
@@ -288,6 +291,7 @@ export class ParagraphBlockComponent {
           this.blurTimer = null;
         }
         this.isEditing = false;
+        this.el.classList.remove("editing");
         this.options.onRequestTransform?.(this.block.id, "equation", "", 0);
         return;
       }
@@ -299,6 +303,7 @@ export class ParagraphBlockComponent {
             this.blurTimer = null;
           }
           this.isEditing = false;
+          this.el.classList.remove("editing");
           this.options.onRequestTransform?.(this.block.id, "equation", val, caret);
           return;
         }
@@ -403,7 +408,7 @@ export class ParagraphBlockComponent {
       this.blurTimer = setTimeout(() => {
         this.blurTimer = null;
         if (this.isEditing && (!this.autocomplete || !this.autocomplete.getIsOpen())) {
-          this.exitEditMode(true);
+          this.exitEditMode(true, false);
         }
       }, 150);
     });
@@ -424,13 +429,14 @@ export class ParagraphBlockComponent {
     }
   }
 
-  public exitEditMode(commit: boolean = true) {
+  public exitEditMode(commit: boolean = true, refocus: boolean = true) {
     if (this.blurTimer) {
       clearTimeout(this.blurTimer);
       this.blurTimer = null;
     }
     if (!this.isEditing) return;
     this.isEditing = false;
+    this.el.classList.remove("editing");
 
     if (commit && this.textarea) {
       const newSource = this.textarea.value;
@@ -466,7 +472,8 @@ export class ParagraphBlockComponent {
 
     this.renderedContainer.classList.remove("hidden");
     this.renderProse();
-    this.setSelected(true);
+    // A block closed because focus moved elsewhere leaves focus there.
+    if (refocus) this.setSelected(true);
   }
 
   public setSelected(selected: boolean) {
@@ -495,6 +502,7 @@ export class ParagraphBlockComponent {
 
   public dispose() {
     this.isEditing = false;
+    this.el.classList.remove("editing");
     if (this.blurTimer) {
       clearTimeout(this.blurTimer);
       this.blurTimer = null;

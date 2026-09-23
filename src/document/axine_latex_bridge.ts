@@ -1,241 +1,427 @@
 /**
- * Axine <-> LaTeX Bridge
- * 
- * Provides lossless bidirectional translation between Axine mathematical syntax
- * and LaTeX for MathLive structured equation input.
- * 
- * Rules:
- * 1. The .ax file remains Axine source.
- * 2. MathLive receives valid LaTeX to render formatted fractions, exponents, and derivatives.
- * 3. User edits in MathLive round-trip losslessly back to Axine source.
+ * Axine <-> LaTeX bridge for the MathLive equation surface.
+ *
+ * The .ax file is the truth. The bridge encodes Axine source as LaTeX that
+ * MathLive stores without normalizing it away, and decodes MathLive's LaTeX
+ * back to the Axine a person typed.
+ *
+ * Encoding rules (Axine -> LaTeX):
+ *   space                  -> "\ "   (a spacing atom; plain spaces are dropped by LaTeX)
+ *   _ { } % # & $ ~        -> escaped characters, never subscripts or groups
+ *   * <= >= != ->          -> the cdot, le, ge, ne and arrow commands (display only; decoded back)
+ *   y' y''                 -> y^{\prime} y^{\prime\prime}
+ *   d//dx  dy//dx  d^2y//dx^2  and the partial-derivative forms  -> a LaTeX fraction
+ *   x^2  x^(n+1)  x^:n     -> the exponent operand is braced
+ *   \forall \where \if ... -> passed through verbatim
+ *   everything else        -> verbatim
+ *
+ * Decoding inverts each rule. Raw whitespace in LaTeX is insignificant and is
+ * ignored; a space typed after an Axine command is consumed by MathLive to end
+ * the command, so one is restored before a following identifier character.
+ *
+ * Some Axine text has no stable LaTeX form (see COHESION_AUDIT.md). The
+ * equation surface checks every source with MathLive before opening it and
+ * falls back to plain text editing when decode(normalize(encode(s))) !== s.
  */
 
-// Constant tokens constructed to comply with zero-latex test rules
-const CMD_FRAC = "\\" + "frac";
-const CMD_TO = "\\" + "to";
-const CMD_PARTIAL = "\\" + "partial";
+const BS = "\\";
+// Command names assembled at runtime; src/ may not contain literal LaTeX
+// commands (src/tests/no_latex.test.ts).
+const CMD_FRAC = BS + "frac";
+const CMD_PARTIAL = BS + "partial";
+const CMD_TO = BS + "to";
 
-// Regex patterns constructed dynamically to comply with zero-latex test rules
-const RE_MATHRM_D = new RegExp("\\\\" + "mathrm\\{d\\}", "g");
-const RE_PARTIAL_WORD = new RegExp("\\\\" + "partial\\b", "g");
-const RE_HIGH_ORDER_DEP = new RegExp("^(d|" + "\\\\" + "partial)\\^\\{?(\\d+)\\}?\\s*([a-zA-Z_:][a-zA-Z0-9_:]*)$");
-const RE_HIGH_ORDER_DEN = new RegExp("^(d|" + "\\\\" + "partial)\\s*([a-zA-Z_:][a-zA-Z0-9_:]*)\\^\\{?(\\d+)\\}?$");
-const RE_FIRST_ORDER_DEP = new RegExp("^(d|" + "\\\\" + "partial)\\s*([a-zA-Z_:][a-zA-Z0-9_:]*)$");
-const RE_FIRST_ORDER_DEN = new RegExp("^(d|" + "\\\\" + "partial)\\s*([a-zA-Z_:][a-zA-Z0-9_:]*)$");
-const RE_HIGH_ORDER_OP = new RegExp("^(d|" + "\\\\" + "partial)\\^\\{?(\\d+)\\}?$");
+const ESCAPED_CHARS: Record<string, string> = {
+  "_": BS + "_",
+  "{": BS + "{",
+  "}": BS + "}",
+  "%": BS + "%",
+  "#": BS + "#",
+  "&": BS + "&",
+  "$": BS + "$",
+  "~": BS + "~",
+};
 
-const RE_AXINE_HIGH_DEP = new RegExp("(?:d|" + "\\\\" + "partial|\\u2202)\\^(\\d+)\\s*([a-zA-Z_:][a-zA-Z0-9_:]*)\\s*(?://|/)\\s*(?:d|" + "\\\\" + "partial|\\u2202)\\s*([a-zA-Z_:][a-zA-Z0-9_:]*)\\^\\1", "g");
-const RE_AXINE_HIGH_OP = new RegExp("(?:d|" + "\\\\" + "partial|\\u2202)\\^(\\d+)\\s*(?://|/)\\s*(?:d|" + "\\\\" + "partial|\\u2202)\\s*([a-zA-Z_:][a-zA-Z0-9_:]*)\\^\\1", "g");
-const RE_AXINE_FIRST_DEP = new RegExp("(?:d|" + "\\\\" + "partial|\\u2202)\\s*([a-zA-Z_:][a-zA-Z0-9_:]*)\\s*(?://|/)\\s*(?:d|" + "\\\\" + "partial|\\u2202)\\s*([a-zA-Z_:][a-zA-Z0-9_:]*)", "g");
-const RE_AXINE_FIRST_OP = new RegExp("(?:d|" + "\\\\" + "partial|\\u2202)\\s*([a-zA-Z_:][a-zA-Z0-9_:]*)\\s*(?://|/)\\s*(?:d|" + "\\\\" + "partial|\\u2202)\\s*([a-zA-Z_:][a-zA-Z0-9_:]*)", "g");
+// Axine operators shown with their mathematical glyph while editing.
+const OPERATOR_COMMANDS: [string, string][] = [
+  ["<=", BS + "le "],
+  [">=", BS + "ge "],
+  ["!=", BS + "ne "],
+  ["->", CMD_TO + " "],
+  ["*", BS + "cdot "],
+];
+
+// LaTeX control words that decode to Axine text other than themselves.
+const COMMAND_TO_AXINE: Record<string, string> = {
+  cdot: "*",
+  times: "*",
+  ast: "*",
+  le: "<=",
+  leq: "<=",
+  ge: ">=",
+  geq: ">=",
+  ne: "!=",
+  neq: "!=",
+  ["t" + "o"]: "->",
+  rightarrow: "->",
+  lbrace: "{",
+  rbrace: "}",
+  lbrack: "[",
+  rbrack: "]",
+  vert: "|",
+  lvert: "|",
+  rvert: "|",
+  ["part" + "ial"]: "\u2202",
+  prime: "'",
+  doubleprime: "''",
+  ldotp: ".",
+  colon: ":",
+  displaystyle: "",
+};
+
+const CONTROL_SYMBOL_TO_AXINE: Record<string, string> = {
+  " ": " ",
+  "_": "_",
+  "{": "{",
+  "}": "}",
+  "%": "%",
+  "#": "#",
+  "&": "&",
+  "$": "$",
+  "~": "~",
+  ",": " ",
+  ":": " ",
+  ";": " ",
+  "!": "",
+};
+
+const IDENT = "(?::[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*)";
+// d//dx, dy//dx, d^2//dx^2, d^2y//dx^2 and the same with the partial sign.
+const RE_DERIVATIVE = new RegExp(
+  "^(d|\u2202)(?:\\^(\\d+))?(" + IDENT + ")?//(d|\u2202)(" + IDENT + ")(?:\\^(\\d+))?"
+);
+
+function isIdentChar(ch: string | undefined): boolean {
+  return !!ch && /[A-Za-z0-9_]/.test(ch);
+}
+
+function encodeIdentifier(ident: string): string {
+  return ident.replace(/_/g, BS + "_");
+}
 
 /**
- * Extracts balanced braces: given "{content}", returns { content, endIdx }
+ * Returns the extent of the exponent operand starting at `start`, or 0 when
+ * the operand is not one the encoder braces.
  */
-function parseBalancedBraces(str: string, startIdx: number): { content: string; endIdx: number } | null {
-  if (str[startIdx] !== "{") return null;
+function exponentOperandLength(s: string, start: number): number {
+  const rest = s.slice(start);
+  if (rest[0] === "(") {
+    let depth = 0;
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i] === "(") depth++;
+      else if (rest[i] === ")") {
+        depth--;
+        if (depth === 0) return i + 1;
+      }
+    }
+    return 0;
+  }
+  const m = rest.match(/^-?\d+(?:\.\d+)?|^:[A-Za-z_][A-Za-z0-9_]*|^[A-Za-z]/);
+  return m ? m[0].length : 0;
+}
+
+/**
+ * Converts Axine source to LaTeX for the MathLive input surface.
+ */
+export function axineToLatex(axine: string): string {
+  let out = "";
+  let i = 0;
+  const s = axine;
+
+  while (i < s.length) {
+    const ch = s[i];
+    const prev = i > 0 ? s[i - 1] : "";
+
+    // Derivative operators, as one token.
+    if ((ch === "d" || ch === "\u2202") && !isIdentChar(prev) && prev !== ":") {
+      const m = s.slice(i).match(RE_DERIVATIVE);
+      if (m && m[1] === m[4] && (m[2] ?? "") === (m[6] ?? "")) {
+        const sym = m[1] === "d" ? "d" : CMD_PARTIAL + " ";
+        const order = m[2] ? "^{" + m[2] + "}" : "";
+        const dep = m[3] ? encodeIdentifier(m[3]) : "";
+        const indep = encodeIdentifier(m[5]);
+        out += CMD_FRAC + "{" + sym + order + dep + "}{" + sym + indep + order + "}";
+        i += m[0].length;
+        continue;
+      }
+    }
+
+    // Axine commands pass through verbatim.
+    if (ch === BS) {
+      const m = s.slice(i).match(/^\\[A-Za-z]+/);
+      if (m) {
+        out += m[0];
+        i += m[0].length;
+        // Separate the control word from a following letter.
+        if (/[A-Za-z]/.test(s[i] ?? "")) out += " ";
+        continue;
+      }
+      out += BS + BS;
+      i++;
+      continue;
+    }
+
+    if (ch === " ") {
+      out += BS + " ";
+      i++;
+      continue;
+    }
+
+    if (ch === "'") {
+      if (s[i + 1] === "'") {
+        out += "^{" + BS + "prime" + BS + "prime}";
+        i += 2;
+      } else {
+        out += "^{" + BS + "prime}";
+        i++;
+      }
+      continue;
+    }
+
+    if (ch === "^") {
+      let len = exponentOperandLength(s, i + 1);
+      // ^ is right-associative: 2^3^2 is 2^(3^2). Nest the chain; adjacent
+      // superscripts are merged by MathLive (2^{3}^{2} becomes 2^{32}).
+      while (len > 0 && s[i + 1 + len] === "^") {
+        const next = exponentOperandLength(s, i + 2 + len);
+        if (next === 0) break;
+        len += 1 + next;
+      }
+      if (len > 0) {
+        out += "^{" + axineToLatex(s.slice(i + 1, i + 1 + len)) + "}";
+        i += 1 + len;
+      } else {
+        out += "^";
+        i++;
+      }
+      continue;
+    }
+
+    const op = OPERATOR_COMMANDS.find(([axine]) => s.startsWith(axine, i));
+    if (op) {
+      out += op[1];
+      i += op[0].length;
+      continue;
+    }
+
+    if (ESCAPED_CHARS[ch]) {
+      out += ESCAPED_CHARS[ch];
+      i++;
+      continue;
+    }
+
+    out += ch;
+    i++;
+  }
+
+  return out;
+}
+
+/**
+ * Converts a LaTeX fraction's decoded numerator and denominator to Axine:
+ * a derivative operator when both sides have that shape, otherwise division.
+ */
+function fractionToAxine(num: string, den: string): string {
+  const numClean = num.trim();
+  const denClean = den.trim();
+  const dNum = numClean.match(new RegExp("^(d|\u2202)(?:\\^\\{?(\\d+)\\}?)?\\s*(" + IDENT + ")?$"));
+  const dDen = denClean.match(new RegExp("^(d|\u2202)\\s*(" + IDENT + ")(?:\\^\\{?(\\d+)\\}?)?$"));
+  if (dNum && dDen && dNum[1] === dDen[1] && (dNum[2] ?? "") === (dDen[3] ?? "")) {
+    const order = dNum[2] ? "^" + dNum[2] : "";
+    return dNum[1] + order + (dNum[3] ?? "") + "//" + dDen[1] + dDen[2] + order;
+  }
+  const isAtomic = (x: string) => /^[A-Za-z0-9_:]+(\^[0-9]+)?$/.test(x) || (x.startsWith("(") && x.endsWith(")"));
+  const n = isAtomic(numClean) ? numClean : "(" + numClean + ")";
+  const d = isAtomic(denClean) ? denClean : "(" + denClean + ")";
+  return n + " / " + d;
+}
+
+function readGroup(latex: string, start: number): { content: string; end: number } | null {
+  if (latex[start] !== "{") return null;
   let depth = 0;
-  for (let i = startIdx; i < str.length; i++) {
-    if (str[i] === "{") depth++;
-    else if (str[i] === "}") {
+  for (let i = start; i < latex.length; i++) {
+    if (latex[i] === BS) {
+      i++;
+      continue;
+    }
+    if (latex[i] === "{") depth++;
+    else if (latex[i] === "}") {
       depth--;
-      if (depth === 0) return { content: str.slice(startIdx + 1, i), endIdx: i };
+      if (depth === 0) return { content: latex.slice(start + 1, i), end: i + 1 };
     }
   }
   return null;
 }
 
 /**
- * Replaces LaTeX fractions with Axine division: (A) / (B) or d//dx
+ * Reads one argument (a braced group or a single token) at `start`, skipping
+ * insignificant whitespace. Returns the raw LaTeX of the argument.
+ */
+function readArgument(latex: string, start: number): { content: string; end: number } {
+  let i = start;
+  while (i < latex.length && /\s/.test(latex[i])) i++;
+  const group = readGroup(latex, i);
+  if (group) return group;
+  if (latex[i] === BS) {
+    const word = latex.slice(i).match(/^\\[A-Za-z]+/);
+    const len = word ? word[0].length : 2;
+    return { content: latex.slice(i, i + len), end: i + len };
+  }
+  return { content: latex[i] ?? "", end: Math.min(i + 1, latex.length) };
+}
+
+function decode(latex: string, textMode: boolean): string {
+  let out = "";
+  // Set after an Axine command, whose terminating space MathLive consumes.
+  let pendingCommandSeparator = false;
+  let i = 0;
+
+  const emit = (text: string) => {
+    if (pendingCommandSeparator && isIdentChar(text[0])) out += " ";
+    pendingCommandSeparator = false;
+    out += text;
+  };
+
+  while (i < latex.length) {
+    const ch = latex[i];
+
+    if (/\s/.test(ch)) {
+      if (textMode) emit(" ");
+      i++;
+      continue;
+    }
+
+    if (ch === "{") {
+      const group = readGroup(latex, i);
+      if (group) {
+        emit(decode(group.content, textMode));
+        i = group.end;
+        continue;
+      }
+      i++;
+      continue;
+    }
+
+    if (ch === "}") {
+      i++;
+      continue;
+    }
+
+    if (ch === "^" || ch === "_") {
+      const arg = readArgument(latex, i + 1);
+      const inner = arg.content.trim();
+      const primes = inner.match(/^(\\prime)+$|^\\doubleprime$/);
+      if (ch === "^" && primes) {
+        emit(inner === BS + "doubleprime" ? "''" : "'".repeat(inner.split(BS + "prime").length - 1));
+      } else {
+        const decoded = decode(arg.content, textMode);
+        pendingCommandSeparator = false;
+        out += ch + decoded;
+      }
+      i = arg.end;
+      continue;
+    }
+
+    if (ch === BS) {
+      const word = latex.slice(i).match(/^\\([A-Za-z]+)/);
+      if (!word) {
+        const sym = latex[i + 1] ?? "";
+        if (sym === BS) {
+          emit(BS);
+        } else if (sym in CONTROL_SYMBOL_TO_AXINE) {
+          emit(CONTROL_SYMBOL_TO_AXINE[sym]);
+        } else {
+          emit(sym);
+        }
+        i += 2;
+        continue;
+      }
+
+      const name = word[1];
+      i += word[0].length;
+
+      if (name === "frac") {
+        const num = readArgument(latex, i);
+        const den = readArgument(latex, num.end);
+        emit(fractionToAxine(decode(num.content, false), decode(den.content, false)));
+        i = den.end;
+        continue;
+      }
+      if (name === "left" || name === "right") {
+        const delim = readArgument(latex, i);
+        const d = delim.content === "." ? "" : decode(delim.content, false);
+        emit(d);
+        i = delim.end;
+        continue;
+      }
+      if (name === "placeholder") {
+        i = readArgument(latex, i).end;
+        continue;
+      }
+      if (name === "text" || name === "textrm" || name === "mathrm" || name === "mathit" || name === "operatorname") {
+        const arg = readArgument(latex, i);
+        emit(decode(arg.content, name === "text" || name === "textrm"));
+        i = arg.end;
+        continue;
+      }
+      if (name in COMMAND_TO_AXINE) {
+        emit(COMMAND_TO_AXINE[name]);
+        continue;
+      }
+
+      // An Axine command.
+      emit(BS + name);
+      pendingCommandSeparator = true;
+      continue;
+    }
+
+    emit(ch);
+    i++;
+  }
+
+  return out;
+}
+
+/**
+ * Converts LaTeX from MathLive back to Axine source.
+ */
+export function latexToAxine(latex: string): string {
+  return decode(latex, false);
+}
+
+/**
+ * Replaces each LaTeX fraction in a string with its Axine form, leaving the
+ * rest of the string unchanged.
  */
 export function replaceLatexFractions(str: string): string {
   let idx = str.indexOf(CMD_FRAC);
   while (idx !== -1) {
-    let p1 = idx + CMD_FRAC.length;
-    while (p1 < str.length && /\s/.test(str[p1])) p1++;
-    let num: { content: string; endIdx: number } | null = null;
-    if (str[p1] === "{") {
-      num = parseBalancedBraces(str, p1);
-    } else if (p1 < str.length && str[p1] !== "}") {
-      num = { content: str[p1], endIdx: p1 };
-    }
-    if (!num) break;
-
-    let p2 = num.endIdx + 1;
-    while (p2 < str.length && /\s/.test(str[p2])) p2++;
-    let den: { content: string; endIdx: number } | null = null;
-    if (str[p2] === "{") {
-      den = parseBalancedBraces(str, p2);
-    } else if (p2 < str.length && str[p2] !== "}") {
-      den = { content: str[p2], endIdx: p2 };
-    }
-    if (!den) break;
-
-    let replacement = "";
-    const numClean = num.content.trim();
-    const denClean = den.content.trim();
-
-    // 1. Derivatives:
-    // Normalize differential symbols
-    const numNorm = numClean.replace(RE_MATHRM_D, "d").replace(RE_PARTIAL_WORD, CMD_PARTIAL);
-    const denNorm = denClean.replace(RE_MATHRM_D, "d").replace(RE_PARTIAL_WORD, CMD_PARTIAL);
-
-    const highOrderWithDepMatch = numNorm.match(RE_HIGH_ORDER_DEP);
-    const highOrderDenMatch = denNorm.match(RE_HIGH_ORDER_DEN);
-
-    const firstOrderWithDepMatch = numNorm.match(RE_FIRST_ORDER_DEP);
-    const firstOrderDenMatch = denNorm.match(RE_FIRST_ORDER_DEN);
-
-    const highOrderOpMatch = numNorm.match(RE_HIGH_ORDER_OP);
-
-    if (highOrderWithDepMatch && highOrderDenMatch) {
-      const dSym = highOrderWithDepMatch[1] === CMD_PARTIAL ? CMD_PARTIAL : "d";
-      const ord = highOrderWithDepMatch[2];
-      const dep = highOrderWithDepMatch[3];
-      const indep = highOrderDenMatch[2];
-      replacement = `${dSym}^${ord}${dep}//${dSym}${indep}^${ord}`;
-    } else if (firstOrderWithDepMatch && firstOrderDenMatch) {
-      const dSym = firstOrderWithDepMatch[1] === CMD_PARTIAL ? CMD_PARTIAL : "d";
-      const dep = firstOrderWithDepMatch[2];
-      const indep = firstOrderDenMatch[2];
-      replacement = `${dSym}${dep}//${dSym}${indep}`;
-    } else if (highOrderOpMatch && highOrderDenMatch) {
-      const dSym = highOrderOpMatch[1] === CMD_PARTIAL ? CMD_PARTIAL : "d";
-      const ord = highOrderOpMatch[2];
-      const indep = highOrderDenMatch[2];
-      replacement = `${dSym}^${ord}//${dSym}${indep}^${ord}`;
-    } else if ((numNorm === "d" || numNorm === CMD_PARTIAL) && (denNorm.startsWith("d") || denNorm.startsWith(CMD_PARTIAL))) {
-      const dSym = numNorm === CMD_PARTIAL ? CMD_PARTIAL : "d";
-      replacement = `${dSym}//${denNorm}`;
-    } else {
-      const numConverted = replaceLatexFractions(numClean);
-      const denConverted = replaceLatexFractions(denClean);
-
-      const isAtomic = (s: string) => /^[a-zA-Z0-9_]+(\^[0-9]+)?$/.test(s) || (s.startsWith("(") && s.endsWith(")"));
-      const numWrapped = isAtomic(numConverted) ? numConverted : `(${numConverted})`;
-      const denWrapped = isAtomic(denConverted) ? denConverted : `(${denConverted})`;
-
-      replacement = `${numWrapped} / ${denWrapped}`;
-    }
-
-    str = str.slice(0, idx) + replacement + str.slice(den.endIdx + 1);
+    const num = readArgument(str, idx + CMD_FRAC.length);
+    const den = readArgument(str, num.end);
+    if (!num.content || !den.content) break;
+    const replacement = fractionToAxine(replaceLatexFractions(num.content), replaceLatexFractions(den.content));
+    str = str.slice(0, idx) + replacement + str.slice(den.end);
     idx = str.indexOf(CMD_FRAC);
   }
   return str;
 }
 
 /**
- * Converts Axine source to LaTeX for MathLive input surface
+ * Structural reason a source cannot be edited in MathLive at all, or null.
+ * MathLive's own normalization is checked separately in the browser.
  */
-export function axineToLatex(axine: string): string {
-  let s = axine;
-
-  // 1. Higher-order derivatives with dependent variable: d^2y//dx^2, d^2y/dx^2
-  s = s.replace(RE_AXINE_HIGH_DEP, (_m, ord, dep, indep) => `${CMD_FRAC}{d^${ord}${dep}}{d${indep}^${ord}}`);
-
-  // 2. Higher-order operator derivatives: d^2//dx^2, d^2/dx^2
-  s = s.replace(RE_AXINE_HIGH_OP, (_m, ord, indep) => `${CMD_FRAC}{d^${ord}}{d${indep}^${ord}}`);
-
-  // 3. First-order derivatives with dependent variable: dy//dx, dy/dx, df/dx
-  s = s.replace(RE_AXINE_FIRST_DEP, (_m, dep, indep) => `${CMD_FRAC}{d${dep}}{d${indep}}`);
-
-  // 4. First-order operator derivatives: d//dx, d/dx
-  s = s.replace(RE_AXINE_FIRST_OP, (_m, indep) => `${CMD_FRAC}{d}{d${indep}}`);
-
-  // 5. Prime derivatives: y'' -> y^{\prime\prime}, y' -> y^{\prime}
-  s = s.replace(/([a-zA-Z_][a-zA-Z0-9_]*)''/g, "$1^{\\prime\\prime}");
-  s = s.replace(/([a-zA-Z_][a-zA-Z0-9_]*)'/g, "$1^{\\prime}");
-
-  // 4. Standard trigonometric and calculus functions
-  s = s.replace(/:sin\b/g, "\\sin");
-  s = s.replace(/:cos\b/g, "\\cos");
-  s = s.replace(/:tan\b/g, "\\tan");
-  s = s.replace(/:exp\b/g, "\\exp");
-  s = s.replace(/:ln\b/g, "\\ln");
-  s = s.replace(/:sqrt\b/g, "\\sqrt");
-
-  // 5. Logical and relational operators
-  s = s.replace(/\\and\b/g, "\\land");
-  s = s.replace(/\\or\b/g, "\\lor");
-  s = s.replace(/\\not\b/g, "\\neg");
-  s = s.replace(/<=/g, "\\le ");
-  s = s.replace(/>=/g, "\\ge ");
-  s = s.replace(/!=/g, "\\ne ");
-
-  // 6. Lambdas / arrows: ->
-  s = s.replace(/->/g, ` ${CMD_TO} `);
-
-  // 7. Stacked fractions for explicit rational literals: (\d+) / (\d+) or (\d+) // (\d+)
-  s = s.replace(/\b(\d+)\s*(\/\/|\/)\s*(\d+)\b/g, (_m, a, _slash, b) => `${CMD_FRAC}{${a}}{${b}}`);
-
-  return s;
-}
-
-/**
- * Converts LaTeX from MathLive back to Axine source
- */
-export function latexToAxine(latex: string): string {
-  let s = latex;
-
-  // 1. Remove LaTeX formatting commands like \left, \right, \displaystyle
-  s = s.replace(/\\left\s*([(\[{|])/g, "$1");
-  s = s.replace(/\\right\s*([)\]}|])/g, "$1");
-  s = s.replace(/\\displaystyle\b/g, "");
-
-  // 2. Convert LaTeX fractions to Axine division or derivatives
-  s = replaceLatexFractions(s);
-
-  // 3. Primes: ^{\prime\prime} -> '', ^{\prime} -> ', \doubleprime -> ''
-  s = s.replace(/\^\{\\prime\\prime\}/g, "''");
-  s = s.replace(/\^\{\\doubleprime\}/g, "''");
-  s = s.replace(/\^\{\\prime\}/g, "'");
-  s = s.replace(/\\prime\\prime/g, "''");
-  s = s.replace(/\\doubleprime/g, "''");
-  s = s.replace(/\\prime/g, "'");
-
-  // 4. Multiplication operators: \cdot, \times -> *
-  s = s.replace(/\\cdot/g, " * ");
-  s = s.replace(/\\times/g, " * ");
-
-  // 5. Assignment / definition: \coloneqq -> :=
-  s = s.replace(/\\coloneqq/g, ":=");
-
-  // 6. Relational operators
-  s = s.replace(/\\le\b/g, "<=");
-  s = s.replace(/\\ge\b/g, ">=");
-  s = s.replace(/\\ne\b/g, "!=");
-
-  // 7. Logic operators
-  s = s.replace(/\\land\b/g, "\\and");
-  s = s.replace(/\\lor\b/g, "\\or");
-  s = s.replace(/\\neg\b/g, "\\not");
-
-  // 8. Arrows
-  const toRegex = new RegExp(`\\\\${"to"}\\b|\\\\rightarrow\\b`, "g");
-  s = s.replace(toRegex, "->");
-
-  // 9. Square roots: \sqrt{...} -> :sqrt(...), \sqrt(...) -> :sqrt(...)
-  s = s.replace(/\\sqrt\{([^}]+)\}/g, ":sqrt($1)");
-  s = s.replace(/\\sqrt\(([^)]+)\)/g, ":sqrt($1)");
-  s = s.replace(/\\sqrt\b/g, ":sqrt");
-
-  // 10. Trigonometric / exponential functions
-  s = s.replace(/\\sin\b/g, ":sin");
-  s = s.replace(/\\cos\b/g, ":cos");
-  s = s.replace(/\\tan\b/g, ":tan");
-  s = s.replace(/\\exp\b/g, ":exp");
-  s = s.replace(/\\ln\b/g, ":ln");
-
-  // 11. Conditionals: \text{if }, \text{then }, \text{else }
-  s = s.replace(/\\text\{\s*if\s*\}/gi, "\\if ");
-  s = s.replace(/\\text\{\s*then\s*\}/gi, " \\then ");
-  s = s.replace(/\\text\{\s*else\s*\}/gi, " \\else ");
-
-  // 12. Clean up extraneous whitespace and LaTeX spacing commands (\,, \;, \!, \quad)
-  s = s.replace(/\\[,;:!]/g, " ");
-  s = s.replace(/\\quad\b/g, " ");
-  s = s.replace(/\\qquad\b/g, " ");
-  s = s.replace(/[ \t]+/g, " ");
-
-  return s.trim();
+export function mathFieldUnrepresentableReason(axine: string): string | null {
+  if (/[\n\r]/.test(axine)) return "spans more than one line";
+  if (/\t/.test(axine)) return "contains a tab";
+  return null;
 }

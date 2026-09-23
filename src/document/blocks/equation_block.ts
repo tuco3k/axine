@@ -12,8 +12,99 @@
 import { DocumentBlock, BlockType } from "../block_model";
 import { typesetMath } from "../../core/math_typeset";
 import { AutocompleteController, AutocompleteTarget } from "../autocomplete";
-import { axineToLatex, latexToAxine } from "../axine_latex_bridge";
+import { axineToLatex, latexToAxine, mathFieldUnrepresentableReason } from "../axine_latex_bridge";
 import "mathlive";
+
+// MathLive rewrites what is typed unless these are off: smart fences add
+// invisible delimiters, inline shortcuts turn "pi" and "sin" into commands,
+// and a space is otherwise dropped in math mode.
+function configureMathField(mf: any) {
+  mf.smartFence = false;
+  mf.smartSuperscript = false;
+  mf.smartMode = false;
+  mf.inlineShortcuts = {};
+  mf.mathModeSpace = "\\ ";
+}
+
+// "_" and "/" are Axine characters, not a subscript and a fraction.
+function literalFieldInsert(key: string): string | null {
+  if (key === "_") return "\\_";
+  if (key === "/") return "/";
+  return null;
+}
+
+
+// Navigation and deletion keys applied to the field after it takes focus.
+const HELD_KEY_COMMANDS: Record<string, string> = {
+  End: "moveToMathfieldEnd",
+  Home: "moveToMathfieldStart",
+  ArrowLeft: "moveToPreviousChar",
+  ArrowRight: "moveToNextChar",
+  Backspace: "deleteBackward",
+  Delete: "deleteForward",
+};
+
+const mathFieldFailures = new Map<string, string | null>();
+let scratchField: any = null;
+let scratchWarmupScheduled = false;
+
+function ensureScratchField(): any {
+  if (!scratchField || !scratchField.isConnected) {
+    scratchField = document.createElement("math-field");
+    scratchField.setAttribute("aria-hidden", "true");
+    scratchField.tabIndex = -1;
+    // Fixed, so MathLive scrolling its caret into view never scrolls the page.
+    scratchField.style.cssText = "position:fixed;left:-10000px;top:0;visibility:hidden;";
+    document.body.appendChild(scratchField);
+    configureMathField(scratchField);
+  }
+  return scratchField;
+}
+
+// The first math field on a page takes about 130ms to build. Build the check
+// field while the page is idle so opening the first equation does not wait.
+function scheduleScratchWarmup() {
+  if (scratchWarmupScheduled || typeof window === "undefined") return;
+  scratchWarmupScheduled = true;
+  const idle = (window as any).requestIdleCallback ?? ((cb: () => void) => setTimeout(cb, 200));
+  idle(() => {
+    try {
+      ensureScratchField();
+    } catch {
+      scratchWarmupScheduled = false;
+    }
+  });
+}
+
+/**
+ * Why the source cannot be edited in MathLive without changing it, or null.
+ * The source is loaded into a hidden field and given a neutral edit, which
+ * makes MathLive re-serialize its model exactly as a real edit would; the
+ * decoded result must be the source, byte for byte.
+ */
+function mathFieldFailure(source: string): string | null {
+  const structural = mathFieldUnrepresentableReason(source);
+  if (structural) return structural;
+  const cached = mathFieldFailures.get(source);
+  if (cached !== undefined) return cached;
+
+  let failure: string | null = null;
+  try {
+    const field = ensureScratchField();
+    field.value = axineToLatex(source);
+    field.executeCommand("moveToMathfieldEnd");
+    field.insert("x");
+    field.executeCommand("deleteBackward");
+    const decoded = latexToAxine(field.value);
+    if (decoded !== source) {
+      failure = "MathLive stores it as " + JSON.stringify(decoded);
+    }
+  } catch {
+    failure = "MathLive could not load it";
+  }
+  mathFieldFailures.set(source, failure);
+  return failure;
+}
 
 export interface EquationBlockOptions {
   onSelect?: (blockId: string) => void;
@@ -44,6 +135,8 @@ export class EquationBlockComponent {
   // restores the original source.
   private fieldSource: string = "";
   private fieldBaseline: string | null = null;
+  private releaseHeldKeys: (() => void) | null = null;
+  private applyHeldKeys: (() => string | null) | null = null;
 
   constructor(block: DocumentBlock, options: EquationBlockOptions = {}) {
     this.block = block;
@@ -65,6 +158,7 @@ export class EquationBlockComponent {
 
     this.renderTypesetMath();
     this.bindEvents();
+    scheduleScratchWarmup();
   }
 
   // The field's parsed content. `value` returns the assigned string verbatim
@@ -166,16 +260,31 @@ export class EquationBlockComponent {
 
     this.editorContainer.innerHTML = "";
 
-    // 1. MathLive math-field element for structured, seam-aware math editing
+    // 1. MathLive math-field element for structured, seam-aware math editing,
+    // used only when the source survives MathLive unchanged; otherwise the
+    // equation is edited as text.
     let mfEl: any = null;
-    try {
-      mfEl = document.createElement("math-field") as any;
-      mfEl.className = "doc-block-source-input doc-equation-mathfield";
-      mfEl.mathVirtualKeyboardPolicy = "manual";
-      this.editorContainer.appendChild(mfEl);
-      this.loadSourceIntoField(mfEl, this.block.source);
-    } catch {
-      mfEl = null;
+    let fieldFailure = mathFieldFailure(this.block.source);
+    if (fieldFailure === null) {
+      try {
+        mfEl = document.createElement("math-field") as any;
+        mfEl.className = "doc-block-source-input doc-equation-mathfield";
+        mfEl.mathVirtualKeyboardPolicy = "manual";
+        // MathLive accepts these options only once the element is connected.
+        this.editorContainer.appendChild(mfEl);
+        configureMathField(mfEl);
+        this.loadSourceIntoField(mfEl, this.block.source);
+      } catch {
+        mfEl?.remove();
+        mfEl = null;
+        fieldFailure = "MathLive could not open it";
+      }
+    }
+    this.el.dataset.editSurface = mfEl ? "math" : "text";
+    if (fieldFailure) {
+      this.el.dataset.textEditReason = fieldFailure;
+    } else {
+      delete this.el.dataset.textEditReason;
     }
 
     // 2. Backing textarea for accessibility, headless tests, and full Axine source synchronization
@@ -281,6 +390,84 @@ export class EquationBlockComponent {
     };
 
     if (mfEl) {
+      // "_" and "/" are Axine characters, not a subscript and a fraction.
+      // Capture phase on the host runs before MathLive's own handler.
+      mfEl.addEventListener("keydown", (e: KeyboardEvent) => {
+        if (e.metaKey || e.ctrlKey || e.altKey) return;
+        const literal = literalFieldInsert(e.key);
+        if (literal) {
+          e.preventDefault();
+          e.stopPropagation();
+          mfEl.executeCommand(["insert", literal]);
+        }
+      }, { capture: true });
+
+      // MathLive moves focus into the field asynchronously after focus()
+      // returns. Keys pressed in that window arrive at the block element; hold
+      // every one of them, in order, and apply them once the field has focus.
+      const heldKeys: string[] = [];
+      const holdKey = (e: KeyboardEvent) => {
+        // hasFocus() reports true once focus is requested; activeElement
+        // reports where keys actually go.
+        if (!this.isEditing || document.activeElement === mfEl || e.metaKey || e.ctrlKey || e.altKey) return;
+        // Only keys that landed on the block itself; keys aimed at an element
+        // inside the editor belong to that element.
+        if (e.target !== this.el) return;
+        if (e.key === "Shift" || e.key === "Alt" || e.key === "Control" || e.key === "Meta") return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        heldKeys.push(e.key);
+      };
+      this.el.addEventListener("keydown", holdKey, true);
+      this.releaseHeldKeys = () => {
+        this.el.removeEventListener("keydown", holdKey, true);
+        this.releaseHeldKeys = null;
+      };
+      // Applies held keys to the field. Runs of characters are inserted as
+      // the Axine text they spell, the same encoding a loaded source gets;
+      // MathLive's "typedText" command is not equivalent to typing (it drops
+      // spaces and stores ":" as a spacing command). Returns the key that
+      // ended editing, if one was held.
+      this.applyHeldKeys = (): string | null => {
+        this.releaseHeldKeys?.();
+        let text = "";
+        const insertText = () => {
+          if (text) mfEl.executeCommand(["insert", axineToLatex(text)]);
+          text = "";
+        };
+        for (const key of heldKeys.splice(0)) {
+          if (key.length === 1) {
+            text += key;
+            continue;
+          }
+          insertText();
+          if (key === "Escape" || key === "Enter") return key;
+          if (HELD_KEY_COMMANDS[key]) mfEl.executeCommand(HELD_KEY_COMMANDS[key]);
+        }
+        insertText();
+        return null;
+      };
+      mfEl.addEventListener("focusin", () => {
+        const ending = this.applyHeldKeys?.();
+        this.applyHeldKeys = null;
+        if (!this.isEditing) return;
+        if (ending === "Escape") {
+          this.exitEditMode(true);
+        } else if (ending === "Enter") {
+          this.exitEditMode(true);
+          this.options.onStepNext?.();
+        }
+      }, { once: true });
+
+      // Pasted text is Axine; encode it rather than letting MathLive read it as LaTeX.
+      mfEl.addEventListener("paste", (e: ClipboardEvent) => {
+        const text = e.clipboardData?.getData("text/plain");
+        if (text === undefined) return;
+        e.preventDefault();
+        e.stopPropagation();
+        mfEl.executeCommand(["insert", axineToLatex(text)]);
+      }, { capture: true });
+
       mfEl.addEventListener("input", () => {
         const axine = this.sourceFromField(mfEl);
         if (this.textarea) {
@@ -394,7 +581,8 @@ export class EquationBlockComponent {
       if (e.key === "Escape") {
         e.preventDefault();
         this.exitEditMode(true);
-      } else if (e.key === "Enter") {
+      } else if (e.key === "Enter" && !(this.textarea?.value.includes("\n"))) {
+        // A multi-line equation is edited as text; Enter adds a line there.
         e.preventDefault();
         this.exitEditMode(true);
         this.options.onStepNext?.();
@@ -465,7 +653,7 @@ export class EquationBlockComponent {
         if (typeof document !== "undefined" && document.activeElement && this.editorContainer.contains(document.activeElement)) {
           return;
         }
-        this.exitEditMode(true);
+        this.exitEditMode(true, false);
       }, 150);
     };
 
@@ -508,13 +696,17 @@ export class EquationBlockComponent {
     }
   }
 
-  public exitEditMode(commit: boolean = true) {
+  public exitEditMode(commit: boolean = true, refocus: boolean = true) {
     if (this.blurTimer) {
       clearTimeout(this.blurTimer);
       this.blurTimer = null;
     }
     if (!this.isEditing) return;
+    // Keys pressed before the field took focus are part of the edit.
+    this.applyHeldKeys?.();
+    this.applyHeldKeys = null;
     this.isEditing = false;
+    this.releaseHeldKeys?.();
 
     if (commit) {
       let newSource = this.block.source;
@@ -539,12 +731,15 @@ export class EquationBlockComponent {
 
     this.editorContainer.innerHTML = "";
     this.editorContainer.classList.add("hidden");
+    delete this.el.dataset.editSurface;
+    delete this.el.dataset.textEditReason;
     this.renderedContainer.classList.remove("hidden");
     this.el.classList.remove("editing");
     this.el.setAttribute("data-atomic", "true");
 
     this.renderTypesetMath();
-    this.setSelected(true);
+    // A block closed because focus moved elsewhere leaves focus there.
+    if (refocus) this.setSelected(true);
   }
 
   public setSelected(selected: boolean) {
