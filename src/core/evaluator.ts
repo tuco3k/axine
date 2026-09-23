@@ -85,8 +85,17 @@ import { AlgebraicSimplifier } from './algebra/simplify';
 import { createError } from './errors';
 import { formatAST } from './formatter';
 import { inferExpressionDimensions, checkGeometricQuantity } from './dimensional';
-import { computeSymbolicDerivative } from './symbolic_diff';
+import { computeSymbolicDerivative, computeHigherDerivative } from './symbolic_diff';
 import { MathKind, formatKind, admitsOperations, canCoerceKind, inferKindOfValue } from './kinds';
+
+function hasAxis(declaredAxes: string[] | undefined, varName: string): boolean {
+  if (!declaredAxes || declaredAxes.length === 0) return false;
+  const clean = varName.replace(/^:/, '');
+  return declaredAxes.some(a => {
+    const aClean = a.replace(/^:/, '');
+    return a === varName || aClean === clean || aClean === varName;
+  });
+}
 
 export function createInitialEnvironment(): Environment {
   const env: Environment = {};
@@ -660,9 +669,16 @@ export class Evaluator {
       if (ast.type === 'Assignment') {
         const valAnalysis = analyzeAST(ast.value, this.env, new Set(), this.source);
         if (valAnalysis.freeVariables.length > 0) {
-          const coordinates = declaredAxes ?? [ast.target, ...valAnalysis.freeVariables].sort((a, b) => a.localeCompare(b));
+          let coordinates: string[];
+          if (declaredAxes) {
+            coordinates = declaredAxes;
+          } else if (valAnalysis.freeVariables.length === 1) {
+            coordinates = [valAnalysis.freeVariables[0], ast.target];
+          } else {
+            coordinates = [ast.target, ...valAnalysis.freeVariables].sort((a, b) => a.localeCompare(b));
+          }
           const uniqueCoords = [...new Set(coordinates)];
-          const canSample = declaredAxes === undefined || uniqueCoords.every(v => declaredAxes.includes(v));
+          const canSample = declaredAxes === undefined || uniqueCoords.every(v => hasAxis(declaredAxes, v));
           const comp = compileAST(ast, uniqueCoords, this.env);
           const spVal: SpaceValue = {
             type: 'space',
@@ -723,7 +739,7 @@ export class Evaluator {
           this.env[boundVar] = boundVal;
           if (declaredAxes !== undefined || boundVar.length === 1) {
             const coordinates = declaredAxes ?? [boundVar];
-            const canSample = declaredAxes === undefined || declaredAxes.includes(boundVar);
+            const canSample = declaredAxes === undefined || hasAxis(declaredAxes, boundVar);
             const comp = compileAST(ast, coordinates, this.env);
             const spVal: SpaceValue = {
               type: 'space',
@@ -760,9 +776,22 @@ export class Evaluator {
 
       if ((isRelation || isBareIdentifierOrProduct(ast)) && analysis.freeVariables.length > 0 && !analysis.isDefinition) {
         const canSample = declaredAxes === undefined || (
-          analysis.freeVariables.every(v => declaredAxes.includes(v))
+          analysis.freeVariables.every(v => hasAxis(declaredAxes, v))
         );
-        const coordinates = declaredAxes ?? [...analysis.freeVariables].sort((a, b) => a.localeCompare(b));
+        let coordinates: string[];
+        if (declaredAxes) {
+          coordinates = declaredAxes;
+        } else if (ast.type === 'BinaryOp' && ast.op === '=' && ast.left.type === 'Identifier') {
+          const depVar = ast.left.name;
+          const otherVars = analysis.freeVariables.filter(v => v !== depVar);
+          if (otherVars.length === 1) {
+            coordinates = [otherVars[0], depVar];
+          } else {
+            coordinates = [...analysis.freeVariables].sort((a, b) => a.localeCompare(b));
+          }
+        } else {
+          coordinates = [...analysis.freeVariables].sort((a, b) => a.localeCompare(b));
+        }
         const comp = compileAST(ast, coordinates, this.env);
         const entities: SpatialEntity[] = [];
         if (isRelation && canSample) {
@@ -817,6 +846,9 @@ export class Evaluator {
         declaredAxes = stmt.axes;
       }
     }
+    if (declaredAxes) {
+      (blockEnv as any).__declaredAxes__ = declaredAxes;
+    }
 
     // Pre-pass: evaluate static declarations into blockEnv so constructor and operator bindings are known
     for (const stmt of node.statements) {
@@ -865,17 +897,17 @@ export class Evaluator {
       // First pass: identify explicit aliases
       for (const stmt of node.statements) {
         if (stmt.type === 'BinaryOp' && stmt.op === '=') {
-          if (stmt.left.type === 'Identifier' && effectiveAxes.includes(stmt.left.name) &&
-              stmt.right.type === 'Identifier' && !effectiveAxes.includes(stmt.right.name)) {
+          if (stmt.left.type === 'Identifier' && hasAxis(effectiveAxes, stmt.left.name) &&
+              stmt.right.type === 'Identifier' && !hasAxis(effectiveAxes, stmt.right.name)) {
             substMap[stmt.right.name] = stmt.left;
             intermediateDefinitions.add(stmt);
-          } else if (stmt.right.type === 'Identifier' && effectiveAxes.includes(stmt.right.name) &&
-                     stmt.left.type === 'Identifier' && !effectiveAxes.includes(stmt.left.name)) {
+          } else if (stmt.right.type === 'Identifier' && hasAxis(effectiveAxes, stmt.right.name) &&
+                     stmt.left.type === 'Identifier' && !hasAxis(effectiveAxes, stmt.left.name)) {
             substMap[stmt.left.name] = stmt.right;
             intermediateDefinitions.add(stmt);
           }
         } else if (stmt.type === 'Assignment') {
-          if (effectiveAxes.includes(stmt.target) && stmt.value.type === 'Identifier' && !effectiveAxes.includes(stmt.value.name)) {
+          if (hasAxis(effectiveAxes, stmt.target) && stmt.value.type === 'Identifier' && !hasAxis(effectiveAxes, stmt.value.name)) {
             substMap[stmt.value.name] = { type: 'Identifier', name: stmt.target, span: stmt.span };
             intermediateDefinitions.add(stmt);
           }
@@ -885,19 +917,19 @@ export class Evaluator {
       for (const stmt of node.statements) {
         if (intermediateDefinitions.has(stmt)) continue;
         if (stmt.type === 'BinaryOp' && stmt.op === '=') {
-          if (stmt.left.type === 'Identifier' && !effectiveAxes.includes(stmt.left.name) && !substMap[stmt.left.name]) {
+          if (stmt.left.type === 'Identifier' && !hasAxis(effectiveAxes, stmt.left.name) && !substMap[stmt.left.name]) {
             const rwRight = substituteExpressions(stmt.right, substMap);
             const a = analyzeAST(rwRight, blockEnv, new Set(), this.source);
-            if (a.freeVariables.length > 0 && a.freeVariables.every(v => effectiveAxes.includes(v))) {
+            if (a.freeVariables.length > 0 && a.freeVariables.every(v => hasAxis(effectiveAxes, v))) {
               substMap[stmt.left.name] = rwRight;
               intermediateDefinitions.add(stmt);
             }
           }
         } else if (stmt.type === 'Assignment') {
-          if (!effectiveAxes.includes(stmt.target) && !substMap[stmt.target]) {
+          if (!hasAxis(effectiveAxes, stmt.target) && !substMap[stmt.target]) {
             const rwValue = substituteExpressions(stmt.value, substMap);
             const a = analyzeAST(rwValue, blockEnv, new Set(), this.source);
-            if (a.freeVariables.length > 0 && a.freeVariables.every(v => effectiveAxes.includes(v))) {
+            if (a.freeVariables.length > 0 && a.freeVariables.every(v => hasAxis(effectiveAxes, v))) {
               substMap[stmt.target] = rwValue;
               intermediateDefinitions.add(stmt);
             }
@@ -970,11 +1002,18 @@ export class Evaluator {
         const stmtVars = [stmt.target, ...valAnalysis.freeVariables];
         const canSample = declaredAxes === undefined || (
           stmtVars.length > 0 &&
-          stmtVars.every(v => declaredAxes!.includes(v))
+          stmtVars.every(v => hasAxis(declaredAxes, v))
         );
 
         if (canSample && (stmtVars.length > 0 || valAnalysis.freeVariables.length > 0)) {
-          const stmtCoords = declaredAxes ?? [...new Set([stmt.target, ...valAnalysis.freeVariables])].sort((a, b) => a.localeCompare(b));
+          let stmtCoords: string[];
+          if (declaredAxes) {
+            stmtCoords = declaredAxes;
+          } else if (valAnalysis.freeVariables.length === 1) {
+            stmtCoords = [valAnalysis.freeVariables[0], stmt.target];
+          } else {
+            stmtCoords = [...new Set([stmt.target, ...valAnalysis.freeVariables])].sort((a, b) => a.localeCompare(b));
+          }
           const comp = compileAST(rewrittenStmt, stmtCoords.length > 0 ? stmtCoords : [stmt.target], blockEnv);
           const compiledFn = comp.success ? comp.fn : this.createReducerSamplerFn(rewrittenStmt, stmtCoords.length > 0 ? stmtCoords : [stmt.target], blockEnv);
           entities.push({
@@ -1034,11 +1073,24 @@ export class Evaluator {
         const stmtAnalysis = analyzeAST(rewrittenStmt, blockEnv, new Set(), this.source);
         const isRel = rewrittenStmt.type === 'BinaryOp' && ['=', '==', '!=', '<', '<=', '>', '>='].includes(rewrittenStmt.op);
         const canSample = declaredAxes === undefined || (
-          stmtAnalysis.freeVariables.every(v => declaredAxes!.includes(v))
+          stmtAnalysis.freeVariables.every(v => hasAxis(declaredAxes, v))
         );
 
         if (canSample && (stmtAnalysis.freeVariables.length > 0 || isRel)) {
-          const stmtCoords = declaredAxes ?? [...new Set([...coordinates, ...stmtAnalysis.freeVariables])].sort((a, b) => a.localeCompare(b));
+          let stmtCoords: string[];
+          if (declaredAxes) {
+            stmtCoords = declaredAxes;
+          } else if (isRel && rewrittenStmt.type === 'BinaryOp' && rewrittenStmt.op === '=' && rewrittenStmt.left.type === 'Identifier') {
+            const depVar = rewrittenStmt.left.name;
+            const otherVars = stmtAnalysis.freeVariables.filter(v => v !== depVar);
+            if (otherVars.length === 1) {
+              stmtCoords = [otherVars[0], depVar];
+            } else {
+              stmtCoords = [...new Set([...coordinates, ...stmtAnalysis.freeVariables])].sort((a, b) => a.localeCompare(b));
+            }
+          } else {
+            stmtCoords = [...new Set([...coordinates, ...stmtAnalysis.freeVariables])].sort((a, b) => a.localeCompare(b));
+          }
           const comp = compileAST(rewrittenStmt, stmtCoords, blockEnv);
           const compiledFn = comp.success ? comp.fn : this.createReducerSamplerFn(rewrittenStmt, stmtCoords, blockEnv);
           entities.push({
@@ -1112,10 +1164,18 @@ export class Evaluator {
         for (const c of ns.coordinates) allCoords.add(c);
       }
       const finalCoords = [...allCoords].sort((a, b) => a.localeCompare(b));
+      let resCoords = declaredAxes;
+      if (!resCoords) {
+        if (entities.length === 1 && entities[0].coordinates.length === finalCoords.length) {
+          resCoords = entities[0].coordinates;
+        } else {
+          resCoords = (finalCoords.length > 0 ? finalCoords : ['x', 'y']);
+        }
+      }
       return {
         type: 'space',
-        coordinates: declaredAxes ?? finalCoords,
-        dimension: (declaredAxes ?? finalCoords).length,
+        coordinates: resCoords,
+        dimension: resCoords.length,
         declaredAxes,
         entities,
         primitives: blockPrimitives.length > 0 ? blockPrimitives : undefined,
@@ -1140,7 +1200,14 @@ export class Evaluator {
         for (const c of ns.coordinates) allCoords.add(c);
       }
       const finalCoords = [...allCoords].sort((a, b) => a.localeCompare(b));
-      const resAxes = declaredAxes ?? (finalCoords.length > 0 ? finalCoords : ['x', 'y']);
+      let resAxes = declaredAxes;
+      if (!resAxes) {
+        if (entities.length === 1 && entities[0].coordinates.length === finalCoords.length) {
+          resAxes = entities[0].coordinates;
+        } else {
+          resAxes = (finalCoords.length > 0 ? finalCoords : ['x', 'y']);
+        }
+      }
       const spVal: SpaceValue = {
         type: 'space',
         coordinates: resAxes,
@@ -1193,6 +1260,47 @@ export class Evaluator {
             return { type: 'expression', ast: node, text: name };
           }
           return val;
+        }
+        const cleanName = name.replace(/^:/, '');
+        if (cleanName in currentEnv) {
+          const val = currentEnv[cleanName];
+          if ((val as any)?.type === 'forall_rule') {
+            return { type: 'expression', ast: node, text: name };
+          }
+          return val;
+        }
+        if ((':' + cleanName) in currentEnv) {
+          const val = currentEnv[':' + cleanName];
+          if ((val as any)?.type === 'forall_rule') {
+            return { type: 'expression', ast: node, text: name };
+          }
+          return val;
+        }
+        if (name.endsWith("'")) {
+          let primeOrder = 0;
+          let baseName = name;
+          while (baseName.endsWith("'")) {
+            primeOrder++;
+            baseName = baseName.slice(0, -1);
+          }
+          const cleanBase = baseName.replace(/^:/, '');
+          const baseVal = currentEnv[baseName] ?? currentEnv[cleanBase] ?? currentEnv[':' + cleanBase];
+          if (baseVal && (baseVal.type === 'function' || baseVal.type === 'lambda') && baseVal.params.length === 1) {
+            try {
+              let derivAST = baseVal.body;
+              for (let p = 0; p < primeOrder; p++) {
+                const sym = computeSymbolicDerivative(derivAST, baseVal.params[0]);
+                derivAST = sym.derivativeAST;
+              }
+              return {
+                type: baseVal.type,
+                name,
+                params: baseVal.params,
+                body: derivAST,
+                closure: baseVal.closure,
+              } as Value;
+            } catch {}
+          }
         }
         if (name === 'none') {
           return { type: 'none' };
@@ -2694,7 +2802,63 @@ export class Evaluator {
     }
 
     // Check user defined function or record constructor
-    const calleeVal = currentEnv[callee] ?? this.env[callee];
+    const cleanCallee = callee.replace(/^:/, '');
+    let calleeVal = currentEnv[callee] ?? this.env[callee] ?? currentEnv[cleanCallee] ?? this.env[cleanCallee] ?? currentEnv[':' + cleanCallee] ?? this.env[':' + cleanCallee];
+
+    if (!calleeVal && callee.endsWith("'")) {
+      let primeOrder = 0;
+      let baseCallee = callee;
+      while (baseCallee.endsWith("'")) {
+        primeOrder++;
+        baseCallee = baseCallee.slice(0, -1);
+      }
+      const cleanBase = baseCallee.replace(/^:/, '');
+      const baseVal = currentEnv[baseCallee] ?? this.env[baseCallee] ??
+                      currentEnv[cleanBase] ?? this.env[cleanBase] ??
+                      currentEnv[':' + cleanBase] ?? this.env[':' + cleanBase];
+      if (baseVal && (baseVal.type === 'function' || baseVal.type === 'lambda') && baseVal.params.length === 1) {
+        try {
+          let derivAST = baseVal.body;
+          for (let p = 0; p < primeOrder; p++) {
+            const sym = computeSymbolicDerivative(derivAST, baseVal.params[0]);
+            derivAST = sym.derivativeAST;
+          }
+          const derivFunc: FunctionValue = {
+            type: 'function',
+            name: callee,
+            params: baseVal.params,
+            body: derivAST,
+            closure: baseVal.closure,
+          };
+          return this.invokeUserFunction(derivFunc, node.args, currentEnv, node.span);
+        } catch {
+          if (node.args.length === 1) {
+            const argVal = this.evalNode(node.args[0], currentEnv);
+            const x0 = valueToNumber(argVal, node.span);
+            if (primeOrder === 1) {
+              const h = 1e-6;
+              const yPlus = valueToNumber(this.invokeCallable(baseVal, [{ type: 'float', value: x0 + h }], node.span), node.span);
+              const yMinus = valueToNumber(this.invokeCallable(baseVal, [{ type: 'float', value: x0 - h }], node.span), node.span);
+              const deriv = (yPlus - yMinus) / (2 * h);
+              if (Math.abs(deriv - Math.round(deriv)) < 1e-6) {
+                return { type: 'rational', n: BigInt(Math.round(deriv)), d: 1n };
+              }
+              return { type: 'float', value: deriv };
+            } else if (primeOrder === 2) {
+              const h = 1e-4;
+              const yPlus = valueToNumber(this.invokeCallable(baseVal, [{ type: 'float', value: x0 + h }], node.span), node.span);
+              const y0 = valueToNumber(this.invokeCallable(baseVal, [{ type: 'float', value: x0 }], node.span), node.span);
+              const yMinus = valueToNumber(this.invokeCallable(baseVal, [{ type: 'float', value: x0 - h }], node.span), node.span);
+              const deriv = (yPlus - 2 * y0 + yMinus) / (h * h);
+              if (Math.abs(deriv - Math.round(deriv)) < 1e-5) {
+                return { type: 'rational', n: BigInt(Math.round(deriv)), d: 1n };
+              }
+              return { type: 'float', value: deriv };
+            }
+          }
+        }
+      }
+    }
     if (calleeVal) {
       if (calleeVal.type === 'record_constructor') {
         const fields: Record<string, Value> = {};
@@ -2747,7 +2911,6 @@ export class Evaluator {
     }
 
     // Check if callee is in environment directly as forall_rule
-    const cleanCallee = callee.replace(/^:/, '');
     const directBinding = currentEnv[callee] || currentEnv[cleanCallee] || currentEnv[':' + cleanCallee];
     if (directBinding && (directBinding as any).type === 'forall_rule') {
       return this.invokeForallRule(directBinding, node.args, currentEnv, node);
@@ -5337,6 +5500,7 @@ export class Evaluator {
     }
 
     const varName = node.variable;
+    const order = node.order ?? 1;
 
     if (node.expr.type === 'BinaryOp' && (node.expr.op === '/' || (node.expr as any).op === '//')) {
       if (node.expr.right.type === 'NumberLiteral' && (node.expr.right.raw === '0' || node.expr.right.raw === '0.0')) {
@@ -5347,20 +5511,38 @@ export class Evaluator {
     // Symbolic derivation if variable is not bound in environment
     if (!(varName in currentEnv) && !(node.expr.type === 'Identifier' && node.expr.name in currentEnv)) {
       try {
-        const symRes = computeSymbolicDerivative(node.expr, varName);
-        return {
-          type: 'derivation',
-          originalEquation: `d//d${varName} (${formatAST(node.expr)})`,
-          roots: [],
-          originalExpr: node.expr,
-          finalExpr: symRes.derivativeAST,
-          originalExprString: `d//d${varName} (${formatAST(node.expr)})`,
-          finalExprString: symRes.derivativeStr,
-          steps: symRes.steps,
-          ruleSequence: symRes.ruleSequence,
-          targetVar: varName,
-          verified: symRes.numericVerification.passed
-        };
+        if (order === 1) {
+          const symRes = computeSymbolicDerivative(node.expr, varName);
+          return {
+            type: 'derivation',
+            originalEquation: `d//d${varName} (${formatAST(node.expr)})`,
+            roots: [],
+            originalExpr: node.expr,
+            finalExpr: symRes.derivativeAST,
+            originalExprString: `d//d${varName} (${formatAST(node.expr)})`,
+            finalExprString: symRes.derivativeStr,
+            steps: symRes.steps,
+            ruleSequence: symRes.ruleSequence,
+            targetVar: varName,
+            verified: symRes.numericVerification.passed
+          };
+        } else {
+          const symRes = computeHigherDerivative(node.expr, varName, order);
+          const origEq = `d^${order}//d${varName}^${order} (${formatAST(node.expr)})`;
+          return {
+            type: 'derivation',
+            originalEquation: origEq,
+            roots: [],
+            originalExpr: node.expr,
+            finalExpr: symRes.finalDerivativeAST,
+            originalExprString: origEq,
+            finalExprString: symRes.finalDerivativeStr,
+            steps: symRes.allSteps,
+            ruleSequence: symRes.orders.flatMap(o => o.ruleSequence),
+            targetVar: varName,
+            verified: true,
+          };
+        }
       } catch {
         return {
           type: 'expression',
@@ -5385,29 +5567,61 @@ export class Evaluator {
             node.span
           );
         }
-        const yPlus = valueToNumber(this.invokeCallable(fnVal, [{ type: 'float', value: x0 + h }], node.span), node.span);
-        const yMinus = valueToNumber(this.invokeCallable(fnVal, [{ type: 'float', value: x0 - h }], node.span), node.span);
-        const deriv = (yPlus - yMinus) / (2 * h);
-        if (Math.abs(deriv - Math.round(deriv)) < 1e-6) {
-          return { type: 'rational', n: BigInt(Math.round(deriv)), d: 1n };
+        if (order === 1) {
+          const yPlus = valueToNumber(this.invokeCallable(fnVal, [{ type: 'float', value: x0 + h }], node.span), node.span);
+          const yMinus = valueToNumber(this.invokeCallable(fnVal, [{ type: 'float', value: x0 - h }], node.span), node.span);
+          const deriv = (yPlus - yMinus) / (2 * h);
+          if (Math.abs(deriv - Math.round(deriv)) < 1e-6) {
+            return { type: 'rational', n: BigInt(Math.round(deriv)), d: 1n };
+          }
+          return { type: 'float', value: deriv };
+        } else if (order === 2) {
+          const h2 = 1e-4;
+          const yPlus = valueToNumber(this.invokeCallable(fnVal, [{ type: 'float', value: x0 + h2 }], node.span), node.span);
+          const y0 = valueToNumber(this.invokeCallable(fnVal, [{ type: 'float', value: x0 }], node.span), node.span);
+          const yMinus = valueToNumber(this.invokeCallable(fnVal, [{ type: 'float', value: x0 - h2 }], node.span), node.span);
+          const deriv = (yPlus - 2 * y0 + yMinus) / (h2 * h2);
+          if (Math.abs(deriv - Math.round(deriv)) < 1e-5) {
+            return { type: 'rational', n: BigInt(Math.round(deriv)), d: 1n };
+          }
+          return { type: 'float', value: deriv };
         }
-        return { type: 'float', value: deriv };
       }
     }
 
-    const envPlus = Object.create(currentEnv);
-    envPlus[varName] = { type: 'float', value: x0 + h };
-    const yPlus = valueToNumber(this.evalNode(node.expr, envPlus), node.span);
+    if (order === 1) {
+      const envPlus = Object.create(currentEnv);
+      envPlus[varName] = { type: 'float', value: x0 + h };
+      const yPlus = valueToNumber(this.evalNode(node.expr, envPlus), node.span);
 
-    const envMinus = Object.create(currentEnv);
-    envMinus[varName] = { type: 'float', value: x0 - h };
-    const yMinus = valueToNumber(this.evalNode(node.expr, envMinus), node.span);
+      const envMinus = Object.create(currentEnv);
+      envMinus[varName] = { type: 'float', value: x0 - h };
+      const yMinus = valueToNumber(this.evalNode(node.expr, envMinus), node.span);
 
-    const deriv = (yPlus - yMinus) / (2 * h);
-    if (Math.abs(deriv - Math.round(deriv)) < 1e-6) {
-      return { type: 'rational', n: BigInt(Math.round(deriv)), d: 1n };
+      const deriv = (yPlus - yMinus) / (2 * h);
+      if (Math.abs(deriv - Math.round(deriv)) < 1e-6) {
+        return { type: 'rational', n: BigInt(Math.round(deriv)), d: 1n };
+      }
+      return { type: 'float', value: deriv };
+    } else if (order === 2) {
+      const h2 = 1e-4;
+      const envPlus = Object.create(currentEnv);
+      envPlus[varName] = { type: 'float', value: x0 + h2 };
+      const yPlus = valueToNumber(this.evalNode(node.expr, envPlus), node.span);
+
+      const y0 = valueToNumber(this.evalNode(node.expr, currentEnv), node.span);
+
+      const envMinus = Object.create(currentEnv);
+      envMinus[varName] = { type: 'float', value: x0 - h2 };
+      const yMinus = valueToNumber(this.evalNode(node.expr, envMinus), node.span);
+
+      const deriv = (yPlus - 2 * y0 + yMinus) / (h2 * h2);
+      if (Math.abs(deriv - Math.round(deriv)) < 1e-5) {
+        return { type: 'rational', n: BigInt(Math.round(deriv)), d: 1n };
+      }
+      return { type: 'float', value: deriv };
     }
-    return { type: 'float', value: deriv };
+    return { type: 'none' };
   }
 
   private evalClaim(node: ClaimNode, currentEnv: Environment): Value {

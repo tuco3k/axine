@@ -53,7 +53,7 @@ export function classifyBlockType(source: string): BlockType {
   if (trimmed.startsWith("\\table") || trimmed.startsWith("\\cases")) {
     return "slot";
   }
-  if (trimmed.startsWith("\\figure") || trimmed.includes("{\\axis")) {
+  if (trimmed.startsWith("\\figure") || trimmed.includes("{\\axis") || trimmed.startsWith("\\axis")) {
     return "figure";
   }
   if (trimmed.startsWith("\\derive")) {
@@ -179,7 +179,7 @@ export function parseAxDocument(text: string): DocumentModel {
       blockStartLine = i;
       if (trimmed.startsWith("\\table") || trimmed.startsWith("\\cases")) {
         currentType = "slot";
-      } else if (trimmed.startsWith("\\figure(") || trimmed.startsWith("\\figure ") || trimmed.includes("{\\axis")) {
+      } else if (trimmed.startsWith("\\figure(") || trimmed.startsWith("\\figure ") || trimmed.includes("{\\axis") || trimmed.startsWith("\\axis")) {
         currentType = "figure";
       } else if (trimmed.startsWith("\\derive")) {
         currentType = "derivation";
@@ -236,7 +236,7 @@ export function parseAxDocument(text: string): DocumentModel {
       continue;
     }
 
-    if (trimmed.startsWith("\\figure(") || trimmed.startsWith("\\figure ") || trimmed.includes("{\\axis")) {
+    if (trimmed.startsWith("\\figure(") || trimmed.startsWith("\\figure ") || trimmed.includes("{\\axis") || trimmed.startsWith("\\axis")) {
       flush();
       currentType = "figure";
       currentLines.push(line);

@@ -67,6 +67,7 @@ export class Parser {
   private pos: number = 0;
   private parsingIntegrand: boolean = false;
   private pipeDepth: number = 0;
+  private activeAxes: Set<string> = new Set();
 
   constructor(tokens: Token[], options?: ParserOptions) {
     this.tokens = tokens;
@@ -139,17 +140,27 @@ export class Parser {
   private tryParseDefinition(): ASTNode | null {
     const startPos = this.pos;
 
-    // Check for \axis X, Y, Z OR \axis[X, Y, Z]
+    // Check for \axis X, Y, Z OR \axis[X, Y, Z] OR \axis: X, Y OR \axis(X, Y)
     if (this.peek().type === 'AXIS') {
       const axisTok = this.advance();
+      if (this.peek().type === 'COLON') {
+        this.advance();
+      }
       const hasBracket = this.peek().type === 'LBRACKET';
-      if (hasBracket) {
+      const hasParen = this.peek().type === 'LPAREN';
+      if (hasBracket || hasParen) {
         this.advance();
       }
       const axes: string[] = [];
       while (this.peek().type === 'IDENTIFIER') {
         const idTok = this.advance();
-        axes.push(idTok.value);
+        let axisName = idTok.value;
+        while (this.peek().type === 'IDENTIFIER' && !this.peek().leadingWhitespace) {
+          axisName += this.advance().value;
+        }
+        const cleanName = axisName.replace(/^:/, '');
+        axes.push(cleanName);
+        this.activeAxes.add(cleanName);
         if (this.peek().type === 'COMMA') {
           this.advance();
         } else {
@@ -160,6 +171,9 @@ export class Parser {
       if (hasBracket) {
         const rBracket = this.expect('RBRACKET', ']');
         endPos = rBracket.span.end;
+      } else if (hasParen) {
+        const rParen = this.expect('RPAREN', ')');
+        endPos = rParen.span.end;
       }
       return {
         type: 'AxisDecl',
@@ -1528,19 +1542,8 @@ export class Parser {
       return this.parseLimit();
     }
 
-    // Differential operator d//dx expr or \u2202//\u2202x expr or d/dx expr
-    if (
-      (token.value === 'd' || token.value === '\u2202') &&
-      (this.peek(1).type === 'DOUBLE_SLASH' ||
-        (this.peek(1).type === 'SLASH' &&
-          this.peek(2).type === 'IDENTIFIER' &&
-          (this.peek(2).value.startsWith('d') || this.peek(2).value.startsWith('\u2202')) &&
-          this.peek(3).type !== 'EOF' &&
-          this.peek(3).type !== 'COMMA' &&
-          this.peek(3).type !== 'RPAREN' &&
-          this.peek(3).type !== 'RBRACKET' &&
-          this.peek(3).type !== 'RBRACE'))
-    ) {
+    // Differential operator: d//dx expr, d/dx expr, dy/dx, dy//dx, df/dx, d^2y/dx^2, \u2202y/\u2202x, etc.
+    if (this.checkDiffPrefix()) {
       return this.parseDiff();
     }
 
@@ -1588,7 +1591,32 @@ export class Parser {
       token.type === 'VIEW' ||
       token.type === 'FOR'
     ) {
-      const name = token.value;
+      let name = token.value;
+
+      // Check if this token starts an active declared axis name (e.g. 't' in 'time')
+      if (this.activeAxes.size > 0 && !name.startsWith(':')) {
+        let peekIdx = 1;
+        let candidate = name;
+        while (this.peek(peekIdx).type === 'IDENTIFIER' && !this.peek(peekIdx).leadingWhitespace) {
+          candidate += this.peek(peekIdx).value;
+          if (this.activeAxes.has(candidate)) {
+            const startTok = this.advance();
+            for (let c = 1; c < peekIdx; c++) this.advance();
+            const lastTok = this.advance();
+            return {
+              type: 'Identifier',
+              name: candidate,
+              span: {
+                start: startTok.span.start,
+                end: lastTok.span.end,
+                line: startTok.span.line,
+                col: startTok.span.col,
+              },
+            };
+          }
+          peekIdx++;
+        }
+      }
 
       // Special Expectation syntax: E[X]
       if (name === 'E' && this.peek(1).type === 'LBRACKET') {
@@ -2115,6 +2143,7 @@ export class Parser {
       p++;
     }
 
+    const prevAxes = new Set(this.activeAxes);
     const statements: ASTNode[] = [];
 
     while (this.peek().type !== 'RBRACE' && this.peek().type !== 'EOF') {
@@ -2130,6 +2159,7 @@ export class Parser {
       }
     }
 
+    this.activeAxes = prevAxes;
     const rBrace = this.expect('RBRACE', '}');
     return {
       type: 'Block',
@@ -2509,34 +2539,116 @@ export class Parser {
     };
   }
 
-  private parseDiff(): DiffNode {
-    const dTok = this.advance(); // d or \u2202
-    const isPartial = dTok.value === '\u2202';
-    this.advance(); // // or /
-    let varName = 'x';
-    if (this.peek().type === 'IDENTIFIER') {
-      if ((this.peek().value === 'd' || this.peek().value === '\u2202') && this.peek(1).type === 'IDENTIFIER') {
-        this.advance(); // consume 'd' or '\u2202'
-        varName = this.advance().value;
+  private checkDiffPrefix(): boolean {
+    const t0 = this.peek(0);
+    if (t0.type !== 'IDENTIFIER' || (t0.value !== 'd' && t0.value !== '\u2202')) return false;
+
+    let k = 1;
+    // Optional order in numerator: ^ <number>
+    if (this.peek(k).type === 'CARET') {
+      k++;
+      if (this.peek(k).type === 'NUMBER') {
+        k++;
       } else {
-        let vTok = this.advance().value;
-        if (vTok.startsWith('d') || vTok.startsWith('\u2202')) vTok = vTok.slice(1);
-        if (vTok) varName = vTok;
+        return false;
       }
     }
+
+    // Optional dependent variable: adjacent identifier without leading whitespace (e.g. 'y' in 'dy' or 'f' in 'df')
+    if (this.peek(k).type === 'IDENTIFIER' && !this.peek(k).leadingWhitespace) {
+      k++;
+    }
+
+    // Division slash: // or /
+    if (this.peek(k).type === 'DOUBLE_SLASH' || this.peek(k).type === 'SLASH') {
+      k++;
+    } else {
+      return false;
+    }
+
+    // Denominator differential symbol: 'd' or '\u2202'
+    const tDenom = this.peek(k);
+    if (tDenom.type !== 'IDENTIFIER' || (tDenom.value !== 'd' && tDenom.value !== '\u2202')) return false;
+    k++;
+
+    // Denominator independent variable
+    if (this.peek(k).type !== 'IDENTIFIER') return false;
+    return true;
+  }
+
+  private parseDiff(): DiffNode {
+    const dTok = this.advance(); // d or \u2202
+    let isPartial = dTok.value === '\u2202';
+    let order = 1;
+
+    // 1. Optional order in numerator: ^ <number>
+    if (this.peek().type === 'CARET') {
+      this.advance();
+      order = parseInt(this.expect('NUMBER', 'derivative order').value, 10);
+    }
+
+    // 2. Optional dependent variable: adjacent identifier without leading whitespace (e.g. 'y' in 'dy')
+    let depVar: string | undefined;
+    let depVarSpan: Span | undefined;
+    if (this.peek().type === 'IDENTIFIER' && !this.peek().leadingWhitespace) {
+      const depTok = this.advance();
+      depVar = depTok.value;
+      depVarSpan = depTok.span;
+    }
+
+    // 3. Consume slash: // or /
+    this.advance();
+
+    // 4. Denominator 'd' or '\u2202'
+    const denDTok = this.advance();
+    if (denDTok.value === '\u2202') isPartial = true;
+
+    // 5. Denominator independent variable
+    let varName = 'x';
+    if (this.peek().type === 'IDENTIFIER') {
+      const vTok = this.advance();
+      varName = vTok.value;
+      while (this.peek().type === 'IDENTIFIER' && !this.peek().leadingWhitespace) {
+        varName += this.advance().value;
+      }
+      if (varName.startsWith(':')) varName = varName.slice(1);
+    }
+
+    // 6. Optional order in denominator: ^ <number> (e.g. in dx^2)
+    if (this.peek().type === 'CARET') {
+      this.advance();
+      if (this.peek().type === 'NUMBER') {
+        const denOrder = parseInt(this.advance().value, 10);
+        if (order === 1 && denOrder > 1) {
+          order = denOrder;
+        }
+      }
+    }
+
+    // 7. Parse operand expression
     let expr: ASTNode;
-    if (this.peek().type === 'IDENTIFIER' && this.peek(1).type === 'LPAREN') {
+    if (depVar !== undefined) {
+      expr = {
+        type: 'Identifier',
+        name: depVar,
+        span: depVarSpan || dTok.span,
+      };
+    } else if (this.peek().type === 'IDENTIFIER' && this.peek(1).type === 'LPAREN') {
       const fnTok = this.advance();
       const fnCall = this.parseFunctionCallArgs(fnTok.value, fnTok.span);
       expr = this.parseExpressionWithLeft(fnCall, PREC_IMPLICIT_MUL);
     } else {
       expr = this.parseExpression(PREC_IMPLICIT_MUL);
     }
+
+    const isQuotient = depVar !== undefined;
     return {
       type: 'Diff',
       variable: varName,
       expr,
+      ...(order > 1 ? { order } : {}),
       isPartial,
+      ...(isQuotient ? { isQuotient: true } : {}),
       span: {
         start: dTok.span.start,
         end: expr.span.end,

@@ -627,6 +627,7 @@ export function computeHigherDerivative(
   order: number
 ): {
   finalDerivativeStr: string;
+  finalDerivativeAST: ASTNode;
   orders: { order: number; derivativeStr: string; ruleSequence: string[] }[];
   allSteps: SymbolicDiffStep[];
 } {
@@ -650,6 +651,7 @@ export function computeHigherDerivative(
 
   return {
     finalDerivativeStr: orders[orders.length - 1].derivativeStr,
+    finalDerivativeAST: currentAST,
     orders,
     allSteps
   };

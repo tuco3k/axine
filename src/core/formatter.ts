@@ -124,8 +124,12 @@ function formatNode(node: ASTNode, parentPrec: number): string {
       return res;
     }
     case 'Diff': {
-      const op = node.isPartial ? '\u2202//\u2202' : 'd//d';
-      return `${op}${formatIdent(node.variable)} ${formatNode(node.expr, PREC_UNARY)}`;
+      const dSym = node.isPartial ? '\u2202' : 'd';
+      const ordStr = node.order && node.order > 1 ? `^${node.order}` : '';
+      if (node.isQuotient && node.expr.type === 'Identifier') {
+        return `${dSym}${ordStr}${node.expr.name}//${dSym}${formatIdent(node.variable)}${ordStr}`;
+      }
+      return `${dSym}${ordStr}//${dSym}${formatIdent(node.variable)}${ordStr} ${formatNode(node.expr, PREC_UNARY)}`;
     }
     case 'BigOp': {
       if (node.op === 'integral') {

@@ -1584,14 +1584,24 @@ export class SpaceViewport {
           ) as Contour2DResult;
         } else if (entity.coordinates.length === 1) {
           const var0 = entity.coordinates[0];
-          const isAxisX = var0 === this.displayAxes[0];
+          const clean = (s: string) => s.replace(/^:/, '');
+          const isAxisX = var0 === this.displayAxes[0] || clean(var0) === clean(this.displayAxes[0]);
           const sliceFn = isAxisX
             ? (x: number, _y: number) => entity.compiledFn(x)
             : (_x: number, y: number) => entity.compiledFn(y);
           contourResult = sample2D(sliceFn, [minX, maxX], [minY, maxY], resolution);
         } else {
           const ext = this.space.extent2D || this.bounds2D;
-          contourResult = sample2D(entity.compiledFn, [ext.minX, ext.maxX], [ext.minY, ext.maxY], 200);
+          const clean = (s: string) => s.replace(/^:/, '');
+          const isMatch = (a: string, b: string) => a === b || clean(a) === clean(b);
+          const fn2D = (isMatch(entity.coordinates[0], this.displayAxes[0]) && isMatch(entity.coordinates[1], this.displayAxes[1]))
+            ? entity.compiledFn
+            : (x: number, y: number) => {
+                const arg0 = isMatch(entity.coordinates[0], this.displayAxes[0]) ? x : y;
+                const arg1 = isMatch(entity.coordinates[1], this.displayAxes[0]) ? x : y;
+                return entity.compiledFn(arg0, arg1);
+              };
+          contourResult = sample2D(fn2D, [ext.minX, ext.maxX], [ext.minY, ext.maxY], 200);
         }
         entity.cachedContours = contourResult;
       }

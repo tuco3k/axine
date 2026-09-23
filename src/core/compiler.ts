@@ -163,10 +163,17 @@ function compileNode(
 
     case 'Identifier': {
       const name = node.name;
+      const cleanName = name.replace(/^:/, '');
 
       // 1. Check if it is one of the free variables of the space
       if (ctx.varMap.has(name)) {
         return { success: true, code: ctx.varMap.get(name)! };
+      }
+      if (ctx.varMap.has(cleanName)) {
+        return { success: true, code: ctx.varMap.get(cleanName)! };
+      }
+      if (ctx.varMap.has(':' + cleanName)) {
+        return { success: true, code: ctx.varMap.get(':' + cleanName)! };
       }
 
       // 3. Check boolean literals
@@ -174,7 +181,6 @@ function compileNode(
       if (name === 'false') return { success: true, code: '0' };
 
       // 4. Check environment for constant scalar bindings
-      const cleanName = name.replace(/^:/, '');
       if (ctx.env && (name in ctx.env || cleanName in ctx.env)) {
         const val = ctx.env[name] !== undefined ? ctx.env[name] : ctx.env[cleanName];
         if (val.type === 'float') {
@@ -850,7 +856,10 @@ export function compileRelation(
   for (let i = 0; i < vars.length; i++) {
     const varName = vars[i];
     const paramId = sanitizeIdentifier(varName, i);
+    const cleanVar = varName.replace(/^:/, '');
     varMap.set(varName, paramId);
+    varMap.set(cleanVar, paramId);
+    varMap.set(':' + cleanVar, paramId);
     sanitizedParams.push(paramId);
   }
 

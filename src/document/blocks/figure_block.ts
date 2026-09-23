@@ -215,8 +215,8 @@ export class FigureBlockComponent {
       const trimmed = val.trim();
       const caret = this.textarea.selectionStart ?? val.length;
 
-      // If edited away from \figure and doesn't contain {\axis, revert to paragraph
-      if (!trimmed.startsWith("\\figure") && !trimmed.includes("{\\axis")) {
+      // If edited away from \figure and doesn't contain {\axis or \axis, revert to paragraph
+      if (!trimmed.startsWith("\\figure") && !trimmed.includes("{\\axis") && !trimmed.startsWith("\\axis")) {
         this.options.onRequestTransform?.(this.block.id, "paragraph", val, caret);
         return;
       }

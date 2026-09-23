@@ -535,7 +535,9 @@ export interface DiffNode {
   type: 'Diff';
   variable: string;
   expr: ASTNode;
+  order?: number;
   isPartial?: boolean;
+  isQuotient?: boolean;
   span: Span;
 }
 

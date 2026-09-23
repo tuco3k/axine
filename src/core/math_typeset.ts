@@ -748,7 +748,7 @@ function renderCodeShapedLine(rawLine: string): string {
 }
 
 function renderMathShapedLine(rawLine: string, options: TypesetOptions): string {
-  const tokenRegex = /(\s+)|("[^"]*")|(d\/\/d[a-zA-Z][a-zA-Z0-9_]*|\b\u2202\/\/\u2202[a-zA-Z][a-zA-Z0-9_]*)|(-?\b\d+\s*(?:\/|\/\/)\s*\d+\b)|(\.\.)|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|\/\/|\/|&minus;|&sdot;)|(\d+(?:\.\d+)?)|([a-zA-Z][a-zA-Z0-9_]*)|(\x27+)|([()\[\],{}:.])|([\u2200-\u23FF\u27C0-\u27EF\u2980-\u2AFF\u2016\u2020\u00B7\u2100-\u214F\u0370-\u03FF])/g;
+  const tokenRegex = /(\s+)|("[^"]*")|((?:d|\u2202)\^?\d*[a-zA-Z_:]*\s*(?:\/\/|\/)\s*(?:d|\u2202)[a-zA-Z_:]*(?:\^\d+)?)|(-?\b\d+\s*(?:\/|\/\/)\s*\d+\b)|(\.\.)|(\^(?:\{[^}]+\}|\([^)]+\)|[a-zA-Z0-9*+\-]+))|(&Delta;[a-zA-Z_][a-zA-Z0-9_]*|&Delta;)|(&rarr;|&infin;)|(<=|>=|!=|==|=|<|>|:=|\u2264|\u2265|\u2260|\u2261|->)|(\+|\-|\*|\/\/|\/|&minus;|&sdot;)|(\d+(?:\.\d+)?)|([a-zA-Z][a-zA-Z0-9_]*)|(\x27+)|([()\[\],{}:.])|([\u2200-\u23FF\u27C0-\u27EF\u2980-\u2AFF\u2016\u2020\u00B7\u2100-\u214F\u0370-\u03FF])/g;
 
   let out = '';
   let match: RegExpExecArray | null;
@@ -763,8 +763,10 @@ function renderMathShapedLine(rawLine: string, options: TypesetOptions): string 
       if (options.inlineFractions) {
         out += `<span class="tm-diff">${escapeHtml(diffTok.replace('//', '/'))}</span>`;
       } else {
-        const varName = diffTok.slice(diffTok.lastIndexOf('d') + 1);
-        out += `<span class="tm-frac tm-diff-frac" role="math" aria-label="${escapeHtml(diffTok.replace('//', '/'))}"><span class="tm-num-box"><span class="tm-diff">d</span></span><span class="tm-frac-bar"><span class="tm-frac-slash">/</span></span><span class="tm-den-box"><span class="tm-diff">d${escapeHtml(varName)}</span></span></span>`;
+        const parts = diffTok.split(diffTok.includes('//') ? '//' : '/').map(s => s.trim());
+        const numPart = parts[0];
+        const denPart = parts[1];
+        out += `<span class="tm-frac tm-diff-frac" role="math" aria-label="${escapeHtml(diffTok.replace('//', '/'))}"><span class="tm-num-box"><span class="tm-diff">${escapeHtml(numPart)}</span></span><span class="tm-frac-bar"><span class="tm-frac-slash">/</span></span><span class="tm-den-box"><span class="tm-diff">${escapeHtml(denPart)}</span></span></span>`;
       }
     } else if (dotDotTok) {
       out += `<span class="tm-op">..</span>`;
