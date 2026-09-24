@@ -17,12 +17,12 @@ Axine evaluates and reports what it found. It does not classify, guess, or inven
            ┌────────────────────────┼────────────────────────┐
            ▼                        ▼                        ▼
 ┌────────────────────┐   ┌────────────────────┐   ┌────────────────────┐
-│   Value Found      │   │     Obstruction    │   │  Evaluation Error  │
-│  Exact / Numeric   │   │  Defined Taxonomy  │   │ Mismatch / Syntax  │
+│  Reduced as Far    │   │   Budget Ran Out   │   │  Evaluation Error  │
+│    as It Can Go    │   │   Partial Result   │   │ Mismatch / Syntax  │
 └────────────────────┘   └────────────────────┘   └────────────────────┘
 ```
 
-1. **Honest Reporting**: When Axine evaluates an expression, it produces an exact value, a bounded numerical approximation, or an explicit obstruction reason. It never presents heuristic guesses or synthetic placeholders as proven mathematical results.
+1. **Honest Reporting**: When Axine evaluates an expression, it reduces the expression as far as it can: an exact value, a bounded numerical approximation, or whatever cannot reduce standing as itself. The only other outcome is running out of budget, which shows the partial result and how far it got. It never presents heuristic guesses or synthetic placeholders as proven mathematical results.
 2. **Context-Dependent Truth**: Mathematical truth is relative to the algebraic context in which evaluation occurs. A question cannot be answered in a vacuum; it is answered within a declared algebraic structure (e.g., $\mathbb{R}$, $\mathbb{C}$, $\mathbb{Z}_p$).
 3. **No Decorative Features**: Language constructs exist to compute, observe, or derive. A feature that does not change evaluation or observation semantics is rejected.
 
@@ -72,13 +72,13 @@ Evaluation in Axine occurs within an explicit **Context**. The context defines t
          ▼                          ▼                          ▼
    Context Real (R)          Context Complex (C)         Context Z_p
 • Default context          • sqrt(-1) = i             • Arithmetic mod p
-• sqrt(-1) is undefined    • e^(i*pi) = -1            • Inverses via Bezout
+• sqrt(-1) stands          • e^(i*pi) = -1            • Inverses via Bezout
 • No imaginary unit i      • n roots for deg n poly   • Finite field algebra
 ```
 
 ### 3.1 The Default Context ($\mathbb{R}$)
 The default context is the field of real numbers $\mathbb{R}$.
-- In $\mathbb{R}$, $\sqrt{-1}$ is **genuinely undefined** (`undefined`). It is not an engine failure, not "requires unavailable theory", and not a missing feature error.
+- In $\mathbb{R}$, $\sqrt{-1}$ does not reduce: `:sqrt(-1)` stands as itself. That is not an engine failure, not "requires unavailable theory", and not a missing feature error.
 - The symbol `i` is not defined in $\mathbb{R}$. Referencing `i` in $\mathbb{R}$ is an unknown variable error unless bound in scope.
 
 ### 3.2 The Complex Context ($\mathbb{C}$)
@@ -103,7 +103,7 @@ with context Z(7) {
   3 / 2            # 5, because 2 * 5 = 10 ≡ 3 (mod 7)
 }
 ```
-Crossing contexts is explicit. Roots that do not exist in the active context evaluate to `undefined`.
+Crossing contexts is explicit. Roots that do not exist in the active context stand unreduced.
 
 ---
 
@@ -159,61 +159,54 @@ Diagnostics provide:
 
 ---
 
-## 5. Revised Obstruction Taxonomy
-
-Axine distinguishes between values, mathematical obstructions, and execution limits.
+## 5. What Evaluation Produces
 
 ```
                          Evaluation Outcome
                                   │
        ┌──────────────────────────┼──────────────────────────┐
        ▼                          ▼                          ▼
-     Value                   Obstruction                   Error
- (Number, Tuple,        (Legitimate Reason)         (Invalid Syntax,
-Matrix, Relation)                 │                  Kind Mismatch)
-                                  │
-          ┌───────────────────────┼───────────────────────┐
-          ▼                       ▼                       ▼
-   budget-exhausted          undecidable             undefined
- (Fuel/Time limit)       (Proven Undecidable)   (Genuinely Undefined)
+ Reduced as far as        Budget ran out                   Error
+    it can go          (the partial result           (Invalid syntax,
+ (what cannot reduce    and how far it got)           kind mismatch)
+  stands as itself)
 ```
 
-### 5.1 Retained Obstruction Categories
-1. `budget-exhausted`: Computation stopped due to step, time, or memory limits before finding an exact solution or completing a search.
-2. `undecidable`: The proposition is provably undecidable within the formal system (e.g., zero-equivalence of general elementary functions via Richardson's theorem).
-3. `undefined`: The operation has no mathematical definition in the active context ($1/0$ in $\mathbb{R}$, $\sqrt{-1}$ in $\mathbb{R}$, $\log(-3)$ in $\mathbb{R}$, $\tan(\pi/2)$ in $\mathbb{R}$).
+### 5.1 An expression reduces as far as it can
+Whatever cannot reduce stands as itself. In $\mathbb{R}$, `:sqrt(-4)`, `1/0` and `0/0` stand as written, and `:sqrt(-1) < 3` evaluates to `:sqrt(-1) < 3`. Standing as itself is a result, not a failure: it is exactly what is known.
 
-### 5.2 Removed Categories & Rationale
-- `requires-unavailable-theory`: **REMOVED**. This category disguised context boundaries and unhandled cases as runtime obstructions. In context $\mathbb{R}$, $\sqrt{-1}$ is `undefined`. In context $\mathbb{C}$, $\sqrt{-1} = i$.
-- `unimplemented-technique`: **REMOVED**. Engine limitations are not mathematical facts. If the engine cannot solve an equation within bounds, it returns `budget-exhausted` or reports that no algebraic reduction rule applied.
+### 5.2 `none`, `undefined` and `unknown` are not values
+There is no value meaning "absent", "undefined" or "not known". A question with no answer in the active context is answered by the expression that asked it, unreduced. `requires-unavailable-theory` and `unimplemented-technique` are removed and stay removed, with the other `unknown` reasons.
 
----
+### 5.3 Running out of budget
+The only other outcome is running out of budget (steps, time, depth or memory). It shows the partial result and how far it got: a sum stopped at its 200,000th term shows the sum of the terms it added and where it stopped. It never throws.
 
-### 5.3 Audit & Migration of Removed Categories
+### 5.4 Where the code differs from this section
+Observed by running the engine at commit cf32878 (budget: 200,000 steps, depth 500):
 
-All existing use sites of `requires-unavailable-theory` and `unimplemented-technique` across the codebase are audited below with their required replacements:
+| Where | What it does now | Observed |
+| :--- | :--- | :--- |
+| `src/core/evaluator.ts:823, 826, 6403` | Running out of budget or recursion depth returns `unknown(budget-exhausted)` with no partial result | `:sum(1/n^2, n \in 1..100000000)` → `unknown(budget-exhausted, "step limit (200,000) reached")` |
+| `src/core/evaluator.ts:3672–3837` (`find`, `all`, `exists`) | A search that runs out returns `unknown(search-incomplete)`; it says how far it got but is not a partial result | `\find(x \in 1..100000000, x < 0)` → `unknown(search-incomplete, "checked to 50000 of 100000000")` |
+| `src/core/evaluator.ts:3660, 3696` (`find`) | A search with no match returns `none` | `\find(x \in 1..5, x > 10)` → `none` |
+| `src/core/evaluator.ts:1421` (`\where`) | An expression whose condition is false returns `none` | `5 \where 1 > 2` → `none` |
+| `src/core/evaluator.ts:4213` (limits) | A limit that does not exist returns `unknown` (`one-sided-limits-disagree`, `unbounded`, `oscillating`, `undefined`) | |
+| `src/core/evaluator.ts:5707` (`evalDiff`) | A derivative it cannot take returns `none` | |
+| `src/core/evaluator.ts:2724` | `\unknown(reason, detail)` constructs an `unknown` value | |
+| `src/core/evaluator.ts:5714` (claims) | A Kind H claim returns `unknown(not-finitely-checkable)` | |
+| `src/core/evaluator.ts:1901` (kind declarations) | Records `obstruction: 'undecidable'` | |
+| `src/core/evaluator.ts:6002, 6044` (dimension, `\check`) | Any failure returns `unknown(requires-unavailable-theory)` | |
+| `src/core/algebra/solver.ts:16, 60, 496`, `algebra/index.ts:29`, `algebra/simplify.ts:181` | `\isolate` and `\simplify` return `unknown(requires-unavailable-theory)` | `\isolate(x^2 = -1, \for x)` → `unknown(requires-unavailable-theory, "even power x^2 = -1 of negative number requires complex numbers (C)")` |
+| `src/core/algebra/verifier.ts` (11 sites) | A derivation that fails its own check returns `unknown(no-convergence)` | |
+| `src/core/numeric/matrix.ts:282, 335` | Complex eigenvalues return `unknown(requires-unavailable-theory)`; QR non-convergence returns `unknown(no-convergence)` | |
+| `src/core/simulation/trajectory.ts:79`, `numeric/tower.ts:905` | The state of an empty trajectory, and a comparison involving `none`, return `none` | |
+| `src/core/numeric/tower.ts:172` (`valueToNumber`) | A builtin that needs a number throws on an expression that stands | `:float(1/0)` → error "Expected numeric value, got expression" |
+| `src/core/numeric/rational.ts:103, 131`, `symbolic_diff.ts:911` | Division by zero and a pole throw; the evaluator catches them at the top level, where `1/0` stands | |
+| `src/core/types.ts:700–727` | `NoneValue`, `UnknownValue` and the reason unions, including `requires-unavailable-theory` and `unimplemented-technique` | |
+| Declarations (`\unit`, `\dimension`, `\operator`, `\rule`, `\module`, `\export`, `\view`, `\unimport`, `\axis`) | Return a `none` value for a statement that produces nothing | |
+| Tests | Assert `unknown`/`none` outcomes: `fuel_kleene` (19), `derivation_first_class` (14), `algebra_isolate` (11), `claim_honesty_and_control` (6), `language_extensions` (5), `dimensional` (5), `universality` (4), `removed_features` (3), `error_and_import_ux` (2), `part_j_quantifiers`, `part_i_collections_fold_map`, `layout_dock_visuals` (1 each) | |
 
-| File & Line | Function / Context | Current Return | Target Semantic Replacement |
-| :--- | :--- | :--- | :--- |
-| `src/core/types.ts:575` | `UnknownReason` union | `'requires-unavailable-theory'` | **Delete member** from type union |
-| `src/core/types.ts:564` | `ObstructionReason` union | `'unimplemented-technique'` | **Delete member** from type union |
-| `src/core/algebra/solver.ts:16` | `AlgebraicSolver.isolate` | `makeUnknown('requires-unavailable-theory', ...)` | `makeUnknown('budget-exhausted', ...)` or return unresolved relation |
-| `src/core/algebra/solver.ts:60` | `AlgebraicSolver.solveQuadratic` ($D < 0$) | `makeUnknown('requires-unavailable-theory', ...)` | In context $\mathbb{R}$: return `{ type: 'none' }` (no real roots). In context $\mathbb{C}$: compute $x = \frac{-b \pm i\sqrt{\|D\|}}{2a}$ |
-| `src/core/algebra/solver.ts:496` | `AlgebraicSolver.solvePower` ($\sqrt[2k]{-c}$) | `makeUnknown('requires-unavailable-theory', ...)` | In context $\mathbb{R}$: `{ type: 'none' }`. In context $\mathbb{C}$: return complex roots |
-| `src/core/algebra/simplify.ts:181` | `AlgebraicSimplifier.simplify` | `makeUnknown('requires-unavailable-theory', ...)` | Return unsimplified normalized AST or `budget-exhausted` |
-| `src/core/algebra/index.ts:29` | `isolate` fallback | `makeUnknown('requires-unavailable-theory', ...)` | Return unisolated relation or `budget-exhausted` |
-| `src/core/numeric/matrix.ts:281` | `matrixEigenvalues` (Complex $\lambda$) | `makeUnknown('requires-unavailable-theory', ...)` | In context $\mathbb{R}$: return `undefined` (no real eigenvalues). In context $\mathbb{C}$: return complex tuple |
-| `src/core/evaluator.ts:2478` | `evalIntegral` | `const obstruction = isGaussian ? 'not-elementary' : 'unimplemented-technique'` | Replace with `budget-exhausted` or numeric quadrature result |
-| `src/core/evaluator.ts:2498` | `evalIntegral` (Indefinite integral) | `makeUnknown('requires-unavailable-theory', ...)` | Indefinite integration without limits is not supported symbolically: raise diagnostic stating definite limits are required |
-| `src/core/evaluator.ts:3815` | `evalClaim` (Catch handler) | `makeUnknown('requires-unavailable-theory', ...)` | Return structured error or `budget-exhausted` |
-| `src/core/evaluator.ts:3854` | `evalClaim` (Fallback handler) | `makeUnknown('requires-unavailable-theory', ...)` | Return structured error or `budget-exhausted` |
-| `src/tests/language_extensions.test.ts:325, 387` | Indefinite integral test | Expects `'requires-unavailable-theory'` | Update test to verify clear diagnostic for indefinite integrals |
-| `src/tests/derivation_first_class.test.ts:59, 151, 157, 163` | Isolation rejection tests | Expects `'requires-unavailable-theory'` | Update test to expect `{ type: 'none' }` in $\mathbb{R}$ or explicit derivation branch |
-| `src/tests/algebra_isolate.test.ts:70, 113, 121, 129` | Negative discriminant tests | Expects `'requires-unavailable-theory'` | Update test to expect `{ type: 'none' }` in $\mathbb{R}$ |
-| `src/tests/claim_honesty_and_control.test.ts:179` | Matrix complex eigenvalues | Expects `'requires-unavailable-theory'` | Update test to expect `undefined` in $\mathbb{R}$ or complex result in $\mathbb{C}$ |
-| `src/tests/fuel_kleene.test.ts:105-106` | Kleene fuel propagation | Uses `'requires-unavailable-theory'` | Update test fixture to use `'budget-exhausted'` |
-| `src/tests/obstructions_g4.test.ts:32, 92` | Obstruction test suite | Uses `'unimplemented-technique'` | Update test to verify `'budget-exhausted'` or `'not-elementary'` |
-| `src/tests/dimensional.test.ts:75, 151` | Dimensional analysis violations | Expects `'requires-unavailable-theory'` | Return structured `DimensionMismatch` error |
+Already as this section says: `0/0`, `1/0`, `:sqrt(-4)`, `:sqrt(-1) < 3`, `:f(0)` for `:f(x) = 1/x`, `0^(-1)`, `:mod(1, 0)`, `:ln(-1)`, `:ln(0)` all stand as written.
 
 ---
 
@@ -301,12 +294,12 @@ The following table itemizes every location where the current codebase contradic
 | Contradiction # | File & Location | Current Implementation Behavior | Target Semantic Behavior | Effort |
 | :--- | :--- | :--- | :--- | :--- |
 | **C1** | `src/core/evaluator.ts:893-900`<br>`src/core/evaluator.ts:3865-4110` (`evalGraph`) | Dispatches plot rendering based on AST shape matching (`Trajectory`, `Identifier`, `FunctionCall`) into rigid graph types. | Unify graph generation as implicit level-set sampling over defined domain $\mathcal{D} = [a_1, b_1] \times \dots \times [a_n, b_n]$. | **Large** |
-| **C2** | `src/core/numeric/tower.ts:608-617` (`sqrtValue`) | Hardcodes runtime error: *"Cannot compute square root of negative number in real mode (complex numbers deferred to future version)"*. | In context $\mathbb{R}$: return `undefined`. In context $\mathbb{C}$: return $i \sqrt{\|x\|}$. | **Medium** |
-| **C3** | `src/core/evaluator.ts:386-396, 427-433` | Hardcodes identifier check throwing error for imaginary unit `i` as unsupported. | In context $\mathbb{R}$: treat as unbound identifier or undefined. In context $\mathbb{C}$: resolve to constant $i = (0, 1)$. | **Medium** |
+| **C2** | `src/core/numeric/tower.ts:608-617` (`sqrtValue`) | Hardcodes runtime error: *"Cannot compute square root of negative number in real mode (complex numbers deferred to future version)"*. | In context $\mathbb{R}$: stand as `:sqrt(x)`. In context $\mathbb{C}$: return $i \sqrt{\|x\|}$. | **Medium** |
+| **C3** | `src/core/evaluator.ts:386-396, 427-433` | Hardcodes identifier check throwing error for imaginary unit `i` as unsupported. | In context $\mathbb{R}$: treat as an unbound identifier. In context $\mathbb{C}$: resolve to constant $i = (0, 1)$. | **Medium** |
 | **C4** | `src/document/corpus_data.ts:98-105`<br>`src/tests/claim_honesty_and_control.test.ts:259-266` | Contains corpus document and test asserting that $e^{i\pi} + 1$ must fail with diagnostic *"unsupported imaginary unit 'i'"*. | Evaluate Euler's formula in context $\mathbb{C}$ producing exact zero ($0$). | **Medium** |
 | **C5** | `src/core/numeric/tower.ts:167-176, 252-261, 754-757` | Throws hardcoded string errors like *"Cannot add Vector to Scalar: addition requires matching kinds"*; disallows scalar-vector multiplication. | Delegate operator resolution to Context operator table with structured overload mismatch diagnostics. | **Large** |
 | **C6** | `src/core/algebra/classifier.ts:6-105` | Rigid AST pattern matching rejecting non-polynomial, non-linear algebraic forms before solving. | Attempt algebraic term rewriting and simplification; fall back to numerical isolation or return unresolved relation on budget exhaustion. | **Large** |
-| **C7** | `src/core/types.ts:564, 575`<br>`src/core/algebra/solver.ts:16, 60, 496`<br>`src/core/numeric/matrix.ts:281` | Emits `requires-unavailable-theory` and `unimplemented-technique` on negative discriminants, complex eigenvalues, etc. | Eliminate removed categories across 19 use sites. Replace with `undefined`, `{ type: 'none' }`, or `budget-exhausted`. | **Medium** |
+| **C7** | `src/core/types.ts:564, 575`<br>`src/core/algebra/solver.ts:16, 60, 496`<br>`src/core/numeric/matrix.ts:281` | Emits `requires-unavailable-theory` and `unimplemented-technique` on negative discriminants, complex eigenvalues, etc. | Eliminate removed categories (§5.4). Replace with the unreduced expression, or the partial result where the budget ran out. | **Medium** |
 | **C8** | Architecture Wide (`src/core/`) | Entire evaluation pipeline runs in a single ambient universe without explicit Context scopes ($\mathbb{R}$, $\mathbb{C}$, $\mathbb{Z}_p$). | Introduce first-class `Context` representation in `Environment` controlling operator tables and field rules. | **Large** |
 | **C9** | Architecture Wide (`src/editor/`, `src/document/`) | Missing `expand` macro primitive to unfold high-level abstractions into user-editable low-level statements. | Implement `expand` transformation pass in document/AST pipeline to unfold composite objects into editable source. | **Medium** |
 | **C10** | `src/core/evaluator.ts:2478, 2498` (`evalIntegral`) | Indefinite integrals return `requires-unavailable-theory`; definite integrals check hardcoded Gaussian pattern. | Definite integrals use numerical quadrature with bounded error; indefinite integrals raise explicit syntax requirement for integration limits. | **Small** |
@@ -318,7 +311,7 @@ The following table itemizes every location where the current codebase contradic
 ```
   Phase A: Taxonomy & Diagnostics (C2, C3, C4, C7, C10)
   ├── Remove 'requires-unavailable-theory' and 'unimplemented-technique'
-  ├── Update all 19 call sites to 'undefined', 'budget-exhausted', or 'none'
+  ├── Replace them with the unreduced expression, or the partial result where the budget ran out
   └── Add structured operator mismatch diagnostics
 
   Phase B: Context System & Complex Numbers (C2, C3, C4, C8)

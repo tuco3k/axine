@@ -22,15 +22,13 @@ records a side condition, and extraneous roots are reported, never silently
 dropped.
 
 ## Resolved decisions — do not relitigate
-- `unknown` is a VALUE with a reason enum. Never an exception, never NaN.
-  The reasons are those of SEMANTICS.md §5.1: `budget-exhausted`,
-  `undecidable`, `undefined`.
-- `none`, `undefined` and `budget-exhausted` are different answers.
-  none = definitively absent: no solution in the active context or the
-  searched range. undefined = the operation has no meaning in the active
-  context. budget-exhausted = the search stopped before it finished.
-  Conflating these is the top correctness risk in this codebase.
-- Fuel exhaustion produces a value. It never throws.
+- An expression reduces as far as it can. Whatever cannot reduce stands as
+  itself: in ℝ, `:sqrt(-4)`, `1/0` and `0/0` stand as written, and
+  `:sqrt(-1) < 3` evaluates to `:sqrt(-1) < 3`. Standing as itself is
+  never an exception and never NaN.
+- `none`, `undefined` and `unknown` are not values.
+- The only other outcome is running out of budget, which shows the partial
+  result and how far it got. It never throws.
 - `/` and `//` are semantically identical, differing only in a display flag.
 - `d` and `∂` are reserved. `d / dx` with spaces is an error, not division.
 - Bare letters are single variables and juxtaposition is multiplication
@@ -45,9 +43,7 @@ dropped.
 - Ambient and invoked execution use separate worker pools and separate
   budgets. They must never share.
 - Pause = cooperative yield. Stop = worker.terminate(). Both are required.
-- A value with no definition in the active context (sqrt of a negative or
-  complex eigenvalues in ℝ, 1/0) is `undefined`, never a partial number.
-  `requires-unavailable-theory` and `unimplemented-technique` are removed
+- `requires-unavailable-theory` and `unimplemented-technique` stay removed
   (SEMANTICS.md §5.2).
 - The zero-dependency rule covers the LANGUAGE CORE (`src/core`). MathLive is permitted for the editor's equation input surface only. Nothing in `src/core` may import it.
 
