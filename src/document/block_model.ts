@@ -13,6 +13,7 @@
  */
 
 import { Value } from "../core/types";
+import { segmentDocument } from "../core/segments";
 import { MathDiagnostic } from "../core/errors";
 
 export type BlockType =
@@ -31,7 +32,9 @@ export interface DocumentBlock {
   lines: string[];
   startLine: number;
   endLine: number;
-  status: "verified" | "unknown" | "error" | "stale";
+  // From evaluation (BlockState.applyEvaluation): pending until a result for
+  // this text arrives; stale once the text changes after it.
+  status: "pending" | "incomplete" | "computed" | "unknown" | "error" | "stale";
   definedSymbol?: string;
   referencedSymbols?: string[];
   result?: Value;
@@ -45,47 +48,35 @@ export interface DocumentModel {
   blocks: DocumentBlock[];
 }
 
-export function classifyBlockType(source: string): BlockType {
+// The display type of a math unit, from its text.
+function mathBlockType(source: string): BlockType {
   const trimmed = source.trim();
-  if (trimmed === "") {
-    return "paragraph";
-  }
-  if (trimmed.startsWith("\\table") || trimmed.startsWith("\\cases")) {
-    return "slot";
-  }
-  if (trimmed.startsWith("\\figure") || trimmed.includes("{\\axis") || trimmed.startsWith("\\axis")) {
-    return "figure";
-  }
-  if (trimmed.startsWith("\\derive")) {
-    return "derivation";
-  }
-  if (trimmed.startsWith("# ") || trimmed.startsWith("## ") || trimmed.startsWith("### ")) {
-    return "heading";
-  }
-  if (trimmed.startsWith("#")) {
-    return "paragraph";
-  }
-  // Relational definitions or equations: e.g. "x = 5", ":x := 10", "y = mx + b", "a <= b", "y'' + 4y' + 13y = 0", "y(t) = "
-  if (/^(:?[a-zA-Z_][a-zA-Z0-9_]*(\([^)]*\)|[\x27]+)*\s*(:=|=|<=|>=|<|>)\s*.*)$/.test(trimmed)) {
-    const relIdx = trimmed.search(/(:=|=|<=|>=|<|>)/);
-    const lhs = trimmed.substring(0, relIdx).trim();
-    if (!/\b[a-zA-Z]{2,}\s+[a-zA-Z]{2,}\b/.test(lhs)) {
-      return "equation";
-    }
-  }
-  const relMatch = trimmed.match(/^(.+?)\s*(:=|=|<=|>=|!=|<|>)\s*(.*)$/);
-  if (relMatch) {
-    const lhs = relMatch[1].trim();
-    const rhs = relMatch[3].trim();
-    // Exclude prose sentences where words are separated by spaces
-    if (!/\b[a-zA-Z]{2,}\s+[a-zA-Z]{2,}\b/.test(lhs) && !/\b[a-zA-Z]{2,}\s+[a-zA-Z]{2,}\b/.test(rhs)) {
-      return "equation";
-    }
-  }
-  // Pure math expressions with operators (e.g. x^2 + y^2, 2 + 2, y'')
-  if (/^[a-zA-Z0-9_\x27]+(\s*[\^+\-*/]\s*[a-zA-Z0-9_\x27]+)+$/.test(trimmed)) {
-    return "equation";
-  }
+  if (trimmed.startsWith("\\table") || trimmed.startsWith("\\cases")) return "slot";
+  if (trimmed.startsWith("\\figure") || trimmed.startsWith("\\axis") || trimmed.includes("{\\axis")) return "figure";
+  if (trimmed.startsWith("\\derive")) return "derivation";
+  return "equation";
+}
+
+// A comment line shown as a heading: "## " and "### " anywhere, "# " only as
+// the first line of content, where it titles the document. Elsewhere "# "
+// begins an Axine comment.
+function isHeadingLine(line: string, isFirstContent: boolean): boolean {
+  const trimmed = line.trim();
+  return trimmed.startsWith("### ") || trimmed.startsWith("## ") || (isFirstContent && trimmed.startsWith("# "));
+}
+
+/**
+ * The block type of one block's text, decided by the same segmentation the
+ * evaluator uses (core/segments.ts): text that is one math unit is an
+ * equation (or a figure, slot or derivation by its command); anything else is
+ * a paragraph or heading.
+ */
+export function classifyBlockType(source: string, isFirstContent: boolean = false): BlockType {
+  if (source.trim() === "") return "paragraph";
+  const lines = source.split("\n");
+  if (lines.length === 1 && isHeadingLine(lines[0], isFirstContent)) return "heading";
+  const segments = segmentDocument(lines).filter((seg) => seg.kind !== "blank");
+  if (segments.length === 1 && segments[0].kind === "math") return mathBlockType(source);
   return "paragraph";
 }
 
@@ -116,21 +107,38 @@ export function extractReferencedSymbols(source: string): string[] {
   return Array.from(symbols);
 }
 
+/**
+ * Partitions a document into blocks, one per segment of core/segments.ts, so
+ * every block covers exactly the lines of one evaluation unit or one prose
+ * line; consecutive comment lines form one paragraph. Line numbers are
+ * document line indices.
+ */
 export function parseAxDocument(text: string): DocumentModel {
+  const lines = text.split("\n");
+  const segments = segmentDocument(lines);
   let rawFrontmatter = "";
-  let frontmatter: Record<string, any> = {};
-  let body = text;
+  const frontmatter: Record<string, any> = {};
+  const blocks: DocumentBlock[] = [];
 
-  if (text.startsWith("---")) {
-    const endFm = text.indexOf("\n---", 3);
-    if (endFm !== -1) {
-      const lineEnd = text.indexOf("\n", endFm + 4);
-      const splitIdx = lineEnd !== -1 ? lineEnd + 1 : endFm + 4;
-      rawFrontmatter = text.substring(0, splitIdx);
-      body = text.substring(splitIdx);
-      // Basic YAML-like key: value extraction
-      const fmContent = text.substring(3, endFm);
-      for (const line of fmContent.split("\n")) {
+  const pushBlock = (type: BlockType, start: number, end: number) => {
+    const src = lines.slice(start, end + 1).join("\n");
+    blocks.push({
+      id: "block_" + blocks.length,
+      type,
+      source: src,
+      lines: lines.slice(start, end + 1),
+      startLine: start,
+      endLine: end,
+      status: "pending",
+      definedSymbol: extractDefinedSymbol(src),
+      referencedSymbols: extractReferencedSymbols(src),
+    });
+  };
+
+  for (const seg of segments) {
+    if (seg.kind === "frontmatter") {
+      rawFrontmatter = lines.slice(0, seg.end + 1).join("\n") + (seg.end + 1 < lines.length ? "\n" : "");
+      for (const line of lines.slice(1, seg.end)) {
         const colonIdx = line.indexOf(":");
         if (colonIdx !== -1) {
           const k = line.substring(0, colonIdx).trim();
@@ -138,134 +146,34 @@ export function parseAxDocument(text: string): DocumentModel {
           if (k) frontmatter[k] = v;
         }
       }
+      continue;
     }
-  }
-
-  const lines = body.split("\n");
-  const blocks: DocumentBlock[] = [];
-  let currentLines: string[] = [];
-  let currentType: BlockType | null = null;
-  let braceDepth = 0;
-  let parenDepth = 0;
-  let blockStartLine = 0;
-
-  function flush() {
-    if (currentLines.length === 0) return;
-    const src = currentLines.join("\n");
-    const id = "block_" + blocks.length;
-    const type = currentType || "equation";
-
-    blocks.push({
-      id,
-      type,
-      source: src,
-      lines: [...currentLines],
-      startLine: blockStartLine,
-      endLine: blockStartLine + currentLines.length - 1,
-      status: "unknown",
-      definedSymbol: extractDefinedSymbol(src),
-      referencedSymbols: extractReferencedSymbols(src),
-    });
-
-    currentLines = [];
-    currentType = null;
-  }
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-
-    if (currentLines.length === 0) {
-      blockStartLine = i;
-      if (trimmed.startsWith("\\table") || trimmed.startsWith("\\cases")) {
-        currentType = "slot";
-      } else if (trimmed.startsWith("\\figure(") || trimmed.startsWith("\\figure ") || trimmed.includes("{\\axis") || trimmed.startsWith("\\axis")) {
-        currentType = "figure";
-      } else if (trimmed.startsWith("\\derive")) {
-        currentType = "derivation";
+    if (seg.kind === "blank") {
+      pushBlock("blank", seg.start, seg.end);
+      continue;
+    }
+    if (seg.kind === "math") {
+      pushBlock(mathBlockType(lines.slice(seg.start, seg.end + 1).join("\n")), seg.start, seg.end);
+      continue;
+    }
+    if (seg.kind === "comment") {
+      const isFirstContent = !blocks.some((b) => b.type !== "blank");
+      if (isHeadingLine(lines[seg.start], isFirstContent)) {
+        pushBlock("heading", seg.start, seg.end);
+        continue;
       }
-    }
-
-    const hadDepth = braceDepth > 0 || parenDepth > 0;
-    // Depth tracking across multiline constructs
-    for (const ch of line) {
-      if (ch === "{" && parenDepth === 0) braceDepth++;
-      else if (ch === "}" && parenDepth === 0 && braceDepth > 0) braceDepth--;
-      else if (ch === "(") parenDepth++;
-      else if (ch === ")" && parenDepth > 0) parenDepth--;
-    }
-
-    if (braceDepth > 0 || parenDepth > 0) {
-      currentLines.push(line);
+      const prev = blocks[blocks.length - 1];
+      if (prev && prev.type === "paragraph" && prev.endLine === seg.start - 1 && prev.source.trim().startsWith("#")) {
+        prev.endLine = seg.end;
+        prev.lines = lines.slice(prev.startLine, seg.end + 1);
+        prev.source = prev.lines.join("\n");
+        continue;
+      }
+      pushBlock("paragraph", seg.start, seg.end);
       continue;
     }
-
-    if (hadDepth && braceDepth === 0 && parenDepth === 0) {
-      currentLines.push(line);
-      flush();
-      continue;
-    }
-
-    if (trimmed === "") {
-      flush();
-      blocks.push({
-        id: "block_" + blocks.length,
-        type: "blank",
-        source: line,
-        lines: [line],
-        startLine: i,
-        endLine: i,
-        status: "verified",
-      });
-      continue;
-    }
-
-    if (trimmed.startsWith("### ") || trimmed.startsWith("## ") || (trimmed.startsWith("# ") && blocks.filter(b => b.type !== "blank").length === 0)) {
-      flush();
-      currentType = "heading";
-      currentLines.push(line);
-      flush();
-      continue;
-    }
-
-    if (trimmed.startsWith("\\table") || trimmed.startsWith("\\cases")) {
-      flush();
-      currentType = "slot";
-      currentLines.push(line);
-      if (braceDepth === 0) flush();
-      continue;
-    }
-
-    if (trimmed.startsWith("\\figure(") || trimmed.startsWith("\\figure ") || trimmed.includes("{\\axis") || trimmed.startsWith("\\axis")) {
-      flush();
-      currentType = "figure";
-      currentLines.push(line);
-      if (braceDepth === 0) flush();
-      continue;
-    }
-
-    if (trimmed.startsWith("\\derive")) {
-      flush();
-      currentType = "derivation";
-      currentLines.push(line);
-      continue;
-    }
-
-    if (trimmed.startsWith("#")) {
-      if (currentType && currentType !== "paragraph") flush();
-      currentType = "paragraph";
-      currentLines.push(line);
-      continue;
-    }
-
-    const classified = classifyBlockType(line);
-    if (currentType && currentType !== classified) flush();
-    currentType = classified;
-    currentLines.push(line);
-    flush();
+    pushBlock("paragraph", seg.start, seg.end);
   }
-
-  flush();
 
   return {
     frontmatter,

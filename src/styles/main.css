@@ -4028,7 +4028,7 @@ input[type="number"]:focus {
 
 .doc-figure-prov-btn {
   background: none;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-default);
   border-radius: var(--border-radius-xs);
   padding: 2px 6px;
   font-size: 11px;
@@ -4049,33 +4049,45 @@ input[type="number"]:focus {
   border-radius: var(--border-radius-xs);
 }
 
-.doc-figure-badge.badge-verified {
-  color: var(--color-verified);
-  background: var(--color-verified-bg);
-  border: 1px solid var(--color-verified-border);
+.doc-figure-badge.badge-pending,
+.doc-figure-badge.badge-incomplete {
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-default);
 }
 
 .doc-figure-badge.badge-stale {
-  color: var(--color-stale);
-  background: var(--color-stale-bg);
-  border: 1px solid var(--color-stale-border);
+  color: var(--color-semantic-stale);
+  background: var(--color-semantic-stale-bg);
+  border: 1px solid var(--color-semantic-stale-border);
 }
 
 .doc-figure-badge.badge-error {
-  color: var(--color-error);
-  background: var(--color-error-bg);
-  border: 1px solid var(--color-error-border);
+  color: var(--color-semantic-error);
+  background: var(--color-semantic-error-bg);
+  border: 1px solid var(--color-semantic-error-border);
 }
 
 .doc-figure-badge.badge-unknown {
-  color: var(--color-unknown);
-  background: var(--color-unknown-bg);
-  border: 1px solid var(--color-unknown-border);
+  color: var(--color-semantic-unknown);
+  background: var(--color-semantic-unknown-bg);
+  border: 1px solid var(--color-semantic-unknown-border);
 }
 
 .doc-figure-viewport-container {
   position: relative;
   margin: 0 auto;
+}
+
+/* In place of a drawing: what the figure's relation evaluated to instead. */
+.doc-figure-message {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.doc-figure-message-error {
+  color: var(--color-semantic-error);
 }
 
 .doc-figure-viewport-container.inert-scroll {
@@ -4091,12 +4103,6 @@ input[type="number"]:focus {
   box-shadow: inset 0 0 0 1px var(--color-accent);
 }
 
-.doc-figure-error-msg {
-  padding: 24px;
-  color: var(--color-error);
-  font-size: var(--font-size-sm);
-  text-align: center;
-}
 
 /* Equation and Paragraph Blocks */
 .doc-block-equation {
@@ -4213,6 +4219,12 @@ math-field::part(menu-toggle) {
   color: var(--color-text-primary);
   font-style: normal;
   font-weight: normal;
+}
+
+/* The typeset view is a flex row, which drops the source's spaces; a command
+   keeps the space before its argument, as in \import "lib/trig.ax". */
+.doc-equation-typeset-view > .doc-literal-cmd:not(:last-child) {
+  margin-right: 0.3em;
 }
 
 .doc-equation-typeset-view {
@@ -4402,7 +4414,6 @@ h3.doc-heading-content {
   font-size: 26px;
   font-weight: 700;
   line-height: 1.3;
-  height: 1.3em;
   box-sizing: content-box;
   display: block;
   margin: 0;
@@ -4418,14 +4429,12 @@ h3.doc-heading-content {
 .doc-heading-input[data-level="2"] {
   font-size: 20px;
   line-height: 1.35;
-  height: 1.35em;
 }
 
 .doc-heading-input[data-level="3"] {
   font-size: 16px;
   font-weight: 600;
   line-height: 1.4;
-  height: 1.4em;
 }
 
 @media (max-width: 768px) {

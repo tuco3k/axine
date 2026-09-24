@@ -18,6 +18,8 @@ export interface ParagraphBlockOptions {
   onDeleteRequest?: (blockId: string, direction?: "prev" | "next") => void;
   onRequestSelectAll?: () => void;
   isOnlyBlock?: boolean;
+  // Whether this block is the document's first content; "# " titles it there.
+  isFirstContent?: () => boolean;
 }
 
 export class ParagraphBlockComponent {
@@ -247,11 +249,11 @@ export class ParagraphBlockComponent {
       },
     };
 
-    this.textarea.addEventListener("input", () => {
+    this.textarea.addEventListener("input", (e: Event) => {
       if (!this.textarea) return;
       autoResize();
       if (this.autocomplete) {
-        this.autocomplete.checkPrefix(target);
+        this.autocomplete.checkPrefix(target, e as InputEvent);
       }
       const val = this.textarea.value;
       const trimmed = val.trim();
@@ -272,9 +274,9 @@ export class ParagraphBlockComponent {
         this.options.onRequestTransform?.(this.block.id, "figure", val, caret);
         return;
       }
-      // 4. Heading: # a heading. A heading is one line; its editor is a
-      // single-line input, so multi-line text stays a paragraph.
-      if ((val.startsWith("# ") || val.startsWith("## ") || val.startsWith("### ")) && !val.includes("\n")) {
+      // 4. Heading: # a heading. A heading is one line, so multi-line text
+      // stays a paragraph.
+      if (classifyBlockType(val, this.options.isFirstContent?.() ?? false) === "heading") {
         if (this.blurTimer) {
           clearTimeout(this.blurTimer);
           this.blurTimer = null;
@@ -336,7 +338,7 @@ export class ParagraphBlockComponent {
         if (!this.textarea) return;
         const val = this.textarea.value;
         const trimmed = val.trim();
-        const classified = classifyBlockType(trimmed);
+        const classified = classifyBlockType(val, this.options.isFirstContent?.() ?? false);
         if (classified !== "paragraph" && trimmed !== "") {
           e.preventDefault();
           this.options.onRequestTransform?.(this.block.id, classified, val);
@@ -442,20 +444,7 @@ export class ParagraphBlockComponent {
       const newSource = this.textarea.value;
       if (newSource !== this.block.source) {
         this.block.source = newSource;
-        const trimmed = newSource.trim();
-        const classified = classifyBlockType(trimmed);
-        if (classified === "equation" && trimmed !== "") {
-          if (this.textarea) {
-            this.el.removeChild(this.textarea);
-            this.textarea = null;
-          }
-          if (this.autocomplete) {
-            this.autocomplete.dispose();
-            this.autocomplete = null;
-          }
-          this.options.onRequestTransform?.(this.block.id, "equation", newSource);
-          return;
-        }
+        // The editor re-types committed text by the classifier.
         this.options.onCommit?.(this.block.id, newSource);
       }
     }

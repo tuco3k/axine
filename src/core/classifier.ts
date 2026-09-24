@@ -208,35 +208,31 @@ export function isPrefixOfValidExpression(line: string, _env: Environment = {}):
     }
   }
 
-  // Count unclosed parentheses / brackets
-  let openParen = 0;
-  let openBracket = 0;
-  for (let i = 0; i < trimmed.length; i++) {
-    const ch = trimmed[i];
-    if (ch === '(') openParen++;
-    else if (ch === ')') openParen--;
-    else if (ch === '[') openBracket++;
-    else if (ch === ']') openBracket--;
-    if (openParen < 0 || openBracket < 0) {
-      return false; // unmatched closing paren is error
+  // Unclosed brackets, { included: close them in order, with and without an
+  // operand before the closers.
+  const closers: string[] = [];
+  const closerOf: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
+  let inString = false;
+  for (const ch of trimmed) {
+    if (inString) {
+      if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch in closerOf) closers.push(closerOf[ch]);
+    else if (ch === ')' || ch === ']' || ch === '}') {
+      if (closers.pop() !== ch) return false; // unmatched closing bracket is an error
     }
   }
 
-  if (openParen > 0 || openBracket > 0) {
-    let suffix = '';
-    for (let i = 0; i < openParen; i++) suffix += ')';
-    for (let i = 0; i < openBracket; i++) suffix += ']';
-
-    try {
-      parse(trimmed + suffix, { source: trimmed + suffix });
-      return true;
-    } catch {
-      // Try with dummy identifier before suffix
+  if (closers.length > 0) {
+    const suffix = closers.reverse().join('');
+    for (const operand of ['', ' 1', ' x']) {
       try {
-        parse(trimmed + ' 1' + suffix, { source: trimmed + ' 1' + suffix });
+        parse(trimmed + operand + suffix, { source: trimmed + operand + suffix });
         return true;
       } catch {
-        // Not a clean prefix
+        // Not a clean prefix with this completion
       }
     }
   }
@@ -245,14 +241,93 @@ export function isPrefixOfValidExpression(line: string, _env: Environment = {}):
 }
 
 // -----------------------------------------------------------------------------
-// Main Classifier
+// What a line is
 // -----------------------------------------------------------------------------
 
-export function classifyLine(line: string, env: Environment = {}): ClassificationResult {
-  const trimmed = line.trim();
-  if (!trimmed || trimmed.startsWith('#')) {
-    return { state: 'PROSE' };
+/**
+ * What a line of an .ax document is, decided from its text alone. This is the
+ * single classification: the evaluator evaluates exactly the lines it calls
+ * math, and the document shows the others as prose. It does not depend on
+ * what earlier lines defined, so a line reads the same before and after
+ * evaluation.
+ *
+ *   blank       empty or whitespace
+ *   comment     starts with #
+ *   prose       text; not evaluated
+ *   math        an expression, definition or command; evaluated (a malformed
+ *               one is reported as an error, never shown as prose)
+ *   incomplete  the start of an expression that the next line may finish
+ */
+export type LineKind = 'blank' | 'comment' | 'prose' | 'math' | 'incomplete';
+
+// A ':'-prefixed name applied to arguments. Only Axine writes this.
+function hasColonCall(line: string): boolean {
+  return /(?:^|[^A-Za-z0-9_])(:[A-Za-z_][A-Za-z0-9_]*)\s*\(/.test(line);
+}
+
+// Statements and declarations are Axine whatever words they contain.
+const STATEMENT_NODE_TYPES = new Set([
+  'Assignment', 'FunctionDef', 'ModuleDecl', 'Import', 'Export', 'UnitDecl', 'DimensionDecl',
+  'Claim', 'RuleDecl', 'ViewDecl', 'OperatorDecl', 'KindDecl', 'RecordDef', 'RecordWith',
+]);
+
+// Text that parses as an expression but reads as words: two or more bare
+// words outside strings, and none of the marks of an expression.
+function readsAsProse(trimmed: string, ast: ASTNode): boolean {
+  if (STATEMENT_NODE_TYPES.has(ast.type) || (ast.type === 'BinaryOp' && (ast as any).op === '=')) return false;
+  const outsideStrings = trimmed.replace(/"(?:[^"\\]|\\.)*"/g, '""');
+  const bareProseWords = outsideStrings.match(/(?<![:\\])\b[a-zA-Z]{2,}\b/g) || [];
+  return (
+    bareProseWords.length >= 2 &&
+    !hasAssignment(trimmed) &&
+    !hasKnownFunctionCall(trimmed) &&
+    !hasColonCall(trimmed) &&
+    !hasDigitAdjacentToOperator(trimmed) &&
+    !hasHighMathTokenRatio(trimmed)
+  );
+}
+
+// Text that does not parse but carries the marks of an expression, so it is a
+// malformed expression rather than prose.
+function readsAsMath(trimmed: string): boolean {
+  if (/^\\[A-Za-z]/.test(trimmed)) return true;
+  let tokens: Token[] | undefined;
+  try {
+    tokens = tokenize(trimmed);
+  } catch {
+    // Counted from characters below.
   }
+  return (
+    hasAssignment(trimmed) ||
+    hasKnownFunctionCall(trimmed) ||
+    hasColonCall(trimmed) ||
+    hasDigitAdjacentToOperator(trimmed) ||
+    hasHighMathTokenRatio(trimmed, tokens)
+  );
+}
+
+export function lineKind(source: string): LineKind {
+  const trimmed = source.trim();
+  if (!trimmed) return 'blank';
+  if (trimmed.startsWith('#')) return 'comment';
+  // Prose carries inline mathematics between $ signs; Axine has no $ token.
+  if (/\$[^$\n]+\$/.test(trimmed)) return 'prose';
+  try {
+    const ast = parse(trimmed, { source: trimmed });
+    return readsAsProse(trimmed, ast) ? 'prose' : 'math';
+  } catch {
+    if (isPrefixOfValidExpression(trimmed)) return 'incomplete';
+    return readsAsMath(trimmed) ? 'math' : 'prose';
+  }
+}
+
+/**
+ * The kind of mathematics in a unit already known to be math: a definition,
+ * an expression, an unfinished expression, or an error. Uses the environment
+ * of earlier definitions. Never returns PROSE.
+ */
+export function analyzeMath(source: string, env: Environment = {}): ClassificationResult {
+  const trimmed = source.trim();
 
   const knownFunctions = new Set<string>();
   const knownVariables = new Set(CONSTANTS);
@@ -264,7 +339,6 @@ export function classifyLine(line: string, env: Environment = {}): Classificatio
     }
   }
 
-  // 1. Try to parse line as an expression or definition
   try {
     const ast = parse(trimmed, { knownFunctions, knownVariables, source: trimmed });
 
@@ -302,75 +376,32 @@ export function classifyLine(line: string, env: Environment = {}): Classificatio
       return { state: 'DEFINITION', ast };
     }
 
-    if (
-      ast.type === 'RegionIntegral' ||
-      ast.type === 'Diff' ||
-      ast.type === 'BigOp' ||
-      ast.type === 'Limit' ||
-      ast.type === 'DifferentialFormOp' ||
-      ast.type === 'TensorOp' ||
-      ast.type === 'NablaOp' ||
-      ast.type === 'BracketOp' ||
-      ast.type === 'Quantifier' ||
-      ast.type === 'SetOp' ||
-      ast.type === 'SetBuilder' ||
-      ast.type === 'Equivalence' ||
-      ast.type === 'Probability'
-    ) {
-      return { state: 'MATH', ast };
-    }
-
-    // If it parsed as an expression, check if it was accidental math from multiple prose words
-    const bareProseWords = trimmed.match(/(?<![:\\])\b[a-zA-Z]{2,}\b/g) || [];
-    if (
-      bareProseWords.length >= 2 &&
-      !hasAssignment(trimmed) &&
-      !hasKnownFunctionCall(trimmed, knownFunctions) &&
-      !hasDigitAdjacentToOperator(trimmed) &&
-      !hasHighMathTokenRatio(trimmed)
-    ) {
-      return { state: 'PROSE' };
-    }
-
     return { state: 'MATH', ast };
   } catch (err: any) {
-    // Parsing or analysis failed. Now discriminate between INCOMPLETE, ERROR, and PROSE.
-
-    // Check INCOMPLETE
     if (isPrefixOfValidExpression(trimmed, env)) {
       return { state: 'INCOMPLETE' };
     }
+    const diag: Diagnostic = err && err.diagnostic
+      ? err.diagnostic
+      : {
+          message: err?.message || 'Syntax error',
+          span: { start: 0, end: trimmed.length, line: 1, col: 1 },
+          source: trimmed,
+        };
+    return { state: 'ERROR', error: diag };
+  }
+}
 
-    // Check ERROR vs PROSE discrimination rule:
-    // A non-parsing, non-prefix line is ERROR if any of:
-    // 1. it contains :=
-    // 2. it contains a call to a known builtin or defined function
-    // 3. it contains a digit adjacent to an operator (3 +, 2*)
-    // 4. more than half its non-space characters are math tokens
-    let tokens: Token[] | undefined;
-    try {
-      tokens = tokenize(trimmed);
-    } catch {
-      // Ignored
-    }
-
-    const isError =
-      hasAssignment(trimmed) ||
-      hasKnownFunctionCall(trimmed, knownFunctions) ||
-      hasDigitAdjacentToOperator(trimmed) ||
-      hasHighMathTokenRatio(trimmed, tokens);
-
-    if (isError) {
-      const diag: Diagnostic = err && err.diagnostic
-        ? err.diagnostic
-        : {
-            message: err?.message || 'Syntax error',
-            span: { start: 0, end: trimmed.length, line: 1, col: 1 },
-            source: trimmed,
-          };
-      return { state: 'ERROR', error: diag };
-    }
-
+/**
+ * Classifies one line: prose by lineKind, otherwise the kind of mathematics.
+ */
+export function classifyLine(line: string, env: Environment = {}): ClassificationResult {
+  const kind = lineKind(line);
+  if (kind === 'blank' || kind === 'comment' || kind === 'prose') {
     return { state: 'PROSE' };
   }
+  if (kind === 'incomplete') {
+    return { state: 'INCOMPLETE' };
+  }
+  return analyzeMath(line, env);
 }

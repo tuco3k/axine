@@ -309,7 +309,9 @@ export class DocumentEditor {
     this.bindEditorSurfaceEvents();
     this.initPaneContainer();
 
-    this.state.subscribe((records, isEvaluating) => {
+    const initialState = this.state;
+    initialState.subscribe((records, isEvaluating) => {
+      this.deliverEvaluation(initialSessionId, initialState, records);
       if (this.paneContainer) {
         this.paneContainer.updateSpaces(records);
       } else if (this.activeSessionId === initialSessionId) {
@@ -359,7 +361,9 @@ export class DocumentEditor {
     this.bindTopBarAndGlobalEvents();
     this.bindEditorSurfaceEvents();
     this.initPaneContainer();
-    this.state.subscribe((records, isEvaluating) => {
+    const initialState = this.state;
+    initialState.subscribe((records, isEvaluating) => {
+      this.deliverEvaluation(initialSessionId, initialState, records);
       if (this.paneContainer) {
         this.paneContainer.updateSpaces(records);
       } else if (this.activeSessionId === initialSessionId) {
@@ -582,6 +586,7 @@ export class DocumentEditor {
       diskFiles,
     };
     state.subscribe((records, isEvaluating) => {
+      this.deliverEvaluation(id, state, records);
       if (this.paneContainer) {
         this.paneContainer.updateSpaces(records);
       } else if (this.activeSessionId === id) {
@@ -1412,6 +1417,7 @@ export class DocumentEditor {
           }
         },
       });
+      this.blockEditor.applyEvaluation(this.state.getRecords(), this.state.getText());
     }
 
     if (this.container) {
@@ -1956,7 +1962,7 @@ export class DocumentEditor {
       }
     });
 
-    this.textarea.addEventListener('input', () => {
+    this.textarea.addEventListener('input', (e: Event) => {
       const val = this.textarea.value;
       let hasUnicode = false;
       for (let i = 0; i < val.length; i++) {
@@ -1975,7 +1981,7 @@ export class DocumentEditor {
       }
       this.handleInputChange();
       if (this.autocomplete) {
-        this.autocomplete.checkPrefix(this.getAutocompleteTarget());
+        this.autocomplete.checkPrefix(this.getAutocompleteTarget(), e as InputEvent);
       }
     });
 
@@ -3579,6 +3585,12 @@ export class DocumentEditor {
     return list;
   }
 
+  // Gives the block editor the evaluation of the session it shows.
+  private deliverEvaluation(sessionId: string, state: DocumentState, records: DocumentLineRecord[]): void {
+    if (sessionId !== this.activeSessionId || !this.blockEditor) return;
+    this.blockEditor.applyEvaluation(records, state.getText());
+  }
+
   // Inspector links from a space shown for a result line go to the document
   // line the relation was written on.
   private viewportOptionsForLine(lineIdx: number): { sourceStartLine?: number; onJumpToSource: (line: number) => void } {
@@ -3773,6 +3785,7 @@ export class DocumentEditor {
           }
         },
       });
+      this.blockEditor.applyEvaluation(targetState.getRecords(), targetState.getText());
       this.updateCaret();
       this.bindEditorSurfaceEvents();
       this.renderLineNumbers(targetState.getRecords());

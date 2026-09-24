@@ -525,10 +525,12 @@ In Axine, `//` is the stacked fraction operator (e.g. `a // b` parses as $\frac{
 
 Axine partitions `.ax` documents into a structured block document tree while maintaining 100% byte-for-byte lossless roundtrip serialization to plain text.
 
+The blocks are the evaluator's units. One classification (`lineKind` in `src/core/classifier.ts`, joined into multi-line units by `src/core/segments.ts`) decides both what is evaluated and how it is shown: a line the evaluator evaluates is shown as mathematics, and a line it does not evaluate is shown as prose. A multi-line unit, such as a `{\axis ...}` block spread over several lines, is one block. Each math block takes its result, error and status from the evaluation of its unit.
+
 ### Block Types
 
 1. **Heading Blocks (`#`, `##`, `###`)**:
-   Section titles and hierarchical headers. Rendered as formatted headings in document flow.
+   Section titles and hierarchical headers. Rendered as formatted headings in document flow. `##` and `###` lines are headings anywhere; a `#` line is a heading only as the document's first content, and elsewhere it is a comment.
 2. **Paragraph & Prose Blocks**:
    Natural language text containing inline typeset mathematics wrapped in `$math$` spans, and line comments (`#`). In an empty paragraph, Axine renders an interactive placeholder (`Write math expressions, definitions (x := 5), claims, or prose...`); clicking or typing printable characters immediately enters editing mode.
 3. **Equation Blocks**:
@@ -540,7 +542,8 @@ Axine partitions `.ax` documents into a structured block document tree while mai
 4. **In-Flow Figure Blocks (`\figure` or `{\axis ...}`)**:
    Embedded graphical viewports mounted directly within the document flow.
    - **Atomic Selection**: Selected as a single unit; arrow keys step over the figure.
-   - **Provenance Navigation**: Displays a "Where it came from" link pointing directly to defining equations.
+   - **What it shows**: the space its relation evaluated to. Without a space to draw, it says what there is instead: the error message, "The expression is unfinished.", an unknown result and its reason, or the type of a result that is not a space. A header badge names any state other than a current result: Not evaluated, Unfinished, Unknown, Error, or Stale (the text changed and the new result has not arrived).
+   - **Provenance Navigation**: `\figure(:name)` displays a "Where it came from" link to the block where the last evaluation bound `:name`. The link is absent when no evaluation bound the name.
    - **Scroll Pass-Through**: Canvases allow mouse wheel and trackpad scroll gestures to pass through cleanly without getting trapped. Clicking the canvas activates 3D/2D camera interaction; pressing `Escape` releases focus.
    - **Reflow Anchoring**: Figures anchor to lexical block positions and reflow as surrounding equations or prose expand.
 5. **Derivation Blocks (`\derive`)**:

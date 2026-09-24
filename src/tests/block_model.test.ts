@@ -3,6 +3,8 @@ import * as path from "path";
 import * as fs from "fs";
 import { parseAxDocument, serializeAxDocument, extractDefinedSymbol, extractReferencedSymbols } from "../document/block_model";
 import { BlockState } from "../document/block_state";
+import { DocumentState, type DocumentLineRecord } from "../document/document_state";
+import { processDocumentLines } from "../core/worker";
 
 function getAxFiles(dir: string, list: string[] = []): string[] {
   for (const f of fs.readdirSync(dir)) {
@@ -64,27 +66,61 @@ describe("Block Document Model & 100% Roundtrip Serialization Gate", () => {
     expect(refs).toContain(":param");
   });
 
-  it("manages reactive symbol dependencies and stale/error states on edits and deletions", () => {
-    const doc = [
-      ":orbit := {\\axis x, y; x^2 + y^2 = 4}",
-      "\\figure(:orbit, width: 480, height: 320)",
-    ].join("\n");
+  // Block status comes from evaluation records, the same ones the Results view
+  // shows. (This replaces a test of a regex dependency graph that marked blocks
+  // stale or "Unresolved" without evaluating anything.)
+  function evaluate(state: BlockState, text = state.toText()): boolean {
+    const records: DocumentLineRecord[] = [];
+    processDocumentLines(1, text.split("\n"), (res) => {
+      records[res.lineIndex] = { ...res, text: res.line, isEvaluating: false };
+    });
+    return state.applyEvaluation(records, text);
+  }
 
-    const state = new BlockState(doc);
-    const blocks = state.getBlocks();
-    const defBlock = blocks[0];
-    const figBlock = blocks[1];
+  it("takes block results and status from evaluation, and marks an edited result stale", () => {
+    const state = new BlockState([":r := 2", "{\\axis x, y; x^2 + y^2 = :r^2}", ":v := :sqrt(4)"].join("\n"));
+    const [defBlock, figBlock, errBlock] = state.getBlocks();
+    expect([defBlock.type, figBlock.type, errBlock.type]).toEqual(["equation", "figure", "equation"]);
+    expect(figBlock.status).toBe("pending");
+    expect(figBlock.result).toBeUndefined();
 
-    expect(state.getDefiningBlock(":orbit")?.id).toBe(defBlock.id);
-    expect(state.getDependentBlocks(":orbit").map(b => b.id)).toContain(figBlock.id);
+    expect(evaluate(state)).toBe(true);
+    expect(defBlock.status).toBe("computed");
+    expect(figBlock.status).toBe("computed");
+    expect(figBlock.result?.type).toBe("space");
+    expect(errBlock.status).toBe("error");
+    expect(errBlock.error?.message).toContain("sqrt");
+    expect(state.bindingLine(":r")).toBe(0);
+    expect(state.bindingLine(":nowhere")).toBeUndefined();
 
-    // 1. Editing producing block marks referencing block stale
-    state.updateBlock(defBlock.id, ":orbit := {\\axis x, y; x^2 + y^2 = 9}");
-    expect(figBlock.status).toBe("stale");
+    // Editing a block: its result no longer describes it.
+    const oldResult = defBlock.result;
+    state.updateBlock(defBlock.id, ":r := 3");
+    expect(defBlock.status).toBe("stale");
+    expect(defBlock.result).toBe(oldResult);
 
-    // 2. Deleting producing block marks referencing block error
-    state.deleteBlock(defBlock.id);
-    expect(figBlock.status).toBe("error");
-    expect(figBlock.error?.message).toContain("Unresolved symbol :orbit");
+    // An evaluation of another text changes nothing.
+    expect(evaluate(state, ":r := 2\n{\\axis x, y; x^2 + y^2 = :r^2}")).toBe(false);
+    expect(defBlock.status).toBe("stale");
+
+    expect(evaluate(state)).toBe(true);
+    expect(defBlock.status).toBe("computed");
+    expect(defBlock.result).not.toBe(oldResult);
+  });
+
+  it("marks every line after an edit as being evaluated until its new result arrives", () => {
+    const state = new DocumentState(":r := 2\n:s := :r + 1\n:t := 5");
+    const seen: DocumentLineRecord[][] = [];
+    state.subscribe((records) => seen.push(records.map((r) => ({ ...r }))));
+    seen.length = 0;
+    state.setText(":r := 7\n:s := :r + 1\n:t := 5");
+    // First notification: the evaluation has started, nothing has arrived.
+    expect(seen[0][0].isEvaluating).toBe(true);
+    expect(seen[0][1].isEvaluating).toBe(true);
+    expect(seen[0][2].isEvaluating).toBe(true);
+    const records = state.getRecords();
+    expect(records.every((r) => !r.isEvaluating)).toBe(true);
+    expect(JSON.stringify(records[1].result, (_k, v) => (typeof v === "bigint" ? v.toString() : v))).toContain('"8"');
+    state.dispose();
   });
 });

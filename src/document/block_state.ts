@@ -1,19 +1,21 @@
 /**
  * Axine Block Document State Manager
- * 
- * Manages block collection, reactive symbol dependency graph,
- * and state invalidation (stale/error/verified).
+ *
+ * Holds the block collection and keeps each block's document line numbers
+ * current as blocks change. Block results and status come from evaluation
+ * records (applyEvaluation); this class does not work them out itself.
  */
 
 import { DocumentModel, DocumentBlock, BlockType, parseAxDocument, serializeAxDocument, extractDefinedSymbol, extractReferencedSymbols } from "./block_model";
+import type { DocumentLineRecord } from "./document_state";
 
 export type BlockStateListener = (model: DocumentModel) => void;
 
 export class BlockState {
   private model: DocumentModel;
   private listeners: BlockStateListener[] = [];
-  private symbolDefinitions: Map<string, string> = new Map(); // symbol -> blockId
-  private symbolDependencies: Map<string, Set<string>> = new Map(); // symbol -> Set<blockId>
+  // Document line where the last evaluation bound each name (no leading colon).
+  private bindingLines: Map<string, number> = new Map();
 
   constructor(initialDocumentOrModel: string | DocumentModel) {
     if (typeof initialDocumentOrModel === "string") {
@@ -21,7 +23,6 @@ export class BlockState {
     } else {
       this.model = initialDocumentOrModel;
     }
-    this.rebuildSymbolGraphs();
   }
 
   public getModel(): DocumentModel {
@@ -38,8 +39,51 @@ export class BlockState {
 
   public setText(text: string) {
     this.model = parseAxDocument(text);
-    this.rebuildSymbolGraphs();
+    this.bindingLines.clear();
     this.notify();
+  }
+
+  /**
+   * Gives each math block the evaluation of its unit. The evaluator reports a
+   * unit's result on the unit's last line, and blocks cover exactly one unit
+   * (both come from core/segments.ts), so a block's result is the record on
+   * its last line. A block whose record is missing or still being evaluated
+   * is stale if it showed a result, otherwise pending.
+   *
+   * Records for a text other than this one are ignored and false is returned;
+   * the evaluation of the current text follows.
+   */
+  public applyEvaluation(records: DocumentLineRecord[], evaluatedText: string): boolean {
+    if (evaluatedText !== this.toText()) return false;
+
+    this.bindingLines.clear();
+    for (const rec of records) {
+      if (rec && rec.boundName) {
+        this.bindingLines.set(rec.boundName.replace(/^:/, ""), rec.sourceStartLine ?? rec.lineIndex);
+      }
+    }
+
+    for (const block of this.model.blocks) {
+      if (block.type === "paragraph" || block.type === "heading" || block.type === "blank") continue;
+      const rec = records[block.endLine];
+      if (!rec || rec.isEvaluating || rec.text !== block.lines[block.lines.length - 1]) {
+        block.status = block.result !== undefined || block.error !== undefined ? "stale" : "pending";
+      } else {
+        block.result = rec.result;
+        block.error = rec.error;
+        if (rec.error) block.status = "error";
+        else if (rec.classification.state === "INCOMPLETE") block.status = "incomplete";
+        else if (rec.result?.type === "unknown") block.status = "unknown";
+        else if (rec.result) block.status = "computed";
+        else block.status = "pending";
+      }
+    }
+    return true;
+  }
+
+  // The document line where the last evaluation bound `name`, if any.
+  public bindingLine(name: string): number | undefined {
+    return this.bindingLines.get(name.replace(/^:/, ""));
   }
 
   public toText(): string {
@@ -63,24 +107,16 @@ export class BlockState {
     }
   }
 
-  public rebuildSymbolGraphs() {
-    this.symbolDefinitions.clear();
-    this.symbolDependencies.clear();
-
+  // Document line numbers of every block: frontmatter lines first, then each
+  // block's lines, in order.
+  private renumber() {
+    const fm = this.model.rawFrontmatter || "";
+    let next = fm ? fm.split("\n").length - 1 : 0;
     for (const b of this.model.blocks) {
-      if (b.definedSymbol) {
-        this.symbolDefinitions.set(b.definedSymbol, b.id);
-      }
-      if (b.referencedSymbols) {
-        for (const ref of b.referencedSymbols) {
-          let set = this.symbolDependencies.get(ref);
-          if (!set) {
-            set = new Set();
-            this.symbolDependencies.set(ref, set);
-          }
-          set.add(b.id);
-        }
-      }
+      const count = b.source.split("\n").length;
+      b.startLine = next;
+      b.endLine = next + count - 1;
+      next += count;
     }
   }
 
@@ -94,75 +130,23 @@ export class BlockState {
   public updateBlock(id: string, newSource: string): void {
     const b = this.getBlock(id);
     if (!b) return;
-
-    const oldDef = b.definedSymbol;
+    if (b.source !== newSource) {
+      // A result computed for the old text no longer describes this block.
+      b.status = b.result !== undefined || b.error !== undefined ? "stale" : "pending";
+    }
     b.source = newSource;
     b.lines = newSource.split("\n");
     b.definedSymbol = extractDefinedSymbol(newSource);
     b.referencedSymbols = extractReferencedSymbols(newSource);
-
-    this.rebuildSymbolGraphs();
-
-    // Mark dependent blocks as stale
-    if (b.definedSymbol) {
-      const deps = this.symbolDependencies.get(b.definedSymbol);
-      if (deps) {
-        for (const depId of deps) {
-          if (depId !== id) {
-            const depBlock = this.getBlock(depId);
-            if (depBlock) {
-              depBlock.status = "stale";
-            }
-          }
-        }
-      }
-    }
-
-    if (oldDef && oldDef !== b.definedSymbol) {
-      const oldDeps = this.symbolDependencies.get(oldDef);
-      if (oldDeps) {
-        for (const depId of oldDeps) {
-          const depBlock = this.getBlock(depId);
-          if (depBlock) {
-            depBlock.status = "error";
-            depBlock.error = {
-              message: "Unresolved symbol " + oldDef,
-              severity: "error",
-            } as any;
-          }
-        }
-      }
-    }
-
+    this.renumber();
     this.notify();
   }
 
   public deleteBlock(id: string) {
     const idx = this.model.blocks.findIndex(b => b.id === id);
     if (idx === -1) return;
-
-    const deleted = this.model.blocks[idx];
     this.model.blocks.splice(idx, 1);
-
-    this.rebuildSymbolGraphs();
-
-    // If deleted block defined a symbol, mark referencing blocks as error
-    if (deleted.definedSymbol) {
-      const deps = this.symbolDependencies.get(deleted.definedSymbol);
-      if (deps) {
-        for (const depId of deps) {
-          const depBlock = this.getBlock(depId);
-          if (depBlock) {
-            depBlock.status = "error";
-            depBlock.error = {
-              message: "Unresolved symbol " + deleted.definedSymbol,
-              severity: "error",
-            } as any;
-          }
-        }
-      }
-    }
-
+    this.renumber();
     this.notify();
   }
 
@@ -172,9 +156,9 @@ export class BlockState {
       type,
       source,
       lines: source.split("\n"),
-      startLine: 1,
-      endLine: 1,
-      status: "verified",
+      startLine: 0,
+      endLine: 0,
+      status: "pending",
       definedSymbol: extractDefinedSymbol(source),
       referencedSymbols: extractReferencedSymbols(source),
     };
@@ -188,20 +172,8 @@ export class BlockState {
         this.model.blocks.splice(idx + 1, 0, newBlock);
       }
     }
-    this.rebuildSymbolGraphs();
+    this.renumber();
     this.notify();
     return newBlock;
-  }
-
-  public getDependentBlocks(symbol: string): DocumentBlock[] {
-    const ids = this.symbolDependencies.get(symbol);
-    if (!ids) return [];
-    return Array.from(ids).map(id => this.getBlock(id)!).filter(Boolean);
-  }
-
-  public getDefiningBlock(symbol: string): DocumentBlock | undefined {
-    const id = this.symbolDefinitions.get(symbol);
-    if (!id) return undefined;
-    return this.getBlock(id);
   }
 }

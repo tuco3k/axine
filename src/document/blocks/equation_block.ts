@@ -9,7 +9,7 @@
  * 5. Escape (or blur): Commits changes, compiles AST in worker, returns to atomic typeset view.
  */
 
-import { DocumentBlock, BlockType } from "../block_model";
+import { DocumentBlock, BlockType, classifyBlockType } from "../block_model";
 import { typesetMath } from "../../core/math_typeset";
 import { AutocompleteController, AutocompleteTarget } from "../autocomplete";
 import { axineToLatex, latexToAxine, mathFieldUnrepresentableReason } from "../axine_latex_bridge";
@@ -316,6 +316,11 @@ export class EquationBlockComponent {
       }
     });
 
+    // The field's position counts MathLive atoms, not characters of the Axine
+    // text. The caret's offset in the Axine text is the length of the Axine of
+    // the content before it.
+    const axineOffsetAt = (position: number): number =>
+      mfEl && typeof mfEl.getValue === "function" ? latexToAxine(mfEl.getValue(0, position, "latex")).length : 0;
     const mfTarget: AutocompleteTarget = {
       getValue: () => (mfEl ? this.sourceFromField(mfEl) : ""),
       setValue: (v: string) => {
@@ -331,13 +336,20 @@ export class EquationBlockComponent {
       },
       getSelectionStart: () => {
         if (mfEl && typeof mfEl.position === "number") {
-          return mfEl.position;
+          return axineOffsetAt(mfEl.position);
         }
         return 0;
       },
       setSelection: (s: number, _e: number) => {
-        if (mfEl && typeof mfEl.position === "number") {
-          mfEl.position = s;
+        if (mfEl && typeof mfEl.position === "number" && typeof mfEl.lastOffset === "number") {
+          let position = mfEl.lastOffset;
+          for (let p = 0; p <= mfEl.lastOffset; p++) {
+            if (axineOffsetAt(p) >= s) {
+              position = p;
+              break;
+            }
+          }
+          mfEl.position = position;
         }
         if (this.textarea) {
           this.textarea.selectionStart = s;
@@ -468,7 +480,7 @@ export class EquationBlockComponent {
         mfEl.executeCommand(["insert", axineToLatex(text)]);
       }, { capture: true });
 
-      mfEl.addEventListener("input", () => {
+      mfEl.addEventListener("input", (e: Event) => {
         const axine = this.sourceFromField(mfEl);
         if (this.textarea) {
           this.textarea.value = axine;
@@ -476,7 +488,7 @@ export class EquationBlockComponent {
         }
         this.block.source = axine;
         this.options.onCommit?.(this.block.id, axine);
-        this.autocomplete?.checkPrefix(mfTarget);
+        this.autocomplete?.checkPrefix(mfTarget, e as InputEvent);
       });
 
       // Boundary Seam Crossing via MathLive move-out
@@ -547,7 +559,7 @@ export class EquationBlockComponent {
       });
     }
 
-    this.textarea.addEventListener("input", () => {
+    this.textarea.addEventListener("input", (e: Event) => {
       if (this.textarea) {
         this.textarea.rows = Math.max(1, this.textarea.value.split("\n").length);
         const val = this.textarea.value;
@@ -555,14 +567,13 @@ export class EquationBlockComponent {
           this.loadSourceIntoField(mfEl, val);
         }
         this.block.source = val;
-        const trimmed = val.trim();
-        if (/\b[a-zA-Z]{2,}\s+[a-zA-Z]{2,}\b/.test(trimmed)) {
+        if (classifyBlockType(val) === "paragraph") {
           this.options.onRequestTransform?.(this.block.id, "paragraph", val, this.textarea.selectionStart);
           return;
         }
         this.options.onCommit?.(this.block.id, val);
       }
-      this.autocomplete?.checkPrefix(taTarget);
+      this.autocomplete?.checkPrefix(taTarget, e as InputEvent);
     });
 
     this.textarea.addEventListener("keydown", (e: KeyboardEvent) => {

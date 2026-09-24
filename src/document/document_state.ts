@@ -145,11 +145,14 @@ export class DocumentState {
     const splitLines = newText.split('\n');
     this.lines = splitLines;
 
-    // Initialize or resize records array
+    // Initialize or resize records array. Evaluation runs top to bottom, so
+    // any line after the first changed one may depend on it: its record is
+    // kept but marked as being evaluated until the new result arrives.
+    const firstChanged = splitLines.findIndex((line, idx) => this.records[idx]?.text !== line);
     this.records = splitLines.map((line, idx) => {
       const prev = this.records[idx];
       if (prev && prev.text === line) {
-        return prev;
+        return firstChanged !== -1 && idx > firstChanged && !prev.isEvaluating ? { ...prev, isEvaluating: true } : prev;
       }
       return {
         lineIndex: idx,

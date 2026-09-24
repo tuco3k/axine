@@ -6,10 +6,11 @@
  * - Block lifecycle: FigureBlockComponent, EquationBlockComponent, ParagraphBlockComponent
  * - Word's atomic object navigation (single-arrow stepping, selection, focus)
  * - Provenance jump links from figures to defining equations
- * - Reactive dependency state
+ * - Evaluation results attached to the blocks whose units produced them
  */
 
-import { DocumentBlock, DocumentModel, BlockType } from "./block_model";
+import { DocumentBlock, DocumentModel, BlockType, classifyBlockType } from "./block_model";
+import type { DocumentLineRecord } from "./document_state";
 import { BlockState } from "./block_state";
 import { FigureBlockComponent } from "./blocks/figure_block";
 import { EquationBlockComponent } from "./blocks/equation_block";
@@ -106,6 +107,7 @@ export class BlockDocumentEditor {
         onDeleteRequest: (id: string, dir: "prev" | "next" = "prev") => this.deleteBlock(id, dir),
         onRequestSelectAll: () => this.selectAll(),
         isOnlyBlock: this.model.blocks.length === 1,
+        isFirstContent: () => this.isFirstContentBlock(block.id),
       });
       return p;
     }
@@ -116,6 +118,7 @@ export class BlockDocumentEditor {
         onStepNext: () => this.stepNext(block.id),
         onStepPrev: () => this.stepPrev(block.id),
         onNavigateToSource: (sym: string) => this.navigateToSource(sym),
+        canNavigateToSource: (sym: string) => this.state.bindingLine(sym) !== undefined,
         onDeleteRequest: (id: string, dir: "prev" | "next" = "prev") => this.deleteBlock(id, dir),
         onCommit: (id: string, src: string) => this.handleBlockCommit(id, src),
         onRequestTransform: (id, targetType, src, caretOffset) => this.transformBlock(id, targetType, src, caretOffset),
@@ -139,6 +142,7 @@ export class BlockDocumentEditor {
 
     if (block.type === "heading") {
       const heading = new HeadingBlockComponent(block, {
+        isFirstContent: () => this.isFirstContentBlock(block.id),
         onSelect: (id: string) => this.selectBlock(id),
         onStepNext: () => this.stepNext(block.id),
         onStepPrev: () => this.stepPrev(block.id),
@@ -175,8 +179,40 @@ export class BlockDocumentEditor {
       onDeleteRequest: (id: string, dir: "prev" | "next" = "prev") => this.deleteBlock(id, dir),
       onRequestSelectAll: () => this.selectAll(),
       isOnlyBlock: this.model.blocks.length === 1,
+      isFirstContent: () => this.isFirstContentBlock(block.id),
     });
     return para;
+  }
+
+  // Whether no non-blank block precedes this one.
+  private isFirstContentBlock(blockId: string): boolean {
+    for (const b of this.model.blocks) {
+      if (b.id === blockId) return true;
+      if (b.type !== "blank") return false;
+    }
+    return false;
+  }
+
+  /**
+   * Replaces a block's component with one of another type, without entering
+   * edit mode, keeping its selection.
+   */
+  private retypeBlock(blockId: string, newType: BlockType): void {
+    const block = this.state.getBlock(blockId);
+    if (!block) return;
+    if (newType === "heading" && block.source.includes("\n")) newType = "paragraph";
+    const wasSelected = this.selectedBlockId === blockId;
+    this.state.setBlockType(blockId, newType);
+    this.model = this.state.getModel();
+    const oldComp = this.blockComponents.get(blockId);
+    const newComp = this.createBlockComponent(block);
+    if (!newComp) return;
+    if (oldComp && oldComp.el.parentElement) {
+      oldComp.el.parentElement.replaceChild(newComp.el, oldComp.el);
+      oldComp.dispose();
+    }
+    this.blockComponents.set(blockId, newComp);
+    if (wasSelected) this.selectBlock(blockId);
   }
 
   /**
@@ -190,7 +226,7 @@ export class BlockDocumentEditor {
   ): void {
     const block = this.state.getBlock(blockId);
     if (!block) return;
-    // A heading's editor is a single-line input and would drop line breaks.
+    // A heading is one line; its editor drops line breaks.
     if (newType === "heading" && newSource.includes("\n")) newType = "paragraph";
 
     block.type = newType;
@@ -247,6 +283,17 @@ export class BlockDocumentEditor {
   private handleBlockCommit(blockId: string, newSource: string): void {
     this.state.updateBlock(blockId, newSource);
     this.model = this.state.getModel();
+
+    // Committed text takes the type the classifier gives it, the same type a
+    // reload of the file would give it. Not while the block is still being
+    // edited: typing passes through intermediate text.
+    const block = this.state.getBlock(blockId);
+    const comp = this.blockComponents.get(blockId);
+    const editing = !!comp && "getIsEditing" in comp && (comp as any).getIsEditing();
+    if (block && !editing && block.type !== "blank") {
+      const type = classifyBlockType(newSource, this.isFirstContentBlock(blockId));
+      if (type !== block.type) this.retypeBlock(blockId, type);
+    }
 
     // Update status indicators on figure blocks
     for (const [id, comp] of this.blockComponents.entries()) {
@@ -468,41 +515,30 @@ export class BlockDocumentEditor {
   }
 
   /**
-   * Provenance navigation: jumps to the block defining the given symbol
+   * Selects the block where the evaluator bound a name. Returns false when the
+   * last evaluation bound no such name.
    */
   public navigateToSource(symbol: string): boolean {
-    const cleanSym = symbol.startsWith(":") ? symbol : ":" + symbol;
-    const targetBlock = this.state.getDefiningBlock(cleanSym) || this.state.getDefiningBlock(cleanSym.substring(1));
+    const line = this.state.bindingLine(symbol);
+    const blockId = line === undefined ? null : this.blockIdAtLine(line);
+    if (!blockId) return false;
+    this.scrollToBlock(blockId);
+    this.selectBlock(blockId);
+    return true;
+  }
 
-    if (targetBlock) {
-      this.scrollToBlock(targetBlock.id);
-      this.selectBlock(targetBlock.id);
-      return true;
+  /**
+   * Takes block results and status from an evaluation of `evaluatedText`
+   * (BlockState.applyEvaluation) and shows them.
+   */
+  public applyEvaluation(records: DocumentLineRecord[], evaluatedText: string): void {
+    if (!this.state.applyEvaluation(records, evaluatedText)) return;
+    for (const block of this.model.blocks) {
+      const comp = this.blockComponents.get(block.id);
+      if (!comp || block.type === "paragraph" || block.type === "heading" || block.type === "blank") continue;
+      comp.el.setAttribute("data-status", block.status);
+      if (comp instanceof FigureBlockComponent) comp.updateBlock(block);
     }
-
-    // Fallback: substring search across line definitions
-    const altTarget = this.model.blocks.find((b) => {
-      const lines = b.source.split("\n");
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (
-          trimmed.startsWith(cleanSym) ||
-          trimmed.startsWith(cleanSym.substring(1) + " :=") ||
-          trimmed.startsWith(cleanSym.substring(1) + " =")
-        ) {
-          return true;
-        }
-      }
-      return false;
-    });
-
-    if (altTarget) {
-      this.scrollToBlock(altTarget.id);
-      this.selectBlock(altTarget.id);
-      return true;
-    }
-
-    return false;
   }
 
   /**
@@ -868,19 +904,11 @@ export class BlockDocumentEditor {
    * Gets the list of parsed blocks
    */
   /**
-   * The block containing a document line (0-based), counted in the text this
-   * editor serializes: frontmatter, then each block's lines, joined by
-   * newlines.
+   * The block containing a document line (0-based).
    */
   public blockIdAtLine(line: number): string | null {
-    const fm = this.model.rawFrontmatter || "";
-    let next = fm ? fm.split("\n").length - 1 : 0;
-    for (const block of this.model.blocks) {
-      const count = block.source.split("\n").length;
-      if (line < next + count) return line >= next ? block.id : null;
-      next += count;
-    }
-    return null;
+    const block = this.model.blocks.find((b) => line >= b.startLine && line <= b.endLine);
+    return block ? block.id : null;
   }
 
   public getBlocks(): DocumentBlock[] {

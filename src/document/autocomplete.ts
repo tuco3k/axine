@@ -430,11 +430,22 @@ export class AutocompleteController {
     return this.selectedIndex;
   }
 
-  public checkPrefix(target: AutocompleteTarget): boolean {
-    this.currentTarget = target;
+  // `input` is the InputEvent that changed the text. When it says what
+  // happened, the list opens only for a command's own character (a letter or
+  // \) just typed, and only if that character is the one before the caret
+  // now: MathLive sometimes reports an insertion again after a later
+  // deletion. A deletion, a digit or a paste narrows or closes an open list
+  // but never opens one. A change that does not say (no inputType) is
+  // checked as before.
+  public checkPrefix(target: AutocompleteTarget, input?: { inputType?: string; data?: string | null }): boolean {
     const text = target.getValue();
     const caret = target.getSelectionStart();
     const textBefore = text.substring(0, caret);
+    if (!this.isOpen && input?.inputType) {
+      const typed = input.inputType === "insertText" ? input.data ?? "" : "";
+      if (!/[A-Za-z\\]$/.test(typed) || !textBefore.endsWith(typed)) return false;
+    }
+    this.currentTarget = target;
 
     // Match trailing backslash command: \\([a-zA-Z]*)$
     const match = textBefore.match(/(\\[a-zA-Z]*)$/);

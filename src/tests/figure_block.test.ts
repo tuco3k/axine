@@ -49,15 +49,24 @@ describe("Stage 3 Gate: Atomic In-Flow Figure Block Component", () => {
         lines: ["\\figure(:orbit, width: 480, height: 320)"],
         startLine: 5,
         endLine: 5,
-        status: "verified" as const,
+        status: "pending" as const,
         referencedSymbols: [":orbit"],
       };
+
+      // The link is shown only for a name the editor reports as bound.
+      const unbound = new FigureBlockComponent(block, {
+        onNavigateToSource: (sym: string) => { navSource = sym; },
+        canNavigateToSource: () => false,
+      });
+      const noLinkWhenUnbound = unbound.el.querySelector(".doc-figure-prov-btn") === null;
+      unbound.dispose();
 
       const fig = new FigureBlockComponent(block, {
         onSelect: (id: string) => { selectedId = id; },
         onStepNext: () => { stepDirection = "next"; },
         onStepPrev: () => { stepDirection = "prev"; },
         onNavigateToSource: (sym: string) => { navSource = sym; },
+        canNavigateToSource: (sym: string) => sym === ":orbit",
         onDeleteRequest: (id: string) => { deletedId = id; },
       });
 
@@ -97,6 +106,7 @@ describe("Stage 3 Gate: Atomic In-Flow Figure Block Component", () => {
 
       fig.dispose();
       return {
+        noLinkWhenUnbound,
         afterClickSelected,
         selectedId,
         afterStepNext,
@@ -109,6 +119,7 @@ describe("Stage 3 Gate: Atomic In-Flow Figure Block Component", () => {
       };
     });
 
+    expect(result.noLinkWhenUnbound).toBe(true);
     expect(result.afterClickSelected).toBe(true);
     expect(result.selectedId).toBe("fig_1");
     expect(result.afterStepNext).toBe(true);
@@ -146,7 +157,7 @@ describe("Stage 3 Gate: Atomic In-Flow Figure Block Component", () => {
         lines: ["\\figure(:orbit, width: 400, height: 200)"],
         startLine: 1,
         endLine: 1,
-        status: "verified" as const,
+        status: "pending" as const,
         metadata: { width: 400, height: 200 },
       });
       container.appendChild(fig.el);

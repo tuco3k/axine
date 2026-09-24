@@ -5,7 +5,7 @@
  * Supports inline editing, keyboard navigation, and dynamic reversion to paragraph.
  */
 
-import { DocumentBlock, BlockType } from "../block_model";
+import { DocumentBlock, BlockType, classifyBlockType } from "../block_model";
 
 export interface HeadingBlockOptions {
   onSelect?: (blockId: string) => void;
@@ -16,6 +16,8 @@ export interface HeadingBlockOptions {
   onDeleteRequest?: (blockId: string, direction?: "prev" | "next") => void;
   onRequestSelectAll?: () => void;
   clickToEdit?: boolean;
+  // Whether this block is the document's first content; "# " titles it there.
+  isFirstContent?: () => boolean;
 }
 
 export class HeadingBlockComponent {
@@ -23,7 +25,9 @@ export class HeadingBlockComponent {
   private block: DocumentBlock;
   private options: HeadingBlockOptions;
   private renderedContainer: HTMLElement;
-  private input: HTMLInputElement | null = null;
+  // A textarea, not an input, so a long heading wraps while edited exactly as
+  // it does when shown; the page does not move when editing starts or ends.
+  private input: HTMLTextAreaElement | null = null;
   private isEditing: boolean = false;
   private isSelected: boolean = false;
 
@@ -150,13 +154,16 @@ export class HeadingBlockComponent {
 
     this.renderedContainer.classList.add("hidden");
     this.el.classList.add("editing");
-    this.input = document.createElement("input");
-    this.input.type = "text";
+    this.input = document.createElement("textarea");
+    this.input.rows = 1;
     this.input.className = "doc-block-source-input doc-heading-input";
     this.input.placeholder = "Heading...";
     this.input.value = this.block.source;
     this.input.dataset.level = String(this.getHeadingLevel());
+    this.input.style.overflow = "hidden";
+    this.input.style.resize = "none";
     this.el.appendChild(this.input);
+    this.fitInputHeight();
 
     this.input.addEventListener("input", () => {
       this.handleInput();
@@ -215,15 +222,39 @@ export class HeadingBlockComponent {
     }
   }
 
+  // As tall as its wrapped lines at the heading's line height, which is the
+  // shown heading's height. scrollHeight alone is rounded to whole pixels.
+  private fitInputHeight() {
+    if (!this.input) return;
+    this.input.style.height = "auto";
+    const lineHeight = typeof getComputedStyle === "function" ? parseFloat(getComputedStyle(this.input).lineHeight) : NaN;
+    if (Number.isFinite(lineHeight) && lineHeight > 0) {
+      const lines = Math.max(1, Math.round(this.input.scrollHeight / lineHeight));
+      this.input.style.height = `${lines * lineHeight}px`;
+    } else {
+      this.input.style.height = `${this.input.scrollHeight}px`;
+    }
+  }
+
   private handleInput() {
     if (!this.input) return;
+    // A heading is one line: pasted line breaks are dropped, as a text input
+    // drops them.
+    if (/[\r\n]/.test(this.input.value)) {
+      const caretAt = this.input.selectionStart ?? this.input.value.length;
+      const before = this.input.value.slice(0, caretAt).replace(/[\r\n]/g, "");
+      this.input.value = this.input.value.replace(/[\r\n]/g, "");
+      this.input.setSelectionRange(before.length, before.length);
+    }
     const val = this.input.value;
     const caret = this.input.selectionStart ?? val.length;
 
-    // Check if reverted to plain text (no longer starts with #)
+    // Text that no longer starts with # is no longer a heading; it becomes
+    // what the classifier says it is. (A # line that is not a heading is
+    // re-typed when the edit is committed.)
     const trimmed = val.trim();
     if (!val.startsWith("#") && trimmed !== "") {
-      this.options.onRequestTransform?.(this.block.id, "paragraph", val, caret);
+      this.options.onRequestTransform?.(this.block.id, classifyBlockType(val, this.options.isFirstContent?.() ?? false), val, caret);
       return;
     }
 
@@ -231,6 +262,7 @@ export class HeadingBlockComponent {
     // The input keeps the rendered heading's size, so the layout does not move
     // when editing starts or ends.
     this.input.dataset.level = String(this.getHeadingLevel());
+    this.fitInputHeight();
     this.options.onCommit?.(this.block.id, val);
   }
 
@@ -278,7 +310,7 @@ export class HeadingBlockComponent {
     return this.isSelected;
   }
 
-  public getInput(): HTMLInputElement | null {
+  public getInput(): HTMLTextAreaElement | null {
     return this.input;
   }
 

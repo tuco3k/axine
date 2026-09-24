@@ -99,9 +99,9 @@ describe("Dynamic Block Reclassification & Bounded Page Verification Gate", () =
       const revertedFigureComp = ed.getComponent(blockId) as any;
       const revertedFigureType = revertedFigureBlock.type;
 
-      // 4. Test # a heading
+      // 4. Test # Heading text
       const paraTextarea4 = revertedFigureComp.getTextarea();
-      paraTextarea4.value = "# a heading";
+      paraTextarea4.value = "# Heading text";
       paraTextarea4.dispatchEvent(new Event("input"));
 
       const headingBlock = ed.getBlock(blockId);
@@ -110,8 +110,10 @@ describe("Dynamic Block Reclassification & Bounded Page Verification Gate", () =
       const headingInput = headingComp.getInput();
       const headingFocused = document.activeElement === headingInput;
 
-      // Revert # a heading back to paragraph by removing #
-      headingInput.value = "a heading";
+      // Revert # Heading text back to paragraph by removing #. (Not "a heading":
+      // the evaluator reads that as math, a product of single-letter names, and
+      // the display now shows lines as the evaluator reads them.)
+      headingInput.value = "Heading text";
       headingInput.dispatchEvent(new Event("input"));
       const revertedHeadingBlock = ed.getBlock(blockId);
       const revertedHeadingComp = ed.getComponent(blockId) as any;

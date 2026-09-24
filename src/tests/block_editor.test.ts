@@ -35,6 +35,7 @@ describe("Stage 5 Gate: BlockDocumentEditor Orchestration & Word's Atomic Object
     const result = await page.evaluate(async () => {
       const mod = await (window as any).eval('import("/src/document/block_editor.ts")');
       const { BlockDocumentEditor } = mod;
+      const { processDocumentLines } = await (window as any).eval('import("/src/core/worker.ts")');
 
       const sampleDoc = [
         "# Document Model Test",
@@ -88,7 +89,17 @@ describe("Stage 5 Gate: BlockDocumentEditor Orchestration & Word's Atomic Object
       editor.selectBlock(nonBlank[2].id);
       const eqReselected = editor.getSelectedBlockId() === nonBlank[2].id && eqComp.getIsSelected();
 
-      // 3. Provenance Navigation: Figure origin link jumps to defining equation
+      // 3. Provenance Navigation: Figure origin link jumps to defining equation.
+      // Where a name is bound comes from evaluation; before any evaluation the
+      // editor does not know it.
+      const provBeforeEvaluation = editor.navigateToSource(":orbit");
+      const text = editor.getText();
+      const records: any[] = [];
+      processDocumentLines(1, text.split("\n"), (res: any) => {
+        records[res.lineIndex] = { ...res, text: res.line, isEvaluating: false };
+      });
+      editor.applyEvaluation(records, text);
+      editor.selectBlock(nonBlank[0].id);
       const provSuccess = editor.navigateToSource(":orbit");
       const provSelected = editor.getSelectedBlockId() === nonBlank[2].id;
 
@@ -127,6 +138,7 @@ describe("Stage 5 Gate: BlockDocumentEditor Orchestration & Word's Atomic Object
         figSelected,
         eqDeselected,
         eqReselected,
+        provBeforeEvaluation,
         provSuccess,
         provSelected,
         inEditMode,
@@ -153,6 +165,7 @@ describe("Stage 5 Gate: BlockDocumentEditor Orchestration & Word's Atomic Object
     expect(result.figSelected).toBe(true);
     expect(result.eqDeselected).toBe(true);
     expect(result.eqReselected).toBe(true);
+    expect(result.provBeforeEvaluation).toBe(false);
     expect(result.provSuccess).toBe(true);
     expect(result.provSelected).toBe(true);
     expect(result.inEditMode).toBe(true);

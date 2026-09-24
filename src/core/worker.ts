@@ -1,4 +1,5 @@
-import { classifyLine, LineClassification } from './classifier';
+import { analyzeMath, LineClassification } from './classifier';
+import { segmentDocument } from './segments';
 import { createInitialEnvironment, evaluate, BudgetTracker, Evaluator } from './evaluator';
 import { BudgetLimits, DEFAULT_BUDGET_LIMITS, Environment, Value } from './types';
 import { MathDiagnostic, MathError } from './errors';
@@ -44,28 +45,6 @@ export type WorkerOutMessage = LineResultMessage | CompleteMessage;
 
 let currentEvalId = 0;
 
-function getDelimiterDelta(line: string): number {
-  let delta = 0;
-  let inString = false;
-  let strChar = '';
-  for (let idx = 0; idx < line.length; idx++) {
-    const ch = line[idx];
-    if (inString) {
-      if (ch === strChar && line[idx - 1] !== '\\') inString = false;
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      inString = true;
-      strChar = ch;
-      continue;
-    }
-    if (ch === '#') break; // rest of line is comment
-    if (ch === '(' || ch === '[' || ch === '{') delta++;
-    else if (ch === ')' || ch === ']' || ch === '}') delta--;
-  }
-  return delta;
-}
-
 export function processDocumentLines(
   id: number,
   lines: string[],
@@ -77,88 +56,48 @@ export function processDocumentLines(
   const env: Environment = createInitialEnvironment();
   const definedSymbols = new Set<string>();
 
-  let accumulatedLines: string[] = [];
-  let openCount = 0;
-  let inFrontmatter = lines.length > 0 && lines[0].trim() === '---';
+  // One unit per segment. Lines outside math units are prose; each line of a
+  // multi-line unit but its last is reported as part of an unfinished unit,
+  // and the unit's result is reported on its last line.
+  const segments = segmentDocument(lines);
 
-  for (let i = 0; i < lines.length; i++) {
+  for (const segment of segments) {
     if (isCancelled()) {
       break;
     }
 
+    if (segment.kind !== 'math') {
+      for (let l = segment.start; l <= segment.end; l++) {
+        onLineResult({
+          type: 'LINE_RESULT',
+          id,
+          lineIndex: l,
+          line: lines[l],
+          classification: { state: 'PROSE' },
+          durationMs: 0,
+        });
+      }
+      continue;
+    }
+
+    for (let l = segment.start; l < segment.end; l++) {
+      onLineResult({
+        type: 'LINE_RESULT',
+        id,
+        lineIndex: l,
+        line: lines[l],
+        classification: { state: 'INCOMPLETE' },
+        durationMs: 0,
+      });
+    }
+
+    const i = segment.end;
     const line = lines[i];
     const lineStart = Date.now();
-    const trimmed = line.trim();
+    const sourceToEval = lines.slice(segment.start, segment.end + 1).join('\n');
+    const classification = analyzeMath(sourceToEval, env);
 
-    // Handle YAML frontmatter at document start
-    if (inFrontmatter) {
-      if (i > 0 && trimmed === '---') {
-        inFrontmatter = false;
-      }
-      onLineResult({
-        type: 'LINE_RESULT',
-        id,
-        lineIndex: i,
-        line,
-        classification: { state: 'PROSE' },
-        durationMs: Date.now() - lineStart,
-      });
-      continue;
-    }
-
-    if (trimmed.startsWith('#') || trimmed.length === 0) {
-      if (openCount === 0) {
-        onLineResult({
-          type: 'LINE_RESULT',
-          id,
-          lineIndex: i,
-          line,
-          classification: { state: 'PROSE' },
-          durationMs: Date.now() - lineStart,
-        });
-        continue;
-      }
-    }
-
-    const delta = getDelimiterDelta(line);
-    const newOpenCount = Math.max(0, openCount + delta);
-
-    if (openCount > 0 || (newOpenCount > 0 && delta > 0)) {
-      accumulatedLines.push(line);
-      openCount = newOpenCount;
-      if (openCount > 0) {
-        onLineResult({
-          type: 'LINE_RESULT',
-          id,
-          lineIndex: i,
-          line,
-          classification: { state: 'INCOMPLETE' },
-          durationMs: Date.now() - lineStart,
-        });
-        continue;
-      }
-    }
-
-    const sourceToEval = accumulatedLines.length > 0 ? accumulatedLines.join('\n') : line;
-    accumulatedLines = [];
-    openCount = 0;
-
-    const classification = classifyLine(sourceToEval, env);
-
-    if (classification.state === 'INCOMPLETE' && i < lines.length - 1) {
-      accumulatedLines = [sourceToEval];
-      onLineResult({
-        type: 'LINE_RESULT',
-        id,
-        lineIndex: i,
-        line,
-        classification,
-        durationMs: Date.now() - lineStart,
-      });
-      continue;
-    }
-
-    if (classification.state === 'PROSE' || classification.state === 'INCOMPLETE') {
+    if (classification.state === 'INCOMPLETE') {
       onLineResult({
         type: 'LINE_RESULT',
         id,
@@ -197,6 +136,7 @@ export function processDocumentLines(
         classification,
         error: diag,
         durationMs: Date.now() - lineStart,
+        sourceStartLine: segment.start,
       });
       continue;
     }
@@ -220,7 +160,7 @@ export function processDocumentLines(
         boundName: classification.boundName,
         isShadowed,
         durationMs: Date.now() - lineStart,
-        sourceStartLine: i - (sourceToEval.split('\n').length - 1),
+        sourceStartLine: segment.start,
       });
     } catch (e: any) {
       const diag: MathDiagnostic = e instanceof MathError
@@ -239,6 +179,7 @@ export function processDocumentLines(
         classification: { state: 'ERROR', diagnostic: diag },
         error: diag,
         durationMs: Date.now() - lineStart,
+        sourceStartLine: segment.start,
       });
     }
   }
