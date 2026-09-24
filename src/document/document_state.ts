@@ -13,6 +13,7 @@ export interface DocumentLineRecord {
   boundName?: string;
   durationMs: number;
   isEvaluating?: boolean;
+  sourceStartLine?: number;
 }
 
 export type DocumentStateListener = (lines: DocumentLineRecord[], isEvaluating: boolean) => void;
@@ -320,6 +321,7 @@ export class DocumentState {
         boundName: msg.boundName,
         durationMs: msg.durationMs,
         isEvaluating: false,
+        sourceStartLine: msg.sourceStartLine,
       };
       this.scheduleBatchedNotify();
     }

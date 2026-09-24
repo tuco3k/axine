@@ -48,6 +48,7 @@ export interface PaneContainerOptions {
   renderDocumentView?: (leafId: string, tab: TabData, container: HTMLElement) => HTMLElement | void;
   renderResultsView?: (leafId: string, tab: TabData, container: HTMLElement) => HTMLElement | void;
   getSpaceValueForLine?: (documentId: string | undefined, lineIdx: number) => SpaceValue | null;
+  getSourceStartLine?: (documentId: string | undefined, lineIdx: number) => number | undefined;
   getAvailableSpaces?: () => { lineIdx: number; title: string; space: SpaceValue }[];
   getScopeData?: () => Map<string, { type: string; value: string; line: number; isShadowed?: boolean }>;
   getTraceData?: () => { durationMs: number; lineCount: number; status: string };
@@ -1016,6 +1017,9 @@ export class PaneContainer {
       // Instantiate or retrieve viewport with tab's isolated camera state
       const vp = new SpaceViewport(spaceContainer, spaceVal, {
         initialCameraState: tab.cameraState,
+        sourceStartLine: typeof tab.spaceLineIdx === 'number'
+          ? this.options.getSourceStartLine?.(tab.documentId, tab.spaceLineIdx)
+          : undefined,
         onCameraChange: (newCamera) => {
           tab.cameraState = newCamera;
           this.saveLayout();

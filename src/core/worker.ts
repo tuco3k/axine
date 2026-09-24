@@ -28,6 +28,9 @@ export interface LineResultMessage {
   durationMs: number;
   isShadowed?: boolean;
   boundName?: string;
+  // Line index of the first line of the evaluated source. A multi-line block
+  // is reported on its last line; spans inside it count from this line.
+  sourceStartLine?: number;
 }
 
 export interface CompleteMessage {
@@ -217,6 +220,7 @@ export function processDocumentLines(
         boundName: classification.boundName,
         isShadowed,
         durationMs: Date.now() - lineStart,
+        sourceStartLine: i - (sourceToEval.split('\n').length - 1),
       });
     } catch (e: any) {
       const diag: MathDiagnostic = e instanceof MathError

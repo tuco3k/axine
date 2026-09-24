@@ -2230,7 +2230,7 @@ export class DocumentEditor {
           if (rec && rec.result && rec.result.type === 'space') {
             const spaceContainer = pinnedContainer.querySelector(`.doc-pinned-space-container[data-line="${lineIdx}"]`) as HTMLElement;
             if (spaceContainer) {
-              const vp = new SpaceViewport(spaceContainer, rec.result as SpaceValue);
+              const vp = new SpaceViewport(spaceContainer, rec.result as SpaceValue, this.viewportOptionsForLine(lineIdx));
               this.pinnedViewports.set(lineIdx, vp);
             }
           }
@@ -2644,7 +2644,7 @@ export class DocumentEditor {
             let vp = this.lineViewports.get(lineIdx);
             if (!vp || target.children.length === 0) {
               if (vp) vp.dispose();
-              vp = new SpaceViewport(target, spaceVal);
+              vp = new SpaceViewport(target, spaceVal, this.viewportOptionsForLine(lineIdx));
               this.lineViewports.set(lineIdx, vp);
               this.pendingSpaceUpdates.delete(lineIdx);
             } else if (this.pendingSpaceUpdates.has(lineIdx) || vp.getSpace() !== spaceVal) {
@@ -2672,7 +2672,7 @@ export class DocumentEditor {
           let vp = this.lineViewports.get(lineIdx);
           if (!vp || target.children.length === 0) {
             if (vp) vp.dispose();
-            vp = new SpaceViewport(target, spaceVal);
+            vp = new SpaceViewport(target, spaceVal, this.viewportOptionsForLine(lineIdx));
             this.lineViewports.set(lineIdx, vp);
             this.pendingSpaceUpdates.delete(lineIdx);
           } else if (this.pendingSpaceUpdates.has(lineIdx) || vp.getSpace() !== spaceVal) {
@@ -3477,6 +3477,9 @@ export class DocumentEditor {
         getSpaceValueForLine: (_docId, lineIdx) => {
           return this.getSpaceValueForLine(lineIdx);
         },
+        getSourceStartLine: (_docId, lineIdx) => {
+          return this.state.getRecords()[lineIdx]?.sourceStartLine;
+        },
         getAvailableSpaces: () => {
           return this.getAvailableSpaces();
         },
@@ -3574,6 +3577,15 @@ export class DocumentEditor {
       }
     });
     return list;
+  }
+
+  // Inspector links from a space shown for a result line go to the document
+  // line the relation was written on.
+  private viewportOptionsForLine(lineIdx: number): { sourceStartLine?: number; onJumpToSource: (line: number) => void } {
+    return {
+      sourceStartLine: this.state.getRecords()[lineIdx]?.sourceStartLine,
+      onJumpToSource: (line: number) => this.jumpToLine(line),
+    };
   }
 
   public getSpaceValueForLine(lineIdx: number): SpaceValue | null {
@@ -3771,6 +3783,10 @@ export class DocumentEditor {
   }
 
   public jumpToLine(lineIdx: number): void {
+    if (this.editorMode === 'block') {
+      this.revealLineInBlocks(lineIdx);
+      return;
+    }
     if (!this.textarea || !document.body.contains(this.textarea)) {
       const liveTa = this.container.querySelector('#doc-textarea') as HTMLTextAreaElement;
       if (liveTa) {
@@ -3815,6 +3831,28 @@ export class DocumentEditor {
     }
     this.updateCaret();
     this.textarea.dispatchEvent(new Event('scroll'));
+  }
+
+  // Shows the active document's tab and selects the block containing a line.
+  private revealLineInBlocks(lineIdx: number): void {
+    if (this.paneContainer) {
+      const root = this.paneContainer.getLayout().root;
+      for (const leaf of getAllLeaves(root)) {
+        const tab = leaf.tabs.find(t => t.type === 'document' && t.documentId === this.activeSessionId);
+        if (!tab) continue;
+        if (leaf.activeTabId !== tab.id) {
+          leaf.activeTabId = tab.id;
+          this.paneContainer.setActivePaneId(leaf.id);
+          this.paneContainer.render();
+        }
+        break;
+      }
+    }
+    const blockId = this.blockEditor?.blockIdAtLine(lineIdx);
+    if (this.blockEditor && blockId) {
+      this.blockEditor.selectBlock(blockId);
+      this.blockEditor.scrollToBlock(blockId);
+    }
   }
 
   public renderResultsOnly(container: HTMLElement, _docId?: string): void {

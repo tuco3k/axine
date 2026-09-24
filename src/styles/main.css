@@ -3284,49 +3284,10 @@ input[type="number"]:focus {
   font-style: italic;
 }
 
-.spatial-lib-trace {
-  background: var(--color-bg-base);
-  border: var(--border-width-default) solid var(--color-accent-border);
-  border-radius: var(--border-radius-xs);
-  padding: var(--space-xs);
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.lib-trace-title {
+.spatial-trace-note {
   font-size: var(--font-size-2xs);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-accent);
-}
-
-.lib-iterations {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.lib-iteration-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-  font-family: var(--font-family-doc);
-  font-size: var(--font-size-2xs);
-}
-
-.it-idx {
-  color: var(--color-text-tertiary);
-  width: 44px;
-}
-
-.it-val {
-  color: var(--color-text-primary);
-}
-
-.lib-converged {
-  font-size: var(--font-size-2xs);
-  color: var(--color-semantic-verified);
-  margin-top: 2px;
+  color: var(--color-text-secondary);
+  margin-top: var(--space-xs);
 }
 
 .spatial-inspector-empty {

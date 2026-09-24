@@ -867,6 +867,22 @@ export class BlockDocumentEditor {
   /**
    * Gets the list of parsed blocks
    */
+  /**
+   * The block containing a document line (0-based), counted in the text this
+   * editor serializes: frontmatter, then each block's lines, joined by
+   * newlines.
+   */
+  public blockIdAtLine(line: number): string | null {
+    const fm = this.model.rawFrontmatter || "";
+    let next = fm ? fm.split("\n").length - 1 : 0;
+    for (const block of this.model.blocks) {
+      const count = block.source.split("\n").length;
+      if (line < next + count) return line >= next ? block.id : null;
+      next += count;
+    }
+    return null;
+  }
+
   public getBlocks(): DocumentBlock[] {
     return this.model.blocks;
   }

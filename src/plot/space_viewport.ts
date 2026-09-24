@@ -14,6 +14,9 @@ export interface SpaceViewportOptions {
   onFocusChange?: (focused: boolean) => void;
   onCameraChange?: (camera: CameraState) => void;
   onJumpToSource?: (lineIdx: number) => void;
+  // Document line of the first line of the source this space was evaluated
+  // from. Entity spans count from there; without it no line is shown.
+  sourceStartLine?: number;
 }
 
 const ENTITY_PALETTE = [
@@ -651,7 +654,11 @@ export class SpaceViewport {
       }
     });
 
-    const blurHandler = () => {
+    const blurHandler = (e: FocusEvent) => {
+      // Focus moving to a control inside the viewport (the inspector panel's
+      // buttons) is not leaving it; releasing here removed the panel before
+      // its buttons received the click.
+      if (e.relatedTarget instanceof Node && this.container.contains(e.relatedTarget)) return;
       this.releaseCapture();
     };
     this.container.addEventListener?.('blur', blurHandler);
@@ -1053,6 +1060,16 @@ export class SpaceViewport {
   }
 
   public showInspection(result: SpatialInspectionResult): void {
+    // Entity lines count from the start of the evaluated source; place them in
+    // the document, or show none rather than a wrong one.
+    const start = this.options.sourceStartLine;
+    result = {
+      ...result,
+      hitEntities: result.hitEntities.map((ent) => ({
+        ...ent,
+        lineIdx: typeof ent.lineIdx === 'number' && typeof start === 'number' ? start + ent.lineIdx : undefined,
+      })),
+    };
     this.inspectionResult = result;
     this.reticlePos = { ...result.worldCoord };
     this.showReticle = true;
@@ -1210,6 +1227,7 @@ export class SpaceViewport {
         const comp = compileAST(ent.ast, ent.coordinates);
         if (comp.success && typeof comp.fn === 'function') {
           ent.compiledFn = comp.fn;
+          ent.compiledCode = comp.code;
           return true;
         }
       } catch {

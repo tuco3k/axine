@@ -3,7 +3,7 @@
  * 
  * Layer 1: What is here (coordinates & evaluated relation truth/residual)
  * Layer 2: What produced this (relation AST, document source line anchor with jump-to-source)
- * Layer 3: How it got that value (point-wise algebraic reduction trace & Newton-Raphson library iterations)
+ * Layer 3: How it got that value (the residual the engine computed at the point; no intermediate values are recorded)
  */
 
 import { SpaceValue, SpatialEntity } from '../core/types';
@@ -27,11 +27,6 @@ export interface InspectedEntityRecord {
   holds: boolean;
   isSnapped: boolean;
   reductionSteps: ReductionStep[];
-  libraryTrace?: {
-    functionName: string;
-    iterations: { iteration: number; estimate: number; formula: string }[];
-    convergedValue: number;
-  };
   gridResolution?: string;
   gridStep?: number;
   toleranceDescription?: string;
@@ -278,9 +273,12 @@ export function rayIntersectsTriangle(
 
 export class SpatialInspector {
   /**
-   * Generates step-by-step reduction trace and Newton iterations for an inspected point.
+   * What the engine computed for an entity at a point: the residual
+   * f = left side - right side of the relation, from the entity's compiled
+   * function. The sampler evaluates each point as one function call and keeps
+   * no intermediate values, so nothing below the residual is shown.
    */
-  public static generateReductionTrace(
+  public static describeEvaluation(
     ent: SpatialEntity,
     x0: number,
     y0?: number,
@@ -291,117 +289,53 @@ export class SpatialInspector {
       gridStep?: number;
       dimension?: 1 | 2 | 3;
     }
-  ): { steps: ReductionStep[]; libraryTrace?: InspectedEntityRecord['libraryTrace'] } {
+  ): { steps: ReductionStep[] } {
     const steps: ReductionStep[] = [];
-    const varX = ent.coordinates[0] || 'x';
-    const varY = ent.coordinates[1] || 'y';
-    const varZ = ent.coordinates[2] || 'z';
-
-    const sourceExpr = ent.source || (ent.ast ? formatAST(ent.ast) : `${varY} = f(${varX})`);
     const fmt = (n: number) => {
       if (Math.abs(n) < 1e-10) return '0';
       if (Number.isInteger(n)) return n.toString();
       return n.toFixed(4).replace(/\.?0+$/, '');
     };
-
-    // Step 1: Variable instantiation / substitution
-    let instantiatedExpr = sourceExpr;
-    const regexX = new RegExp(`\\b${varX}\\b`, 'g');
-    instantiatedExpr = instantiatedExpr.replace(regexX, fmt(x0));
-    if (typeof y0 === 'number') {
-      const regexY = new RegExp(`\\b${varY}\\b`, 'g');
-      instantiatedExpr = instantiatedExpr.replace(regexY, fmt(y0));
-    }
-    if (typeof z0 === 'number') {
-      const regexZ = new RegExp(`\\b${varZ}\\b`, 'g');
-      instantiatedExpr = instantiatedExpr.replace(regexZ, fmt(z0));
-    }
-
     const coordArgs = [fmt(x0), y0 !== undefined ? fmt(y0) : null, z0 !== undefined ? fmt(z0) : null]
-      .filter(Boolean)
+      .filter((c) => c !== null)
       .join(', ');
 
-    steps.push({
-      label: 'Coordinate Substitution',
-      equation: instantiatedExpr,
-      detail: `Substitute (${coordArgs})`,
-    });
-
-    // Check for library function (e.g. sqrt / newton_sqrt)
-    let libTrace: InspectedEntityRecord['libraryTrace'] | undefined = undefined;
-    if (sourceExpr.includes('sqrt') || sourceExpr.includes('newton')) {
-      const targetVal = Math.max(0, x0);
-      const sqrtVal = Math.sqrt(targetVal);
-
-      // Simulate Newton-Raphson iteration sequence per lib/newton.ax
-      const iterations: { iteration: number; estimate: number; formula: string }[] = [];
-      let y = 0.5 * (targetVal + 1.0);
-      iterations.push({
-        iteration: 0,
-        estimate: y,
-        formula: `y_0 = 0.5 * (${fmt(targetVal)} + 1) = ${fmt(y)}`,
-      });
-
-      for (let i = 1; i <= 4; i++) {
-        if (y <= 0) break;
-        const nextY = 0.5 * (y + targetVal / y);
-        iterations.push({
-          iteration: i,
-          estimate: nextY,
-          formula: `y_${i} = 0.5 * (${fmt(y)} + ${fmt(targetVal)} / ${fmt(y)}) = ${fmt(nextY)}`,
-        });
-        if (Math.abs(nextY - y) < 1e-9) break;
-        y = nextY;
-      }
-
-      libTrace = {
-        functionName: ':sqrt(x) via Newton-Raphson Search (lib/newton.ax)',
-        iterations,
-        convergedValue: sqrtVal,
-      };
-
-      steps.push({
-        label: 'Library Function Expansion (:sqrt)',
-        equation: `:newton_sqrt(${fmt(targetVal)}) \\rightarrow ${fmt(sqrtVal)}`,
-        detail: `Evaluated via 4 Newton iterations with initial seed y_0 = ${fmt(0.5 * (targetVal + 1.0))}`,
-      });
-    }
-
-    // Step 2: Evaluation / Residual Computation
+    let val: number;
     try {
-      const val = typeof y0 === 'number'
+      val = typeof y0 === 'number'
         ? (typeof z0 === 'number' ? ent.compiledFn(x0, y0, z0) : ent.compiledFn(x0, y0))
         : ent.compiledFn(x0);
-      const isZero = Math.abs(val) < 1e-6;
-
-      if (isZero) {
-        steps.push({
-          label: 'Exact Relation Reduction',
-          equation: `f(${coordArgs}) = 0`,
-          detail: 'Algebraic equality confirmed: point lies exactly on continuous geometric locus (residual = 0).',
-        });
-      } else if (context?.isSnapped) {
-        const stepStr = context.gridStep !== undefined ? ` (grid step ${fmt(context.gridStep)})` : '';
-        const stepLabel = context.dimension === 3
-          ? 'Mesh Discretization Residual'
-          : (context.dimension === 2 ? 'Sampled Curve Discretization Residual' : 'Discretization Residual');
-        steps.push({
-          label: stepLabel,
-          equation: `f(${coordArgs}) = ${fmt(val)}`,
-          detail: `Discretization residual is ${fmt(val)}${stepStr}. The continuous geometric locus passes within cell tolerance of this interpolated vertex.`,
-        });
-      } else {
-        steps.push({
-          label: 'Off-Surface Evaluation',
-          equation: `f(${coordArgs}) = ${fmt(val)} \\neq 0`,
-          detail: `Evaluated residual is ${fmt(val)}: point lies outside the geometric locus tolerance.`,
-        });
-      }
     } catch {
-      // Fallback
+      return { steps };
     }
 
-    return { steps, libraryTrace: libTrace };
+    const how = ent.compiledCode
+      ? 'Computed by the relation compiled from its source, with the functions it calls inlined.'
+      : 'Computed by reduction of the relation.';
+
+    if (!Number.isFinite(val)) {
+      steps.push({ label: 'Residual', equation: `f(${coordArgs})`, detail: `Not a finite number at this point. ${how}` });
+    } else if (Math.abs(val) < 1e-6) {
+      steps.push({ label: 'Residual', equation: `f(${coordArgs}) = 0`, detail: `Zero to within 1e-6. ${how}` });
+    } else if (context?.isSnapped) {
+      const stepStr = context.gridStep !== undefined ? ` (grid step ${fmt(context.gridStep)})` : '';
+      const stepLabel = context.dimension === 3
+        ? 'Mesh Discretization Residual'
+        : (context.dimension === 2 ? 'Sampled Curve Discretization Residual' : 'Discretization Residual');
+      steps.push({
+        label: stepLabel,
+        equation: `f(${coordArgs}) = ${fmt(val)}`,
+        detail: `Discretization residual is ${fmt(val)}${stepStr}. The continuous geometric locus passes within cell tolerance of this interpolated vertex. ${how}`,
+      });
+    } else {
+      steps.push({
+        label: 'Off-Surface Evaluation',
+        equation: `f(${coordArgs}) = ${fmt(val)}`,
+        detail: `Not on the relation. ${how}`,
+      });
+    }
+
+    return { steps };
   }
 
   /**
@@ -453,7 +387,7 @@ export class SpatialInspector {
       }
 
       const holds = entHit || Math.abs(val) < 1e-4;
-      const trace = SpatialInspector.generateReductionTrace(ent, inspectedX, undefined, undefined, {
+      const trace = SpatialInspector.describeEvaluation(ent, inspectedX, undefined, undefined, {
         isSnapped: entHit,
         dimension: 1,
       });
@@ -472,7 +406,6 @@ export class SpatialInspector {
         holds,
         isSnapped: entHit,
         reductionSteps: trace.steps,
-        libraryTrace: trace.libraryTrace,
         toleranceDescription: toleranceDesc,
       });
     });
@@ -621,7 +554,7 @@ export class SpatialInspector {
         primaryGridStep = step2D;
       }
 
-      const trace = SpatialInspector.generateReductionTrace(ent, ptX, ptY, undefined, {
+      const trace = SpatialInspector.describeEvaluation(ent, ptX, ptY, undefined, {
         isSnapped: !!snapForThis,
         gridResolution: gridResStr,
         gridStep: step2D,
@@ -649,7 +582,6 @@ export class SpatialInspector {
         holds,
         isSnapped: !!snapForThis,
         reductionSteps: trace.steps,
-        libraryTrace: trace.libraryTrace,
         gridResolution: gridResStr,
         gridStep: step2D,
         toleranceDescription: toleranceDesc,
@@ -823,7 +755,7 @@ export class SpatialInspector {
         primaryGridStep = step3D;
       }
 
-      const trace = SpatialInspector.generateReductionTrace(ent, evalCoord[0], evalCoord[1], evalCoord[2], {
+      const trace = SpatialInspector.describeEvaluation(ent, evalCoord[0], evalCoord[1], evalCoord[2], {
         isSnapped,
         gridResolution: gridResStr,
         gridStep: step3D,
@@ -851,7 +783,6 @@ export class SpatialInspector {
         holds,
         isSnapped,
         reductionSteps: trace.steps,
-        libraryTrace: trace.libraryTrace,
         gridResolution: gridResStr,
         gridStep: step3D,
         toleranceDescription: toleranceDesc,
@@ -971,24 +902,6 @@ export class SpatialInspector {
           `;
         });
 
-        let libHtml = '';
-        if (ent.libraryTrace) {
-          libHtml += `
-            <div class="spatial-lib-trace">
-              <div class="lib-trace-title">${escapeHtml(ent.libraryTrace.functionName)}</div>
-              <div class="lib-iterations">
-                ${ent.libraryTrace.iterations.map(it => `
-                  <div class="lib-iteration-row">
-                    <span class="it-idx">Step ${it.iteration}:</span>
-                    <span class="it-val">${escapeHtml(it.formula)}</span>
-                  </div>
-                `).join('')}
-              </div>
-              <div class="lib-converged">Converged value: <strong>${ent.libraryTrace.convergedValue.toFixed(6)}</strong></div>
-            </div>
-          `;
-        }
-
         const toleranceNoteHtml = ent.toleranceDescription
           ? `<div class="spatial-tolerance-note">${escapeHtml(ent.toleranceDescription)}</div>`
           : '';
@@ -1021,7 +934,7 @@ export class SpatialInspector {
             </div>
             <div class="spatial-reduction-content">
               ${stepsHtml}
-              ${libHtml}
+              <div class="spatial-trace-note">f is the left side minus the right side. Intermediate values are not recorded: each point is one evaluation of the whole relation.</div>
             </div>
           </div>
         `;

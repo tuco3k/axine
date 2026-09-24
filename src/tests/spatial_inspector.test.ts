@@ -123,9 +123,10 @@ describe('Spatial Inspector & 3-Layer Graph Inspection Engine', () => {
       expect(hit.holds).toBe(true);
       expect(hit.valueAtPoint).toBeCloseTo(0, 4);
 
-      // Verify Layer 3 reduction steps
-      expect(hit.reductionSteps.length).toBeGreaterThan(0);
-      expect(hit.reductionSteps.some(s => s.label.includes('Coordinate Substitution'))).toBe(true);
+      // Layer 3 reports the residual the compiled function returned at the point, and nothing else.
+      expect(hit.reductionSteps).toHaveLength(1);
+      expect(hit.reductionSteps[0].label).toBe('Residual');
+      expect(hit.reductionSteps[0].equation).toBe('f(2) = 0');
 
       // 2. Click in empty space at x = 0 (pixel at 300)
       const emptyRes = SpatialInspector.inspect1D(space, bounds, 300, 600);
@@ -187,11 +188,14 @@ describe('Spatial Inspector & 3-Layer Graph Inspection Engine', () => {
       expect(res.hitEntities[1].holds).toBe(true);
     });
 
-    it('generates Newton-Raphson iteration traces for library functions', () => {
+    it('reports only the residual the engine computed, with no invented library steps', () => {
+      // The residual comes from the entity's compiled function; the inspector
+      // must not re-derive how a library function (here :sqrt) produced it.
       const sqrtEnt: SpatialEntity = {
         coordinates: ['x', 'y'],
         ast: null as any,
-        compiledFn: (x: number, y: number) => y - Math.sqrt(Math.max(0, x)),
+        compiledFn: (x: number, y: number) => y - x / 2,
+        compiledCode: 'return y - x / 2;',
         dimension: 2,
         source: 'y = :sqrt(x)',
         cachedContours: {
@@ -201,17 +205,13 @@ describe('Spatial Inspector & 3-Layer Graph Inspection Engine', () => {
         },
       };
 
-      const trace = SpatialInspector.generateReductionTrace(sqrtEnt, 4, 2);
-
-      expect(trace.libraryTrace).toBeDefined();
-      expect(trace.libraryTrace?.functionName).toContain(':sqrt');
-      expect(trace.libraryTrace?.convergedValue).toBeCloseTo(2.0, 5);
-      expect(trace.libraryTrace?.iterations.length).toBeGreaterThanOrEqual(3);
-
-      // Step 0 initial seed: 0.5 * (4 + 1) = 2.5
-      expect(trace.libraryTrace?.iterations[0].estimate).toBeCloseTo(2.5, 3);
-      // Final converged iteration
-      expect(trace.libraryTrace?.iterations[trace.libraryTrace.iterations.length - 1].estimate).toBeCloseTo(2.0, 4);
+      const description = SpatialInspector.describeEvaluation(sqrtEnt, 4, 3);
+      expect(description.steps).toHaveLength(1);
+      // 3 - 4/2 = 1: the value the compiled function returns, not a sqrt of anything.
+      expect(description.steps[0].equation).toBe('f(4, 3) = 1');
+      expect(description.steps[0].detail).toContain('compiled from its source');
+      expect(JSON.stringify(description)).not.toMatch(/newton|iteration|sqrt/i);
+      expect((description as any).libraryTrace).toBeUndefined();
     });
   });
 
@@ -268,7 +268,7 @@ describe('Spatial Inspector & 3-Layer Graph Inspection Engine', () => {
 
       expect(res.gridResolution).toBe('40×40×40');
 
-      const trace = SpatialInspector.generateReductionTrace(sphereEnt, 1.0, 1.0, 1.0, {
+      const trace = SpatialInspector.describeEvaluation(sphereEnt, 1.0, 1.0, 1.0, {
         isSnapped: true,
         gridResolution: '40×40×40',
         gridStep: 0.1538,
