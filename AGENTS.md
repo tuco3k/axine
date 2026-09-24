@@ -23,21 +23,32 @@ dropped.
 
 ## Resolved decisions — do not relitigate
 - `unknown` is a VALUE with a reason enum. Never an exception, never NaN.
-- `none` != `unknown`. none = definitively absent from the searched range.
-  unknown = the search did not finish. Conflating these is the top
-  correctness risk in this codebase.
+  The reasons are those of SEMANTICS.md §5.1: `budget-exhausted`,
+  `undecidable`, `undefined`.
+- `none`, `undefined` and `budget-exhausted` are different answers.
+  none = definitively absent: no solution in the active context or the
+  searched range. undefined = the operation has no meaning in the active
+  context. budget-exhausted = the search stopped before it finished.
+  Conflating these is the top correctness risk in this codebase.
 - Fuel exhaustion produces a value. It never throws.
 - `/` and `//` are semantically identical, differing only in a display flag.
 - `d` and `∂` are reserved. `d / dx` with spaces is an error, not division.
-- `a/bc` is an error (`bc` is one identifier). `a / b c` is `a / (b·c)`.
-- Bounded `sum`/`Σ` is expression-first: `sum(1/n^2, n in 1..N)`.
-- No symbolic simplification beyond constant folding and dropping 0/1 terms.
-  No symbolic integration. Ever.
+- Bare letters are single variables and juxtaposition is multiplication
+  (SYNTAX_V2.md §2): `bc` is `b·c`. Juxtaposition binds tighter than `/`,
+  so `a/bc` and `a / b c` are both `a / (b·c)`.
+- Bounded `sum`/`Σ` is expression-first: `:sum(1/n^2, n \in 1..N)`.
+- The evaluator never rewrites an expression on its own. A rewrite happens
+  only as a step a person names, or inside a command a person invokes; it
+  is defined in an Axine library, shown, and checked.
+- No general symbolic integration. A bounded set of techniques written in
+  Axine is permitted, each result checked by differentiating it back.
 - Ambient and invoked execution use separate worker pools and separate
   budgets. They must never share.
 - Pause = cooperative yield. Stop = worker.terminate(). Both are required.
-- Values that cannot be represented (complex eigenvalues, sqrt of negative)
-  return `unknown(requires-unavailable-theory)`, never a partial number.
+- A value with no definition in the active context (sqrt of a negative or
+  complex eigenvalues in ℝ, 1/0) is `undefined`, never a partial number.
+  `requires-unavailable-theory` and `unimplemented-technique` are removed
+  (SEMANTICS.md §5.2).
 - The zero-dependency rule covers the LANGUAGE CORE (`src/core`). MathLive is permitted for the editor's equation input surface only. Nothing in `src/core` may import it.
 
 ## Process rules

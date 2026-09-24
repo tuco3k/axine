@@ -427,7 +427,7 @@ Output:
 In the real field $\mathbb{R}$, $\sqrt{-4}$ does not exist. It stands unreduced as `:sqrt(-4)`.
 
 #### Common Mistake
-Expecting the runtime to synthesize heuristic approximations or guess intent. Axine enforces AGENTS.md rule: *"No symbolic simplification beyond constant folding and dropping 0/1 terms. No symbolic integration. Ever."*
+Expecting the runtime to synthesize heuristic approximations or guess intent. Axine enforces AGENTS.md rule: *"The evaluator never rewrites an expression on its own. A rewrite happens only as a step a person names, or inside a command a person invokes; it is defined in an Axine library, shown, and checked."*
 
 ---
 

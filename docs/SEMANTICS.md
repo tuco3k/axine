@@ -287,7 +287,7 @@ Axine maintains precise boundaries between what it computes, what it observes, a
   - A reliable computation engine operating with fuel-bounded execution and explicit contexts.
   - A multi-dimensional level-set visualizer across arbitrary coordinate slices.
 - **What Axine IS NOT**:
-  - An interactive theorem prover with automated tactic search (e.g., Lean, Coq, Isabelle).
+  - An interactive theorem prover with automated tactic search (e.g., Lean, Coq, Isabelle). Axine never chooses a step on its own. The only commands that choose steps are ones a person invokes by name, and \expand writes out every step they chose, each one checked.
   - A heavy computer algebra system with infinite-depth symbolic integration or arbitrary multivariate polynomial ideal solvers.
   - A guessing assistant that silently coerces types or invents intent.
 - **Out-of-Scope Reporting**: When an operation exceeds engine capabilities, Axine reports that the computation exceeded its budget or is not defined in the active context. It never claims that a problem is mathematically unsolvable merely because the engine lacks an algorithm.
