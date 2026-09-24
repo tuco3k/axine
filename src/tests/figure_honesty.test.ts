@@ -87,8 +87,23 @@ describe("Figure blocks show what was computed", () => {
     );
     expect(figures).toEqual([
       { badge: "Error", message: "'r' has no value and is not an axis of this space", canvas: false },
-      { badge: "Error", message: "Function 'sqrt' is not defined", canvas: false },
+      { badge: "Error", message: ":sqrt has no definition", canvas: false },
     ]);
+  });
+
+  it("shows x^2 + y^2 = -1 as an empty figure with no Error badge", async () => {
+    await page.evaluate(() => (window as any).editor.blockEditor.setText("{\\axis x, y; x^2 + y^2 = -1}"));
+    await page.waitForFunction(() => document.querySelector(".doc-block-figure")?.getAttribute("data-status") === "computed");
+    await page.waitForFunction(() => !!document.querySelector(".doc-block-figure canvas"));
+    const figure = await page.evaluate(() => {
+      const el = document.querySelector<HTMLElement>(".doc-block-figure")!;
+      return {
+        badge: el.querySelector(".doc-figure-badge")?.textContent ?? null,
+        message: el.querySelector(".doc-figure-message")?.textContent ?? null,
+        canvas: !!el.querySelector("canvas"),
+      };
+    });
+    expect(figure).toEqual({ badge: null, message: null, canvas: true });
   });
 
   it("marks a figure stale while the relation above it is re-evaluated", async () => {

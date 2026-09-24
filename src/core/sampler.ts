@@ -37,6 +37,8 @@ export interface Contour2DResult {
   polylines: Polyline2D[];
   bounds: Bounds2D | null;
   sampleCount: number;
+  // True when no sample point gave a value at all.
+  noValues?: boolean;
   fallbackCount?: number;
   resolution?: [number, number];
   gridStep?: [number, number];
@@ -49,6 +51,8 @@ export interface TriangleMesh3D {
   indices: Uint32Array;
   bounds: Bounds3D | null;
   sampleCount: number;
+  // True when no sample point gave a value at all.
+  noValues?: boolean;
   fallbackCount?: number;
   resolution?: [number, number, number];
   gridStep?: [number, number, number];
@@ -166,7 +170,7 @@ export function sample2D(
 
   // If everywhere positive or everywhere negative (no sign changes), check for isolated zero roots
   if (!hasValidFinite) {
-    return { polylines: [], bounds: null, sampleCount: nx * ny, fallbackCount };
+    return { polylines: [], bounds: null, sampleCount: nx * ny, fallbackCount, noValues: true };
   }
 
   if (allPositive || allNegative) {
@@ -668,6 +672,7 @@ export function sample3D(
       indices: new Uint32Array(0),
       bounds: null,
       sampleCount: totalSamples,
+      noValues: true,
     };
   }
 
@@ -1364,6 +1369,7 @@ export function populateSpaceGeometry(space: SpaceValue): void {
       const stepSample = (maxX - minX) / N;
       const roots: number[] = [];
       let prevVal: number | null = null;
+      let anyValue = false;
       for (let i = 0; i <= N; i++) {
         const xVal = minX + i * stepSample;
         let v: number;
@@ -1372,6 +1378,7 @@ export function populateSpaceGeometry(space: SpaceValue): void {
         } catch {
           continue;
         }
+        if (Number.isFinite(v)) anyValue = true;
         if (prevVal !== null && ((prevVal <= 0 && v >= 0) || (prevVal >= 0 && v <= 0))) {
           const denom = v - prevVal;
           const t = Math.abs(denom) > 1e-15 ? -prevVal / denom : 0.5;
@@ -1381,6 +1388,7 @@ export function populateSpaceGeometry(space: SpaceValue): void {
         prevVal = v;
       }
       ent.cachedRoots1D = roots;
+      ent.noValues = !anyValue;
     } else if (dim === 2) {
       const resolution = 200;
       if (ent.coordinates.length === 1) {
@@ -1392,6 +1400,7 @@ export function populateSpaceGeometry(space: SpaceValue): void {
       } else {
         ent.cachedContours = sample2D(ent.compiledFn, [extent2D.minX, extent2D.maxX], [extent2D.minY, extent2D.maxY], resolution);
       }
+      ent.noValues = ent.cachedContours.noValues === true;
     } else if (dim === 3) {
       const resolution = 40;
       ent.cachedMesh = sample3D(
@@ -1401,6 +1410,22 @@ export function populateSpaceGeometry(space: SpaceValue): void {
         [extent3D.minZ, extent3D.maxZ],
         resolution
       );
+      ent.noValues = ent.cachedMesh.noValues === true;
+    } else if (dim > 3 && coords.length > 3) {
+      // Above three dimensions the figure draws slices; sample the first one
+      // it shows (the other coordinates at the low end of their bounds, or 0)
+      // only to learn whether the relation has values. The slice is not kept.
+      const fixed: Record<string, number> = {};
+      for (const c of coords.slice(2)) fixed[c] = space.coordinateBounds?.[c]?.[0] ?? 0;
+      const slice = sampleSlice(
+        ent.compiledFn as NumericCompiledFn,
+        coords,
+        [coords[0], coords[1]],
+        fixed,
+        [[extent2D.minX, extent2D.maxX], [extent2D.minY, extent2D.maxY]],
+        100
+      ) as Contour2DResult;
+      ent.noValues = slice.noValues === true;
     }
   }
 }

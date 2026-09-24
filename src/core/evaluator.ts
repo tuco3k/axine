@@ -829,29 +829,27 @@ export class Evaluator {
     }
   }
 
-  // A relation of a space is sampled at a few points before it is drawn, the
-  // way the viewport samples it. If it gives no value at any of them and the
-  // evaluator reports why, as for a call to an undefined function or an
-  // operation on the wrong kind of value, that error is the space's result;
-  // otherwise the figure would draw nothing and say nothing. Running out of
-  // budget is not such a failure.
-  private relationFailsEverywhere(ent: SpatialEntity, env: Environment): Error | null {
+  // Why a relation of a space has no value anywhere in its figure. The
+  // decision comes from the sampling that draws the figure (noValues); only
+  // then is the relation evaluated at a few points of the view, so that the
+  // evaluator can say why, as for a call to an undefined function or an
+  // operation on the wrong kind of value. A relation that has values but no
+  // points, such as x^2 + y^2 = -1, is an empty figure, not an error.
+  // Running out of budget is not a reason.
+  private reasonForNoValues(ent: SpatialEntity, space: SpaceValue, env: Environment): Error | null {
     const ast = ent.ast;
-    if (!ast || ast.type !== 'BinaryOp' || !['=', '==', '!=', '<', '<=', '>', '>='].includes(ast.op)) return null;
-    const probes = [0.37, -1.29, 2.71, -0.83];
-    const points = probes.map((_, k) => ent.coordinates.map((_, i) => probes[(k + i) % probes.length] + 0.11 * i));
-    for (const point of points) {
-      try {
-        if (!Number.isNaN(ent.compiledFn(...point))) return null;
-      } catch {
-        // No value at this point.
-      }
-    }
+    if (!ent.noValues || !ast || ast.type !== 'BinaryOp' || !['=', '==', '!=', '<', '<=', '>', '>='].includes(ast.op)) return null;
+    const e2 = space.extent2D ?? { minX: -5, maxX: 5, minY: -5, maxY: 5 };
+    const e3 = space.extent3D ?? { minX: -3, maxX: 3, minY: -3, maxY: 3, minZ: -3, maxZ: 3 };
+    const ranges: [number, number][] = [[e2.minX, e2.maxX], [e2.minY, e2.maxY], [e3.minZ, e3.maxZ]];
+    const fractions = [0.5, 0.27, 0.73, 0.61];
     let firstError: Error | null = null;
-    for (const point of points) {
+    for (const f of fractions) {
       const pointEnv: Environment = Object.create(env);
-      ent.coordinates.forEach((axis, i) => {
-        const value: Value = { type: 'float', value: point[i] };
+      space.coordinates.forEach((axis, i) => {
+        const r = i < 3 && (i < 2 || space.dimension === 3) ? ranges[i] : null;
+        const v = r ? r[0] + (r[1] - r[0]) * f : (space.coordinateBounds?.[axis]?.[0] ?? 0);
+        const value: Value = { type: 'float', value: v };
         const clean = axis.replace(/^:/, '');
         pointEnv[axis] = value;
         pointEnv[clean] = value;
@@ -1232,10 +1230,6 @@ export class Evaluator {
           source: formatAST(rewritten),
         });
       }
-      for (const ent of entities) {
-        const failure = this.relationFailsEverywhere(ent, blockEnv);
-        if (failure) throw failure;
-      }
     }
 
     if (hasContradiction) {
@@ -1306,6 +1300,12 @@ export class Evaluator {
         span: node.span,
       };
       populateSpaceGeometry(spVal);
+      if (declaredAxes) {
+        for (const ent of entities) {
+          const reason = this.reasonForNoValues(ent, spVal, blockEnv);
+          if (reason) throw reason;
+        }
+      }
       return spVal;
     }
 
@@ -3005,9 +3005,9 @@ export class Evaluator {
       return applyBuiltin(UTILITY_BUILTINS.has(callee) ? callee : cleanCallee, argVals, node.span);
     }
 
-    throw createError(`Function '${callee}' is not defined`, node.span, {
+    throw createError(`:${cleanCallee} has no definition`, node.span, {
       expected: 'a defined function name',
-      suggestion: `Define ${callee}(x) := ... before calling it`,
+      suggestion: `Import a library that defines :${cleanCallee}, or define it: \\forall x, :${cleanCallee}(x) = ...`,
       source: this.source,
     });
   }

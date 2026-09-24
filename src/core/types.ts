@@ -857,6 +857,9 @@ export interface SpatialEntity {
   cachedContours?: any;
   cachedMesh?: any;
   cachedRoots1D?: number[];
+  // Set when the sampling that draws this relation found no point where it
+  // has a value (see populateSpaceGeometry).
+  noValues?: boolean;
 }
 
 export interface SliceSelector {
