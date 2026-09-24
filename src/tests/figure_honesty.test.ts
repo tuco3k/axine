@@ -73,6 +73,24 @@ describe("Figure blocks show what was computed", () => {
     expect(pageText).not.toMatch(/verified/i);
   });
 
+  it("states the error of a relation naming an undefined value or function, instead of drawing empty axes", async () => {
+    await page.evaluate(() =>
+      (window as any).editor.blockEditor.setText("{\\axis x, y; x^2 + y^2 = :r^2}\n\n{\\axis x, y; y = :sqrt(x)}")
+    );
+    await page.waitForFunction(() => document.querySelectorAll(".doc-block-figure[data-status='error']").length === 2);
+    const figures = await page.evaluate(() =>
+      Array.from(document.querySelectorAll<HTMLElement>(".doc-block-figure")).map((el) => ({
+        badge: el.querySelector(".doc-figure-badge")?.textContent ?? null,
+        message: el.querySelector(".doc-figure-message")?.textContent ?? null,
+        canvas: !!el.querySelector("canvas"),
+      }))
+    );
+    expect(figures).toEqual([
+      { badge: "Error", message: "'r' has no value and is not an axis of this space", canvas: false },
+      { badge: "Error", message: "Function 'sqrt' is not defined", canvas: false },
+    ]);
+  });
+
   it("marks a figure stale while the relation above it is re-evaluated", async () => {
     await page.evaluate(() => (window as any).editor.blockEditor.setText(":r := 2\n\n{\\axis x, y; x^2 + y^2 = :r^2}"));
     await page.waitForFunction(() => document.querySelector(".doc-block-figure")?.getAttribute("data-status") === "computed");

@@ -485,7 +485,7 @@ g
 
 # ### What Makes Something Render and What Does Not
 # 1. **Requires `\axis`**: A block must declare its coordinate axes with `\axis`.
-# 2. **Variable Alignment**: The free variables in the relation must match the declared axes or be explicitly aliased (e.g. `X = x`).
+# 2. **Variable Alignment**: The free variables in the relation must match the declared axes or be explicitly aliased (e.g. `X = x`). Any other name needs a value somewhere in the block or before it, in any order; a name without one is an error (`'r' has no value and is not an axis of this space`). A relation that cannot be evaluated at any point, such as one calling an undefined function, is also an error. The figure shows the error instead of empty axes.
 # 3. **Without `\axis`**: The relation evaluates to a `SpaceValue` with `declaredAxes = undefined`. The engine computes its dimension and coordinates, but draws 0 entities in the viewport.
 
 # ---

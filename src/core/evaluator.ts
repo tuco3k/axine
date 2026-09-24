@@ -829,6 +829,46 @@ export class Evaluator {
     }
   }
 
+  // A relation of a space is sampled at a few points before it is drawn, the
+  // way the viewport samples it. If it gives no value at any of them and the
+  // evaluator reports why, as for a call to an undefined function or an
+  // operation on the wrong kind of value, that error is the space's result;
+  // otherwise the figure would draw nothing and say nothing. Running out of
+  // budget is not such a failure.
+  private relationFailsEverywhere(ent: SpatialEntity, env: Environment): Error | null {
+    const ast = ent.ast;
+    if (!ast || ast.type !== 'BinaryOp' || !['=', '==', '!=', '<', '<=', '>', '>='].includes(ast.op)) return null;
+    const probes = [0.37, -1.29, 2.71, -0.83];
+    const points = probes.map((_, k) => ent.coordinates.map((_, i) => probes[(k + i) % probes.length] + 0.11 * i));
+    for (const point of points) {
+      try {
+        if (!Number.isNaN(ent.compiledFn(...point))) return null;
+      } catch {
+        // No value at this point.
+      }
+    }
+    let firstError: Error | null = null;
+    for (const point of points) {
+      const pointEnv: Environment = Object.create(env);
+      ent.coordinates.forEach((axis, i) => {
+        const value: Value = { type: 'float', value: point[i] };
+        const clean = axis.replace(/^:/, '');
+        pointEnv[axis] = value;
+        pointEnv[clean] = value;
+        pointEnv[':' + clean] = value;
+      });
+      try {
+        this.evalNode(ast.left, pointEnv);
+        this.evalNode(ast.right, pointEnv);
+        return null;
+      } catch (e: any) {
+        if (e instanceof BudgetExhaustedError) return null;
+        if (!firstError) firstError = e;
+      }
+    }
+    return firstError;
+  }
+
   private evalBlockAsSpace(node: BlockNode, currentEnv: Environment, parentCoords: string[] = []): Value {
     const blockEnv: Environment = Object.create(currentEnv);
     const analysis = analyzeAST(node, currentEnv, new Set(), this.source);
@@ -849,6 +889,11 @@ export class Evaluator {
     if (declaredAxes) {
       (blockEnv as any).__declaredAxes__ = declaredAxes;
     }
+    // Relations of a space with declared axes that name something other than
+    // an axis. They are drawn once the rest of the block has given those
+    // names values, whatever the order of the statements; a name still
+    // without a value is reported.
+    const deferredRelations: { stmt: ASTNode; rewritten: ASTNode }[] = [];
 
     // Pre-pass: evaluate static declarations into blockEnv so constructor and operator bindings are known
     for (const stmt of node.statements) {
@@ -1103,6 +1148,7 @@ export class Evaluator {
           });
         }
         if (isRel) {
+          let bindsName = false;
           if (stmt.type === 'BinaryOp' && stmt.op === '=') {
             let boundVar: string | undefined;
             let boundVal: Value | undefined;
@@ -1126,6 +1172,7 @@ export class Evaluator {
               } catch {}
             }
             if (boundVar && boundVal) {
+              bindsName = true;
               if (boundVal.type === 'record_constructor' && boundVal.name === 'Record') {
                 boundVal.name = boundVar;
               }
@@ -1147,11 +1194,47 @@ export class Evaluator {
               lastVal = boundVal;
             }
           }
+          if (declaredAxes && !canSample && !bindsName) {
+            deferredRelations.push({ stmt, rewritten: rewrittenStmt });
+          }
           continue;
         }
         lastVal = this.evalNode(stmt, blockEnv);
         const prims = this.extractPrimitivesFromValue(lastVal, blockEnv);
         if (prims.length > 0) blockPrimitives.push(...prims);
+      }
+    }
+
+    if (declaredAxes) {
+      for (const { stmt, rewritten } of deferredRelations) {
+        const missing = analyzeAST(rewritten, blockEnv, new Set(), this.source).freeVariables
+          .filter(v => !hasAxis(declaredAxes!, v));
+        if (missing.length > 0) {
+          const names = missing.map(n => `'${n.replace(/^:/, '').length > 1 ? ':' + n.replace(/^:/, '') : n}'`).join(', ');
+          const one = missing.length === 1;
+          throw createError(
+            `${names} ${one ? 'has no value and is not an axis' : 'have no value and are not axes'} of this space`,
+            stmt.span,
+            {
+              expected: `a relation in the axes ${declaredAxes.join(', ')}`,
+              suggestion: `Give ${names} a value, or declare ${one ? 'it' : 'them'} with \\axis`,
+              source: this.source,
+            }
+          );
+        }
+        const comp = compileAST(rewritten, declaredAxes, blockEnv);
+        entities.push({
+          coordinates: declaredAxes,
+          ast: rewritten,
+          compiledFn: comp.success ? comp.fn : this.createReducerSamplerFn(rewritten, declaredAxes, blockEnv),
+          compiledCode: comp.success ? comp.code : undefined,
+          dimension: declaredAxes.length,
+          source: formatAST(rewritten),
+        });
+      }
+      for (const ent of entities) {
+        const failure = this.relationFailsEverywhere(ent, blockEnv);
+        if (failure) throw failure;
       }
     }
 

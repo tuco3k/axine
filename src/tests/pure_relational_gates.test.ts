@@ -220,13 +220,14 @@ describe('Pure Relational Architecture Gates (1 through 5)', () => {
       expect(space.entities.length).toBe(1);
     });
 
-    it('\\axis[X, Y] with b = a^2 graphs nothing in viewport (0 entities in declared space)', () => {
+    // Before: this asserted an empty space with no error, a figure that drew
+    // nothing and said nothing. A relation in names that are not axes is now
+    // reported (item 3, figures show what was computed).
+    it('\\axis[X, Y] with b = a^2 reports that a and b are not axes', () => {
       const env = createInitialEnvironment();
-      const { value } = evaluate('{\\axis[X, Y]; b = a^2}', env);
-      expect(value.type).toBe('space');
-      const space = value as SpaceValue;
-      expect(space.declaredAxes).toEqual(['X', 'Y']);
-      expect(space.entities.length).toBe(0);
+      expect(() => evaluate('{\\axis[X, Y]; b = a^2}', env)).toThrowError(
+        "'b', 'a' have no value and are not axes of this space"
+      );
     });
 
     it('\\axis[X, Y], X = a, Y = b, b = a^2 graphs parabola via aliases', () => {
