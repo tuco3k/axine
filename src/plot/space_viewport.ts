@@ -97,18 +97,19 @@ export class SpaceViewport {
 
     // Determine initial coordinates and view mode
     const dim = space.dimension;
-    const coords = space.coordinates.length > 0 ? space.coordinates : (dim === 1 ? ['x'] : ['x', 'y']);
+    // The space's own coordinates; no name is a default axis.
+    const coords = space.coordinates;
     if (dim === 1 || coords.length === 1) {
-      this.displayAxes = [coords[0] || 'x', 'y'];
+      this.displayAxes = [coords[0] ?? '', ''];
       this.viewMode = '1d'; // 1D number line default for single variable space (n = 1)
     } else if (dim === 2 || coords.length === 2) {
-      this.displayAxes = [coords[0] || 'x', coords[1] || 'y'];
+      this.displayAxes = [coords[0] ?? '', coords[1] ?? ''];
       this.viewMode = '2d';
     } else if (dim === 3 || coords.length === 3) {
-      this.displayAxes = [coords[0] || 'x', coords[1] || 'y'];
+      this.displayAxes = [coords[0] ?? '', coords[1] ?? ''];
       this.viewMode = '3d';
     } else {
-      this.displayAxes = [coords[0] || 'x', coords[1] || 'y'];
+      this.displayAxes = [coords[0] ?? '', coords[1] ?? ''];
       this.viewMode = '2d'; // Slicing 2D view for n >= 4
     }
 
@@ -1387,7 +1388,7 @@ export class SpaceViewport {
 
   private render1D(width: number, height: number): void {
     const colors = this.getThemeColors();
-    const axisVar = this.space.coordinates[0] || 'x';
+    const axisVar = this.space.coordinates[0] ?? '';
     const minX = this.bounds2D.minX;
     const maxX = this.bounds2D.maxX;
     const centerY = height * 0.5;
@@ -1794,9 +1795,9 @@ export class SpaceViewport {
     // Labels
     this.ctx.fillStyle = '#cbd5e1';
     this.ctx.font = 'bold 11px var(--font-math, sans-serif)';
-    this.ctx.fillText(this.space.coordinates[0] || 'x', xAxisEnd[0] + 4, xAxisEnd[1]);
-    this.ctx.fillText(this.space.coordinates[1] || 'y', yAxisEnd[0] + 4, yAxisEnd[1]);
-    this.ctx.fillText(this.space.coordinates[2] || 'z', zAxisEnd[0] + 4, zAxisEnd[1]);
+    this.ctx.fillText(this.space.coordinates[0] ?? '', xAxisEnd[0] + 4, xAxisEnd[1]);
+    this.ctx.fillText(this.space.coordinates[1] ?? '', yAxisEnd[0] + 4, yAxisEnd[1]);
+    this.ctx.fillText(this.space.coordinates[2] ?? '', zAxisEnd[0] + 4, zAxisEnd[1]);
 
     // Sample/Render 3D Marching Cubes Mesh
     const resolution3D = 36;

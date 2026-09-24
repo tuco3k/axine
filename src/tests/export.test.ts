@@ -39,6 +39,8 @@ E := (1/2) * m * (10^2)
 
     const spaceVal: SpaceValue = {
       type: 'space',
+      // The line is {\axis t, y; ...}: the engine records its declared axes.
+      declaredAxes: ['t', 'y'],
       coordinates: ['t', 'y'],
       dimension: 2,
       entities: [
@@ -175,6 +177,8 @@ x0 := 1.0
 
     const spaceVal: SpaceValue = {
       type: 'space',
+      // The line is {\axis t, x; ...}: the engine records its declared axes.
+      declaredAxes: ['t', 'x'],
       coordinates: ['t', 'x'],
       dimension: 2,
       entities: [

@@ -1005,13 +1005,12 @@ export class PaneContainer {
       }
 
       if (!spaceVal) {
-        // Fallback default 2D/3D space
-        spaceVal = {
-          type: 'space',
-          dimension: 2,
-          coordinates: ['x', 'y'],
-          entities: [],
-        };
+        // The line draws nothing (it has no \axis, or no longer a space).
+        const note = document.createElement('div');
+        note.className = 'pane-space-empty';
+        note.textContent = typeof tab.spaceLineIdx === 'number' ? `Line ${tab.spaceLineIdx + 1} draws nothing.` : 'Nothing to draw.';
+        spaceContainer.appendChild(note);
+        return;
       }
 
       // Instantiate or retrieve viewport with tab's isolated camera state

@@ -483,8 +483,11 @@ describe('Top-Bar Control Responsiveness & Live Handlers after Typing', () => {
     const pc = editor.paneContainer;
     expect(pc).toBeTruthy();
 
+    // Only the \axis block is drawn; g = 9.8 is a binding, not a figure.
+    // (This counted g = 9.8 as a second space before nothing was drawn
+    // without \axis.)
     const spaces = editor.getAvailableSpaces();
-    expect(spaces.length).toBe(2);
+    expect(spaces.length).toBe(1);
     expect(spaces.some(s => s.lineIdx === 1)).toBe(true);
 
     // Test context menu generation for document tab

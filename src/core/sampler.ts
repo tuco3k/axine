@@ -1,6 +1,6 @@
 import { NumericCompiledFn } from './compiler';
 import { MARCHING_CUBES_TRI_TABLE, CUBE_EDGE_VERTICES } from './marching_cubes_tables';
-import type { SpaceValue } from './types';
+import type { SpaceValue, Value } from './types';
 
 export type RangeInput = [number, number] | { min: number; max: number };
 
@@ -1277,12 +1277,21 @@ export function findBounds1D(
  * and discovers the spatial extent of the space.
  * This runs independently of any camera viewport.
  */
+/**
+ * Whether a value is drawn: a space that declares its axes with \axis.
+ * Without \axis nothing is drawn, whatever its letters are; no name is a
+ * default axis.
+ */
+export function isDrawnSpace(value: Value | null | undefined): value is SpaceValue {
+  return !!value && value.type === 'space' && !!value.declaredAxes && value.declaredAxes.length > 0;
+}
+
 export function populateSpaceGeometry(space: SpaceValue): void {
-  if (!space) return;
+  if (!isDrawnSpace(space)) return;
   if ((!space.entities || space.entities.length === 0) && (!space.primitives || space.primitives.length === 0)) return;
 
   const dim = space.dimension;
-  const coords = space.coordinates.length > 0 ? space.coordinates : ['x', 'y'];
+  const coords = space.coordinates;
 
   // 1. Determine or discover space extent
   let extent2D: Bounds2D = { minX: -5, maxX: 5, minY: -5, maxY: 5 };

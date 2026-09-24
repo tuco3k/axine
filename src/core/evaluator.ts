@@ -1246,7 +1246,7 @@ export class Evaluator {
         if (entities.length === 1 && entities[0].coordinates.length === finalCoords.length) {
           resCoords = entities[0].coordinates;
         } else {
-          resCoords = (finalCoords.length > 0 ? finalCoords : ['x', 'y']);
+          resCoords = finalCoords;
         }
       }
       return {
@@ -1282,7 +1282,7 @@ export class Evaluator {
         if (entities.length === 1 && entities[0].coordinates.length === finalCoords.length) {
           resAxes = entities[0].coordinates;
         } else {
-          resAxes = (finalCoords.length > 0 ? finalCoords : ['x', 'y']);
+          resAxes = finalCoords;
         }
       }
       const spVal: SpaceValue = {

@@ -2,6 +2,7 @@ import { NotebookCell, NotebookState } from './state';
 import { formatAST } from '../core/formatter';
 import { Value, SpaceValue } from '../core/types';
 import { SpaceViewport } from '../plot/engine';
+import { isDrawnSpace } from '../core/sampler';
 import { AutocompleteEngine, AutocompleteItem } from './autocomplete';
 import { ICONS } from '../styles/icons';
 
@@ -261,7 +262,7 @@ export class CellView {
     this.outputContainer.appendChild(valBox);
 
     // 3. Space View if SpaceValue
-    if (this.cell.value.type === 'space') {
+    if (isDrawnSpace(this.cell.value)) {
       const spaceVal = this.cell.value as SpaceValue;
       if (spaceVal.dimension > 0 || spaceVal.entities.length > 0) {
         const spaceContainer = document.createElement('div');

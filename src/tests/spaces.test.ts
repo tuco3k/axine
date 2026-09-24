@@ -390,7 +390,8 @@ describe('Rewrite Phase 3: Spaces', () => {
 
       try {
         const container = (globalThis as any).document.createElement('div');
-        const { value } = evaluate('y = x^2', env);
+        // Selecting a point needs a drawn relation, and only a relation with \axis is drawn.
+        const { value } = evaluate('{\\axis x, y; y = x^2}', env);
         const space = value as SpaceValue;
 
         const viewport = new SpaceViewport(container as any, space, {

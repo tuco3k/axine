@@ -1,8 +1,8 @@
 import { DocumentLineRecord } from './document_state';
 import { typesetMath, typesetSourceLine } from '../core/math_typeset';
 import { Value, DerivationValue, DerivationStep, SpaceValue } from '../core/types';
-import { sample2D, sample3D, sampleSlice, Contour2DResult } from '../core/sampler';
-import { formatValue } from './editor';
+import { sample2D, sample3D, sampleSlice, Contour2DResult, isDrawnSpace } from '../core/sampler';
+import { formatValue, undrawnSpaceText } from './editor';
 
 export interface FrontMatterData {
   title?: string;
@@ -552,13 +552,11 @@ export function exportToHtml(
     if (rec?.result) {
       if (rec.result.type === 'space') {
         const spaceVal = rec.result as SpaceValue;
-        if (spaceVal.dimension === 0 && spaceVal.entities.length === 0 && (!spaceVal.nestedSpaces || spaceVal.nestedSpaces.length === 0)) {
-          if (spaceVal.resultVal && spaceVal.resultVal.type !== 'none') {
-            const formatted = formatValue(spaceVal.resultVal);
-            const typeset = typesetMath(formatted, { displayMode: false, inlineFractions: true });
-            resultHtml = `<div class="export-math-result">${typeset}</div>`;
-          } else {
-            resultHtml = `<div class="export-math-result">none</div>`;
+        if (!isDrawnSpace(spaceVal)) {
+          // Without \axis nothing is drawn; the relation stands as written.
+          const text = undrawnSpaceText(spaceVal);
+          if (text) {
+            resultHtml = `<div class="export-math-result">${typesetMath(text, { displayMode: false, inlineFractions: true })}</div>`;
           }
         } else {
           isPlot = true;
@@ -1078,11 +1076,9 @@ export function exportToMarkdown(
     if (rec?.result) {
       if (rec.result.type === 'space') {
         const spaceVal = rec.result as SpaceValue;
-        if (spaceVal.dimension === 0 && spaceVal.entities.length === 0 && (!spaceVal.nestedSpaces || spaceVal.nestedSpaces.length === 0)) {
-          if (spaceVal.resultVal && spaceVal.resultVal.type !== 'none') {
-            const formatted = formatValue(spaceVal.resultVal);
-            codeBlockLines.push(`// => ${formatted}`);
-          }
+        if (!isDrawnSpace(spaceVal)) {
+          const text = undrawnSpaceText(spaceVal);
+          if (text) codeBlockLines.push(`// => ${text}`);
         } else {
           flushCodeBlock();
           const plotFilename = `space_L${idx + 1}.svg`;

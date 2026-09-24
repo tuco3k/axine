@@ -12,6 +12,7 @@
 import { DocumentBlock, BlockType, classifyBlockType } from "../block_model";
 import { SpaceValue } from "../../core/types";
 import { SpaceViewport } from "../../plot/space_viewport";
+import { isDrawnSpace } from "../../core/sampler";
 
 // Header badge per status; none while the figure shows a current result.
 const FIGURE_BADGE: Record<DocumentBlock["status"], string | null> = {
@@ -123,7 +124,7 @@ export class FigureBlockComponent {
   private mountViewport() {
     this.renderedResult = this.block.result;
     this.renderedStatus = this.block.status;
-    if (this.block.result && this.block.result.type === "space") {
+    if (isDrawnSpace(this.block.result)) {
       const spaceVal = this.block.result as SpaceValue;
       const width = this.block.metadata?.width || 480;
       const height = this.block.metadata?.height || 320;
@@ -180,6 +181,7 @@ export class FigureBlockComponent {
         return `Unknown (${(result as any)?.reason ?? "no reason given"})${detail}.`;
       }
       case "computed": {
+        if (result?.type === "space") return "Nothing is drawn without \\axis.";
         // Type names in the reader's words: check_result is "check result".
         const name = (result?.type ?? "value").replace(/_/g, " ");
         return `The result is ${/^[aeiou]/.test(name) ? "an" : "a"} ${name}, not a space.`;

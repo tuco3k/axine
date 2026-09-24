@@ -3,6 +3,7 @@ import { Value, DerivationValue, SolveTraceValue, DescribedValue, TrajectoryValu
 import { SpaceViewport } from '../plot/space_viewport';
 import { AnimationPlayer } from '../plot/animation_player';
 import { typesetMath, typesetSourceLine, TypesetOptions } from '../core/math_typeset';
+import { isDrawnSpace } from '../core/sampler';
 import { createInitialEnvironment, Evaluator } from '../core/evaluator';
 import { formatKind } from '../core/kinds';
 import { ICONS } from '../styles/icons';
@@ -1017,7 +1018,10 @@ export class DocumentEditor {
       if (rec?.result) {
         if (rec.result.type === 'space') {
           const spaceVal = rec.result as SpaceValue;
-          if (spaceVal.dimension > 0 || spaceVal.entities.length > 0) {
+          if (!isDrawnSpace(spaceVal)) {
+            const text = undrawnSpaceText(spaceVal);
+            if (text) resHtml = `<div class="doc-print-result">${typesetMath(text, { displayMode: false, inlineFractions: true })}</div>`;
+          } else if (spaceVal.dimension > 0 || spaceVal.entities.length > 0) {
             const svg = renderSVGSpaceToString(spaceVal, { width: 580, height: 260, theme: 'light' });
             resHtml = `<div class="doc-print-plot">${svg}</div>`;
           } else if (spaceVal.resultVal) {
@@ -2233,7 +2237,7 @@ export class DocumentEditor {
         // Instantiate pinned viewports
         this.pinnedLines.forEach(lineIdx => {
           const rec = records[lineIdx];
-          if (rec && rec.result && rec.result.type === 'space') {
+          if (rec && isDrawnSpace(rec.result)) {
             const spaceContainer = pinnedContainer.querySelector(`.doc-pinned-space-container[data-line="${lineIdx}"]`) as HTMLElement;
             if (spaceContainer) {
               const vp = new SpaceViewport(spaceContainer, rec.result as SpaceValue, this.viewportOptionsForLine(lineIdx));
@@ -2266,7 +2270,7 @@ export class DocumentEditor {
     // Update space values by line and track dependent modifications
     for (let i = 0; i < records.length; i++) {
       const rec = records[i];
-      if (rec && rec.result && rec.result.type === 'space') {
+      if (rec && isDrawnSpace(rec.result)) {
         const spaceVal = rec.result as SpaceValue;
         const oldSpace = this.spaceValuesByLine.get(i);
         this.spaceValuesByLine.set(i, spaceVal);
@@ -2341,7 +2345,7 @@ export class DocumentEditor {
       const rec = records[i];
       const isCollapsed = this.collapsedLines.has(i);
       const isExpanded = this.expandedPlots.has(i);
-      if (rec?.result?.type === 'space') {
+      if (isDrawnSpace(rec?.result)) {
         heights[i] = isCollapsed ? 29 : (isExpanded ? 360 : 210);
       } else if (rec?.result?.type === 'trajectory') {
         heights[i] = isCollapsed ? 29 : 180;
@@ -2694,7 +2698,7 @@ export class DocumentEditor {
     const lineIdx = rec.lineIndex;
     if (!rec.result) return '';
 
-    if (rec.result.type === 'space') {
+    if (isDrawnSpace(rec.result)) {
       const spaceVal = rec.result as SpaceValue;
       return `
         <div class="doc-pinned-item" data-line="${lineIdx}">
@@ -3010,27 +3014,18 @@ export class DocumentEditor {
     // 0. Space result
     if (rec.result.type === 'space') {
       const spaceVal = rec.result as SpaceValue;
-      if (spaceVal.dimension === 0 && spaceVal.entities.length === 0 && (!spaceVal.nestedSpaces || spaceVal.nestedSpaces.length === 0)) {
-        if (spaceVal.resultVal && spaceVal.resultVal.type !== 'none') {
-          return `
-            <div class="doc-gutter-row" data-line="${lineIdx}">
-              <div class="doc-gutter-row-header">
-                <span class="doc-gutter-lineno">L${lineIdx + 1}</span>
-              </div>
-              <div class="doc-gutter-content">
-                <div class="doc-gutter-result"><span class="doc-result-value">${this.typesetMathReadOnly(this.formatValue(spaceVal.resultVal))}</span></div>
-              </div>
-            </div>
-          `;
-        }
+      // Without \axis nothing is drawn: the row shows the relation as it
+      // stands, or the value it reduced to.
+      if (!isDrawnSpace(spaceVal)) {
+        const text = undrawnSpaceText(spaceVal);
         return `
           <div class="doc-gutter-row" data-line="${lineIdx}">
             <div class="doc-gutter-row-header">
               <span class="doc-gutter-lineno">L${lineIdx + 1}</span>
             </div>
-            <div class="doc-gutter-content">
-              <span class="doc-result-value">none</span>
-            </div>
+            ${text ? `<div class="doc-gutter-content">
+              <div class="doc-gutter-result"><span class="doc-result-value">${this.typesetMathReadOnly(text)}</span></div>
+            </div>` : ''}
           </div>
         `;
       }
@@ -3590,7 +3585,7 @@ export class DocumentEditor {
     const records = this.state.getRecords();
     const list: { lineIdx: number; title: string; space: SpaceValue }[] = [];
     records.forEach((rec, idx) => {
-      if (rec.result && rec.result.type === 'space') {
+      if (isDrawnSpace(rec.result)) {
         const spaceVal = rec.result as SpaceValue;
         const title = rec.text.trim() || `${spaceVal.dimension}D Space`;
         list.push({ lineIdx: idx, title, space: spaceVal });
@@ -3618,7 +3613,7 @@ export class DocumentEditor {
     if (typeof lineIdx !== 'number') return null;
     const records = this.state.getRecords();
     const rec = records[lineIdx];
-    if (rec && rec.result && rec.result.type === 'space') {
+    if (rec && isDrawnSpace(rec.result)) {
       return rec.result as SpaceValue;
     }
     return null;
@@ -3927,6 +3922,14 @@ export class DocumentEditor {
     this.welcomeScreen?.dispose();
     this.state?.dispose();
   }
+}
+
+// What a space without \axis shows instead of a drawing: its relations as
+// written, or the value it reduced to.
+export function undrawnSpaceText(space: SpaceValue): string {
+  if (space.entities && space.entities.length > 0) return space.entities.map((e) => e.source).join('; ');
+  if (space.resultVal && space.resultVal.type !== 'none') return formatValue(space.resultVal);
+  return '';
 }
 
 export function formatValue(val: Value): string {
