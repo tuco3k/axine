@@ -953,6 +953,10 @@ export interface DerivationStep {
 
 export interface DerivationValue {
   type: 'derivation';
+  // Set by \isolate and \simplify. Their step list is not displayed: the
+  // solver behind them combines and mislabels steps, and is to be rebuilt
+  // from the step operations (lib/fastsolve.ax).
+  command?: 'isolate' | 'simplify';
   targetVar?: string;
   originalEquation: string;
   steps: DerivationStep[];

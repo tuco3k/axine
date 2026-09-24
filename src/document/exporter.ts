@@ -349,7 +349,8 @@ function renderDerivationExportHtml(val: Value, options: { inlineFractions?: boo
       html += `<div class="export-deriv-orig"><span class="export-deriv-label">Equation:</span> ${typesetMath(origEq, { displayMode: false, inlineFractions: options.inlineFractions })}</div>`;
     }
 
-    if (deriv.steps && deriv.steps.length > 0) {
+    // \isolate and \simplify: no step list (DerivationValue.command).
+    if (!deriv.command && deriv.steps && deriv.steps.length > 0) {
       html += `<div class="export-deriv-steps">`;
       for (let i = 0; i < deriv.steps.length; i++) {
         const step = deriv.steps[i];
@@ -395,6 +396,15 @@ function renderDerivationExportHtml(val: Value, options: { inlineFractions?: boo
       html += `<div class="export-deriv-result"><span class="export-result-label">Result:</span> ${typesetMath(deriv.finalExprString, { displayMode: false, inlineFractions: options.inlineFractions })}</div>`;
     } else if (deriv.result) {
       html += `<div class="export-deriv-result"><span class="export-result-label">Result:</span> ${formatValue(deriv.result as any)}</div>`;
+    }
+    if (deriv.command) {
+      const target = escapeHtml(deriv.targetVar ?? 'x');
+      if (deriv.excludedRoots && deriv.excludedRoots.length > 0) {
+        html += `<div class="export-deriv-result"><span class="export-result-label">Excluded:</span> ${deriv.excludedRoots.map((r: Value) => `${target} = ${formatValue(r)}`).join(', ')}</div>`;
+      }
+      if (deriv.extraneousRoots && deriv.extraneousRoots.length > 0) {
+        html += `<div class="export-deriv-result"><span class="export-result-label">Rejected:</span> ${deriv.extraneousRoots.map((r: Value) => `${target} = ${formatValue(r)}`).join(', ')}</div>`;
+      }
     }
 
     html += `</div>`;

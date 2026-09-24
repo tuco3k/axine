@@ -2864,6 +2864,20 @@ export class DocumentEditor {
       html += `<div class="derivation-orig-eq">${this.typesetMathReadOnly(origEq, options)}</div>`;
     }
 
+    // \isolate and \simplify: the answer, and the values the solver excluded
+    // or rejected, without the solver's step list (DerivationValue.command).
+    if (deriv.command) {
+      html += `<div class="derivation-final-roots">${escapeHtml(this.formatValue(deriv))}</div>`;
+      const target = escapeHtml(deriv.targetVar ?? 'x');
+      if (deriv.excludedRoots && deriv.excludedRoots.length > 0) {
+        html += `<div class="derivation-final-roots">Excluded: ${deriv.excludedRoots.map(r => `${target} = ${escapeHtml(this.formatValue(r))}`).join(', ')}</div>`;
+      }
+      if (deriv.extraneousRoots && deriv.extraneousRoots.length > 0) {
+        html += `<div class="derivation-final-roots">Rejected: ${deriv.extraneousRoots.map(r => `${target} = ${escapeHtml(this.formatValue(r))}`).join(', ')}</div>`;
+      }
+      return html + `</div>`;
+    }
+
     for (let i = 0; i < deriv.steps.length; i++) {
       const step = deriv.steps[i];
       const eqStr = step.after || step.equation || '';
@@ -3059,7 +3073,7 @@ export class DocumentEditor {
           </div>
           <div class="doc-gutter-content">
             ${isCollapsed
-              ? `<div class="doc-gutter-collapsed-summary">[Collapsed Derivation: ${derivVal.steps.length} steps (${derivVal.verified ? 'Verified' : 'Unverified'})]</div>`
+              ? `<div class="doc-gutter-collapsed-summary">${derivVal.command ? escapeHtml(this.formatValue(derivVal)) : `[Collapsed Derivation: ${derivVal.steps.length} steps (${derivVal.verified ? 'Verified' : 'Unverified'})]`}</div>`
               : `<div class="doc-inline-derivation-container">${this.renderDerivationFull(derivVal)}</div>`
             }
           </div>
@@ -3937,6 +3951,7 @@ export function formatValue(val: Value): string {
       if (val.specialCase === 'all-real') return 'all real numbers (identity)';
       if (val.roots.length === 1) return `${val.targetVar} = ${formatValue(val.roots[0])}`;
       if (val.roots.length > 1) return `${val.targetVar} = ${val.roots.map(r => formatValue(r)).join(' or ')}`;
+      if (val.command) return val.finalExprString || (val.result && !Array.isArray(val.result) ? formatValue(val.result) : val.originalEquation || val.originalExprString || '');
       return `[Derivation: ${val.steps.length} steps]`;
     }
     case 'solve_trace':

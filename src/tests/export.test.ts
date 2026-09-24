@@ -309,12 +309,18 @@ x0 := 1.0
     // 1. Default (Expanded) export
     const htmlExpanded = exportToHtml('deriv_test.ax', docText, records, 'light');
     expect(htmlExpanded).toContain('export-deriv-tree');
+    // \isolate and \simplify export their answer, not their step list (the
+    // solver behind them is to be rebuilt from the step operations). This
+    // asserted the steps factor, cancel-common-factor, take-root and the
+    // branch forks before that decision.
+    expect(htmlExpanded).toMatch(/Roots:<\/span> (2, 3|3, 2)/);
+    expect(htmlExpanded).toMatch(/Roots:<\/span> (-2, 2|2, -2)/);
+    expect(htmlExpanded).toMatch(/Excluded:<\/span> x = 1/);
+    expect(htmlExpanded).not.toContain('cancel-common-factor');
+    expect(htmlExpanded).not.toContain('take-root');
+    expect(htmlExpanded).not.toContain('class="export-deriv-forks"');
+    // Other derivations keep their steps.
     expect(htmlExpanded).toContain('export-step-card');
-    expect(htmlExpanded).toContain('factor');
-    expect(htmlExpanded).toContain('cancel-common-factor');
-    expect(htmlExpanded).toContain('take-root');
-    expect(htmlExpanded).toContain('Branch');
-    expect(htmlExpanded).toContain('export-deriv-forks');
     expect(htmlExpanded).toContain('power-rule');
     expect(htmlExpanded).toContain('product-rule');
     expect(htmlExpanded).toContain('Canonical Derivation Steps');

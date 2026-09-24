@@ -5943,7 +5943,9 @@ export class Evaluator {
       }
     }
 
-    return solveAlgebraic(eqArg, varName, currentEnv, this.source);
+    const solved = solveAlgebraic(eqArg, varName, currentEnv, this.source);
+    if (solved.type === 'derivation') solved.command = 'isolate';
+    return solved;
   }
 
   private evalSimplify(node: FunctionCallNode, currentEnv: Environment): Value {
@@ -5981,7 +5983,9 @@ export class Evaluator {
       }
     }
 
-    return AlgebraicSimplifier.simplify(exprArg, inVar, currentEnv);
+    const simplified = AlgebraicSimplifier.simplify(exprArg, inVar, currentEnv);
+    if (simplified.type === 'derivation') simplified.command = 'simplify';
+    return simplified;
   }
 
   private evalDimension(node: FunctionCallNode, _currentEnv: Environment): Value {
