@@ -964,14 +964,16 @@ function createSlice2DFn(
   const key = `${allVars.join(',')}:${freeAxes.join(',')}`;
   let factory = slice2DFactoryCache.get(key);
   if (!factory) {
+    // Generated names are positional and begin with $, which no Axine name
+    // contains: a coordinate named x, y or fn is an ordinary name here.
     const fixedVarNames = allVars.filter(v => v !== freeAxes[0] && v !== freeAxes[1]);
-    const factoryParams = ['fn', ...fixedVarNames];
+    const factoryParams = ['$fn', ...fixedVarNames.map((_, i) => `$s${i}`)];
     const callArgs = allVars.map(v => {
-      if (v === freeAxes[0]) return 'x';
-      if (v === freeAxes[1]) return 'y';
-      return v;
+      if (v === freeAxes[0]) return '$d0';
+      if (v === freeAxes[1]) return '$d1';
+      return `$s${fixedVarNames.indexOf(v)}`;
     });
-    const code = `return (${factoryParams.join(', ')}) => (x, y) => fn(${callArgs.join(', ')});`;
+    const code = `return (${factoryParams.join(', ')}) => ($d0, $d1) => $fn(${callArgs.join(', ')});`;
     factory = new Function(code)() as any;
     slice2DFactoryCache.set(key, factory!);
   }
@@ -993,14 +995,14 @@ function createSlice3DFn(
   let factory = slice3DFactoryCache.get(key);
   if (!factory) {
     const fixedVarNames = allVars.filter(v => !freeAxes.includes(v as any));
-    const factoryParams = ['fn', ...fixedVarNames];
+    const factoryParams = ['$fn', ...fixedVarNames.map((_, i) => `$s${i}`)];
     const callArgs = allVars.map(v => {
-      if (v === freeAxes[0]) return 'x';
-      if (v === freeAxes[1]) return 'y';
-      if (v === freeAxes[2]) return 'z';
-      return v;
+      if (v === freeAxes[0]) return '$d0';
+      if (v === freeAxes[1]) return '$d1';
+      if (v === freeAxes[2]) return '$d2';
+      return `$s${fixedVarNames.indexOf(v)}`;
     });
-    const code = `return (${factoryParams.join(', ')}) => (x, y, z) => fn(${callArgs.join(', ')});`;
+    const code = `return (${factoryParams.join(', ')}) => ($d0, $d1, $d2) => $fn(${callArgs.join(', ')});`;
     factory = new Function(code)() as any;
     slice3DFactoryCache.set(key, factory!);
   }

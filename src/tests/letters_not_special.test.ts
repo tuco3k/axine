@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { processDocumentLines } from "../core/worker";
+import { sampleSlice } from "../core/sampler";
 
 // No letter is special. Without \axis nothing is drawn; with \axis, renaming
 // the letters consistently gives the same drawing: the same points, the same
@@ -38,6 +39,27 @@ describe("No letter is special", () => {
   it("draws nothing without \\axis, whatever the letters", () => {
     for (const source of ["y = x", "x = y", "p = c", "y = j", "x^2 + y^2 = 4", "p^2 + 4c^2 = 4", "x^2 = 4", "z = x^2 - y^2"]) {
       expect([source, drawingOf(source).drawn]).toEqual([source, false]);
+    }
+  });
+
+  it("slices a relation the same way whatever its slider is called, x, y and fn included", () => {
+    const points = (result: any): string[] =>
+      (result.polylines ?? []).flatMap((pl: any) => pl.points.map(([a, b]: number[]) => `${a.toFixed(3)},${b.toFixed(3)}`))
+        .concat((result.vertices ?? []).map((v: number[]) => v.map((n) => n.toFixed(3)).join(",")))
+        .sort();
+    // c = s p, with s on a slider, displayed over (p, c).
+    const slice2D = (slider: string) =>
+      points(sampleSlice(((p: number, c: number, s: number) => c - s * p) as any, ["p", "c", slider], ["p", "c"], { [slider]: 1.5 }, [[-5, 5], [-5, 5]], 60));
+    // q = s p c, displayed over (p, c, q).
+    const slice3D = (slider: string) =>
+      points(sampleSlice(((p: number, c: number, q: number, s: number) => q - s * p * c) as any, ["p", "c", "q", slider], ["p", "c", "q"], { [slider]: 0.5 }, [[-2, 2], [-2, 2], [-2, 2]], 12));
+    const reference2D = slice2D("k");
+    const reference3D = slice3D("k");
+    expect(reference2D.length).toBeGreaterThan(0);
+    expect(reference3D.length).toBeGreaterThan(0);
+    for (const name of ["x", "y", "z", "fn", "new"]) {
+      expect([name, slice2D(name)]).toEqual([name, reference2D]);
+      expect([name, slice3D(name)]).toEqual([name, reference3D]);
     }
   });
 
